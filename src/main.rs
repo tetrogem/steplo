@@ -1,5 +1,6 @@
 mod compiler;
 mod exporter;
+mod ir;
 mod parser;
 mod util;
 
