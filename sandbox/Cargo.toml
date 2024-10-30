@@ -1,0 +1,8 @@
+[package]
+name = "sandbox"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ir = { path = "../ir" }
+uuid = { version = "1.11.0", features = ["v4"]}

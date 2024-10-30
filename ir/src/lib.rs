@@ -33,8 +33,8 @@ pub struct Broadcast {
 pub struct Block {
     pub uuid: Uuid,
     pub op: Op,
-    pub next: Option<Arc<Block>>,
-    pub parent: Option<Arc<Block>>,
+    pub next: Option<Uuid>,
+    pub parent: Option<Uuid>,
 }
 
 pub enum Op {
@@ -42,6 +42,7 @@ pub enum Op {
     Data(DataOp),
     Control(ControlOp),
     Sensing(SensingOp),
+    Operator(OperatorOp),
 }
 
 pub enum EventOp {
@@ -51,12 +52,13 @@ pub enum EventOp {
     Broadcast { input: Arc<Expr> },
 }
 
-#[expect(clippy::enum_variant_names, reason = "this may not be a problem forever")]
 pub enum DataOp {
     AddToList { list: Arc<List>, item: Arc<Expr> },
     DeleteAllOfList { list: Arc<List> },
     DeleteOfList { list: Arc<List>, index: Arc<Expr> },
     ReplaceItemOfList { list: Arc<List>, index: Arc<Expr>, item: Arc<Expr> },
+    LengthOfList { list: Arc<List> },
+    ItemOfList { list: Arc<List>, index: Arc<Expr> },
 }
 
 pub enum ControlOp {
@@ -67,6 +69,18 @@ pub enum ControlOp {
 
 pub enum SensingOp {
     AskAndWait { question: Arc<Expr> },
+    Answer,
+    Timer,
+}
+
+pub enum OperatorOp {
+    Subtract { num_a: Arc<Expr>, num_b: Arc<Expr> },
+    Mod { num_a: Arc<Expr>, num_b: Arc<Expr> },
+    Add { num_a: Arc<Expr>, num_b: Arc<Expr> },
+    Multiply { num_a: Arc<Expr>, num_b: Arc<Expr> },
+    Divide { num_a: Arc<Expr>, num_b: Arc<Expr> },
+    Join { string_a: Arc<Expr>, string_b: Arc<Expr> },
+    Random { from: Arc<Expr>, to: Arc<Expr> },
 }
 
 pub enum Literal {
@@ -79,40 +93,9 @@ pub enum Literal {
     String(Arc<str>),
 }
 
-pub struct Stack {
-    root: Arc<Block>,
-    chain: Arc<Vec<Arc<Block>>>,
-}
-
 pub enum Expr {
     Literal(Arc<Literal>),
-    Derived(Arc<Derived>),
+    Derived(Arc<Block>),
     Broadcast(Arc<Broadcast>),
-    Stack(Arc<Stack>),
-}
-
-pub enum Derived {
-    Data(Arc<DataDerived>),
-    Op(Arc<OpDerived>),
-    Sensing(Arc<SensingDerived>),
-}
-
-pub enum DataDerived {
-    LengthOfList { list: Arc<List> },
-    ItemOfList { list: Arc<List>, index: Arc<Expr> },
-}
-
-pub enum OpDerived {
-    Subtract { num_a: Arc<Expr>, num_b: Arc<Expr> },
-    Mod { num_a: Arc<Expr>, num_b: Arc<Expr> },
-    Add { num_a: Arc<Expr>, num_b: Arc<Expr> },
-    Multiply { num_a: Arc<Expr>, num_b: Arc<Expr> },
-    Divide { num_a: Arc<Expr>, num_b: Arc<Expr> },
-    Join { string_a: Arc<Expr>, string_b: Arc<Expr> },
-    Random { from: Arc<Expr>, to: Arc<Expr> },
-}
-
-pub enum SensingDerived {
-    Answer,
-    Timer,
+    Stack(Arc<Block>),
 }

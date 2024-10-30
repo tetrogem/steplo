@@ -1,15 +1,50 @@
-use std::{fmt::Display, fs::Metadata, sync::Arc};
+use std::{fmt::Display, sync::Arc};
 
-use itertools::Itertools;
 use serde_json::{json, Map as JsMap, Value as JsVal};
 use uuid::Uuid;
 
-use crate::ir::SensingDerived;
+use crate::{Monitor, Program};
 
 use super::{
-    Block, Broadcast, ControlOp, DataDerived, DataOp, Derived, EventOp, Expr, List, Literal, Op,
-    OpDerived, Program, SensingOp, Stage,
+    Block, Broadcast, ControlOp, DataOp, EventOp, Expr, List, Literal, Op, OperatorOp, SensingOp,
+    Stage,
 };
+
+impl Program {
+    pub fn compile(&self) -> JsVal {
+        let stages: Vec<JsVal> = self.stages.iter().map(|x| x.compile()).collect();
+        let monitors: Vec<JsVal> = self.monitors.iter().map(|x| x.compile()).collect();
+
+        json!({
+            "targets": stages,
+            "monitors": monitors,
+            "extensions": [],
+            "meta": {
+                "semver": "3.0.0",
+                "vm": "2.3.4",
+                "agent": "ScratchASM/0.3.0-indev"
+            }
+        })
+    }
+}
+
+impl Monitor {
+    pub fn compile(&self) -> JsVal {
+        json!({
+            "id": self.uuid.to_string(),
+            "mode": "list",
+            "opcode": "data_listcontents",
+            "params": { "LIST": self.name.to_string() },
+            "spriteName": null,
+            "value": ["Hello world!", "1", "1"],
+            "width": 404,
+            "height": 299,
+            "x": 5,
+            "y": 5,
+            "visible": true
+        })
+    }
+}
 
 impl Stage {
     pub fn compile(&self) -> JsVal {
@@ -28,7 +63,7 @@ impl Stage {
             .collect();
 
         let block_uuid_to_def: JsMap<String, JsVal> =
-            self.blocks.iter().flat_map(|block| block.compile()).collect();
+            self.blocks.iter().map(|block| block.compile()).collect();
 
         json!({
             "isStage": true,
@@ -61,38 +96,35 @@ impl Stage {
 }
 
 impl Block {
-    pub fn compile(&self) -> JsMap<String, JsVal> {
-        let data = self.op.compile_metadata(self.uuid);
+    pub fn compile(&self) -> (String, JsVal) {
+        let metadata = self.op.compile_metadata(self.uuid);
 
-        let js_val = json!({
-            "opcode": data.metadata.opcode,
-            "next": Self::compile_block_link(self.next.as_ref().map(|x| x.as_ref())),
-            "parent": Self::compile_block_link(self.parent.as_ref().map(|x| x.as_ref())),
-            "inputs": data.metadata.inputs,
-            "fields": data.metadata.fields,
+        let value = json!({
+            "opcode": metadata.opcode,
+            "next": Self::compile_block_link(self.next),
+            "parent": Self::compile_block_link(self.parent),
+            "inputs": metadata.inputs,
+            "fields": metadata.fields,
             "topLevel": self.parent.is_none(),
             "x": 0,
             "y": 0,
         });
 
-        let fields = data.deps.into_iter().map(|dep| (dep.uuid.to_string(), dep.js_val.clone()));
-        let fields = fields.chain([(self.uuid.to_string(), js_val)]);
-        fields.collect()
+        (self.uuid.to_string(), value)
     }
 
-    fn compile_block_link(uuid: Option<&Block>) -> JsVal {
-        match uuid {
+    fn compile_block_link(link: Option<Uuid>) -> JsVal {
+        match link {
             None => json!(null),
-            Some(link) => json!(link.uuid.to_string()),
+            Some(uuid) => json!(uuid.to_string()),
         }
     }
 }
 
 impl Op {
-    pub fn compile_metadata(&self, uuid: Uuid) -> ExprData {
-        let mut deps = Vec::new();
-        let mut compile = |expr| compile(uuid, &mut deps, expr);
-        let metadata = match self {
+    pub fn compile_metadata(&self, uuid: Uuid) -> ExprMetadata {
+        let compile = |expr: &Expr| expr.compile(uuid);
+        match self {
             Self::Event(op) => match op {
                 EventOp::WhenFlagClicked => ExprMetadata {
                     opcode: "event_whenflagclicked",
@@ -136,6 +168,16 @@ impl Op {
                     inputs: obj([("INDEX", compile(index)), ("ITEM", compile(item))]),
                     fields: obj([("LIST", list_ref(list))]),
                 },
+                DataOp::LengthOfList { list } => ExprMetadata {
+                    opcode: "data_lengthoflist",
+                    inputs: JsMap::new(),
+                    fields: obj([("LIST", list_ref(list))]),
+                },
+                DataOp::ItemOfList { list, index } => ExprMetadata {
+                    opcode: "data_itemoflist",
+                    inputs: obj([("INDEX", compile(index))]),
+                    fields: obj([("LIST", list_ref(list))]),
+                },
             },
             Self::Control(op) => match op {
                 ControlOp::If { condition, then_substack } => ExprMetadata {
@@ -157,38 +199,76 @@ impl Op {
                 SensingOp::AskAndWait { .. } => {
                     ExprMetadata { opcode: "sensing_askandwait", inputs: todo!(), fields: todo!() }
                 },
+                SensingOp::Answer => ExprMetadata {
+                    opcode: "sensing_answer",
+                    inputs: JsMap::new(),
+                    fields: JsMap::new(),
+                },
+                SensingOp::Timer => ExprMetadata {
+                    opcode: "sensing_timer",
+                    inputs: JsMap::new(),
+                    fields: JsMap::new(),
+                },
             },
-        };
-
-        ExprData { metadata, deps }
+            Self::Operator(op) => match op {
+                OperatorOp::Subtract { num_a, num_b } => ExprMetadata {
+                    opcode: "operator_subtract",
+                    inputs: obj([("NUM1", compile(num_a)), ("NUM2", compile(num_b))]),
+                    fields: JsMap::new(),
+                },
+                OperatorOp::Mod { num_a, num_b } => ExprMetadata {
+                    opcode: "operator_mod",
+                    inputs: obj([("NUM1", compile(num_a)), ("NUM2", compile(num_b))]),
+                    fields: JsMap::new(),
+                },
+                OperatorOp::Add { num_a, num_b } => ExprMetadata {
+                    opcode: "operator_add",
+                    inputs: obj([("NUM1", compile(num_a)), ("NUM2", compile(num_b))]),
+                    fields: JsMap::new(),
+                },
+                OperatorOp::Multiply { num_a, num_b } => ExprMetadata {
+                    opcode: "operator_multiply",
+                    inputs: obj([("NUM1", compile(num_a)), ("NUM2", compile(num_b))]),
+                    fields: JsMap::new(),
+                },
+                OperatorOp::Divide { num_a, num_b } => ExprMetadata {
+                    opcode: "operator_divide",
+                    inputs: obj([("NUM1", compile(num_a)), ("NUM2", compile(num_b))]),
+                    fields: JsMap::new(),
+                },
+                OperatorOp::Join { string_a, string_b } => ExprMetadata {
+                    opcode: "operator_join",
+                    inputs: obj([("STRING1", compile(string_a)), ("STRING2", compile(string_b))]),
+                    fields: JsMap::new(),
+                },
+                OperatorOp::Random { from, to } => ExprMetadata {
+                    opcode: "operator_random",
+                    inputs: obj([("FROM", compile(from)), ("TO", compile(to))]),
+                    fields: JsMap::new(),
+                },
+            },
+        }
     }
 }
 
-struct ExprCompiled {
-    js_val: JsVal,
-    deps: Vec<Arc<Dep>>,
-}
-
 impl Expr {
-    pub fn compile(&self, parent: Uuid) -> ExprCompiled {
+    pub fn compile(&self, parent: Uuid) -> JsVal {
         match self {
             Self::Literal(l) => l.compile(),
-            Self::Derived(d) => d.compile(parent),
-            Self::Broadcast(b) => ExprCompiled {
-                js_val: json!([1, [11, b.name.to_string(), b.uuid.to_string()]]),
-                deps: Vec::new(),
+            Self::Derived(d) => {
+                json!([3, d.uuid.to_string(), [7, ""]])
             },
-            Self::Stack(s) => {
-                let blocks = [s.root]s.chain.iter().chain()
-                ExprCompiled { js_val: json!([2, s.root.uuid.to_string()]), deps:  }
-            }
+            Self::Broadcast(b) => {
+                json!([1, [11, b.name.to_string(), b.uuid.to_string()]])
+            },
+            Self::Stack(s) => json!([2, s.uuid.to_string()]),
         }
     }
 }
 
 impl Literal {
-    pub fn compile(&self) -> ExprCompiled {
-        let js_val = match self {
+    pub fn compile(&self) -> JsVal {
+        let value = match self {
             Self::Num(n) => json!([4, n.to_string()]),
             Self::PosNum(n) => json!([5, n.to_string()]),
             Self::PosInt(i) => json!([6, i.to_string()]),
@@ -200,7 +280,7 @@ impl Literal {
             Self::String(s) => json!([10, s.to_string()]),
         };
 
-        ExprCompiled { js_val, deps: Vec::new() }
+        json!([1, value])
     }
 }
 
@@ -213,95 +293,6 @@ struct ExprMetadata {
 struct ExprData {
     metadata: ExprMetadata,
     deps: Vec<Arc<Dep>>,
-}
-
-impl Derived {
-    pub fn compile(&self, parent: Uuid) -> ExprCompiled {
-        let uuid = Uuid::new_v4();
-        let compiled = self.compile_metadata(uuid, parent);
-        let js_val = json!([3, uuid.to_string(), [7, ""]]);
-        ExprCompiled { js_val, deps: compiled.deps }
-    }
-
-    fn compile_metadata(&self, uuid: Uuid, parent: Uuid) -> ExprData {
-        let mut deps = Vec::new();
-
-        let mut compile = |expr| compile(uuid, &mut deps, expr);
-
-        let metadata = match self {
-            Self::Data(op) => match op.as_ref() {
-                DataDerived::LengthOfList { list } => ExprMetadata {
-                    opcode: "data_lengthoflist",
-                    inputs: JsMap::new(),
-                    fields: obj([("LIST", list_ref(list))]),
-                },
-                DataDerived::ItemOfList { list, index } => ExprMetadata {
-                    opcode: "data_itemoflist",
-                    inputs: obj([("INDEX", compile(index))]),
-                    fields: obj([("LIST", list_ref(list))]),
-                },
-            },
-            Self::Op(op) => match op.as_ref() {
-                OpDerived::Subtract { num_a, num_b } => ExprMetadata {
-                    opcode: "operator_subtract",
-                    inputs: obj([("NUM1", compile(num_a)), ("NUM2", compile(num_b))]),
-                    fields: JsMap::new(),
-                },
-                OpDerived::Mod { num_a, num_b } => ExprMetadata {
-                    opcode: "operator_mod",
-                    inputs: obj([("NUM1", compile(num_a)), ("NUM2", compile(num_b))]),
-                    fields: JsMap::new(),
-                },
-                OpDerived::Add { num_a, num_b } => ExprMetadata {
-                    opcode: "operator_add",
-                    inputs: obj([("NUM1", compile(num_a)), ("NUM2", compile(num_b))]),
-                    fields: JsMap::new(),
-                },
-                OpDerived::Multiply { num_a, num_b } => ExprMetadata {
-                    opcode: "operator_multiply",
-                    inputs: obj([("NUM1", compile(num_a)), ("NUM2", compile(num_b))]),
-                    fields: JsMap::new(),
-                },
-                OpDerived::Divide { num_a, num_b } => ExprMetadata {
-                    opcode: "operator_divide",
-                    inputs: obj([("NUM1", compile(num_a)), ("NUM2", compile(num_b))]),
-                    fields: JsMap::new(),
-                },
-                OpDerived::Join { string_a, string_b } => ExprMetadata {
-                    opcode: "operator_join",
-                    inputs: obj([("STRING1", compile(string_a)), ("STRING2", compile(string_b))]),
-                    fields: JsMap::new(),
-                },
-                OpDerived::Random { from, to } => ExprMetadata {
-                    opcode: "operator_random",
-                    inputs: obj([("FROM", compile(from)), ("TO", compile(to))]),
-                    fields: JsMap::new(),
-                },
-            },
-            Self::Sensing(op) => match op.as_ref() {
-                SensingDerived::Answer => ExprMetadata {
-                    opcode: "sensing_answer",
-                    inputs: JsMap::new(),
-                    fields: JsMap::new(),
-                },
-                SensingDerived::Timer => ExprMetadata {
-                    opcode: "sensing_timer",
-                    inputs: JsMap::new(),
-                    fields: JsMap::new(),
-                },
-            },
-        };
-
-        deps.push(Arc::new(Dep::new(parent, uuid, &metadata)));
-
-        ExprData { metadata, deps }
-    }
-}
-
-fn compile(uuid: Uuid, deps: &mut Vec<Arc<Dep>>, expr: &Expr) -> JsVal {
-    let compiled = expr.compile(uuid);
-    deps.extend(compiled.deps);
-    compiled.js_val
 }
 
 fn obj<K: Display>(fields: impl IntoIterator<Item = (K, JsVal)>) -> JsMap<String, JsVal> {
