@@ -21,6 +21,7 @@ fn link_to_json(link: Option<Uuid>) -> String {
     }
 }
 
+#[deprecated]
 struct BlockJsonMaker {
     uuid: Uuid,
     op_code: &'static str,

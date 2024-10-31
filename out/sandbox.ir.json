@@ -1,0 +1,78 @@
+{
+  "extensions": [],
+  "meta": {
+    "agent": "ScratchASM/0.3.0-indev",
+    "semver": "3.0.0",
+    "vm": "2.3.4"
+  },
+  "monitors": [],
+  "targets": [
+    {
+      "blocks": {
+        "189ab04d-faa1-445a-8e42-6e878cf664b5": {
+          "fields": {},
+          "inputs": {
+            "NUM1": [1, [4, "1"]],
+            "NUM2": [1, [4, "2"]]
+          },
+          "next": null,
+          "opcode": "operator_add",
+          "parent": "5ae7fcbc-af4f-4976-952f-ff9e3a0b9261",
+          "topLevel": false,
+          "x": 0,
+          "y": 0
+        },
+        "5ae7fcbc-af4f-4976-952f-ff9e3a0b9261": {
+          "fields": {
+            "LIST": ["dummy", "6b6beb56-48ee-4b09-ba16-1801dcdea47c"]
+          },
+          "inputs": {
+            "ITEM": [3, "189ab04d-faa1-445a-8e42-6e878cf664b5", [7, ""]]
+          },
+          "next": null,
+          "opcode": "data_addtolist",
+          "parent": "fab094f0-6f41-491d-814c-eed00bed29cc",
+          "topLevel": false,
+          "x": 0,
+          "y": 0
+        },
+        "fab094f0-6f41-491d-814c-eed00bed29cc": {
+          "fields": {},
+          "inputs": {},
+          "next": "5ae7fcbc-af4f-4976-952f-ff9e3a0b9261",
+          "opcode": "event_whenflagclicked",
+          "parent": null,
+          "topLevel": true,
+          "x": 0,
+          "y": 0
+        }
+      },
+      "broadcasts": {},
+      "comments": {},
+      "costumes": [
+        {
+          "assetId": "cd21514d0531fdffb22204e0ec5ed84a",
+          "dataFormat": "svg",
+          "md5ext": "cd21514d0531fdffb22204e0ec5ed84a.svg",
+          "name": "backdrop1",
+          "rotationCenterX": 240,
+          "rotationCenterY": 180
+        }
+      ],
+      "currentCostume": 0,
+      "isStage": true,
+      "layerOrder": 0,
+      "lists": {
+        "6b6beb56-48ee-4b09-ba16-1801dcdea47c": ["dummy", []]
+      },
+      "name": "Stage",
+      "sounds": [],
+      "tempo": 60,
+      "textToSpeechLanguage": null,
+      "variables": {},
+      "videoState": "on",
+      "videoTransparency": 50,
+      "volume": 100
+    }
+  ]
+}

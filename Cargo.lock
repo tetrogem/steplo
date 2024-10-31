@@ -110,6 +110,7 @@ dependencies = [
  "anyhow",
  "extend",
  "fs_extra",
+ "ir",
  "itertools",
  "serde_json",
  "strum",
@@ -583,6 +584,7 @@ name = "sandbox"
 version = "0.1.0"
 dependencies = [
  "ir",
+ "itertools",
  "uuid",
 ]
 

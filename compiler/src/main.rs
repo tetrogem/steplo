@@ -1,6 +1,7 @@
 mod compiler;
 mod exporter;
 mod parser;
+pub mod transpiler;
 mod util;
 
 use std::fs::File;

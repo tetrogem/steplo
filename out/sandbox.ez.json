@@ -9,61 +9,39 @@
   "targets": [
     {
       "blocks": {
-        "1d448a5c-d884-4c2d-b30a-1612227711ef": {
+        "5190e213-d011-4e3b-909e-0af2486858c4": {
+          "fields": {
+            "LIST": ["dummy", "b928ada9-e17e-47d5-80d4-65765e62adef"]
+          },
+          "inputs": {
+            "ITEM": [3, "f852b34d-dddb-4ff8-b3e8-abcc128f06f0", [7, ""]]
+          },
+          "next": null,
+          "opcode": "data_addtolist",
+          "parent": "e82bada2-fdad-4f3a-86e8-6f7996f20285",
+          "topLevel": false,
+          "x": 0,
+          "y": 0
+        },
+        "e82bada2-fdad-4f3a-86e8-6f7996f20285": {
           "fields": {},
           "inputs": {},
-          "next": "227077bd-d3f2-46a9-9324-c34ab2fa59d5",
+          "next": "5190e213-d011-4e3b-909e-0af2486858c4",
           "opcode": "event_whenflagclicked",
           "parent": null,
           "topLevel": true,
           "x": 0,
           "y": 0
         },
-        "227077bd-d3f2-46a9-9324-c34ab2fa59d5": {
-          "fields": {
-            "LIST": [
-              "dummy",
-              "19bfbe87-0d00-4aee-88af-d3ee41679a90"
-            ]
-          },
-          "inputs": {
-            "ITEM": [
-              3,
-              "71a57dfb-0a15-4b2d-9e23-c6cc657fb366",
-              [
-                7,
-                ""
-              ]
-            ]
-          },
-          "next": null,
-          "opcode": "data_addtolist",
-          "parent": "1d448a5c-d884-4c2d-b30a-1612227711ef",
-          "topLevel": false,
-          "x": 0,
-          "y": 0
-        },
-        "71a57dfb-0a15-4b2d-9e23-c6cc657fb366": {
+        "f852b34d-dddb-4ff8-b3e8-abcc128f06f0": {
           "fields": {},
           "inputs": {
-            "NUM1": [
-              1,
-              [
-                4,
-                "1"
-              ]
-            ],
-            "NUM2": [
-              1,
-              [
-                4,
-                "2"
-              ]
-            ]
+            "NUM1": [1, [4, "1"]],
+            "NUM2": [1, [4, "2"]]
           },
           "next": null,
           "opcode": "operator_add",
-          "parent": "227077bd-d3f2-46a9-9324-c34ab2fa59d5",
+          "parent": "5190e213-d011-4e3b-909e-0af2486858c4",
           "topLevel": false,
           "x": 0,
           "y": 0
@@ -85,10 +63,7 @@
       "isStage": true,
       "layerOrder": 0,
       "lists": {
-        "19bfbe87-0d00-4aee-88af-d3ee41679a90": [
-          "dummy",
-          []
-        ]
+        "b928ada9-e17e-47d5-80d4-65765e62adef": ["dummy", []]
       },
       "name": "Stage",
       "sounds": [],
