@@ -3,6 +3,7 @@
 // use std::{collections::HashMap, sync::Arc};
 
 // use anyhow::{bail, Context};
+// use inter::ez;
 // use itertools::Itertools;
 // // use link::{transpile_link, Link};
 // use uuid::Uuid;
@@ -16,21 +17,21 @@
 //     util::spellcheck,
 // };
 
-// pub fn transpile(parsed: Parsed) -> ir::Program {
+// pub fn transpile(parsed: Parsed) -> ez::Program {
 //     // default lists included in all compiled programs
 //     let globals = Arc::new(Globals {
-//         stdout: Arc::new(ir::List { uuid: Uuid::new_v4(), name: "::stdout".into() }),
-//         stack: Arc::new(ir::List { uuid: Uuid::new_v4(), name: "::stack".into() }),
-//         args: Arc::new(ir::List { uuid: Uuid::new_v4(), name: "::args".into() }),
+//         stdout: Arc::new(ez::List { uuid: Uuid::new_v4(), name: "::stdout".into() }),
+//         stack: Arc::new(ez::List { uuid: Uuid::new_v4(), name: "::stack".into() }),
+//         args: Arc::new(ez::List { uuid: Uuid::new_v4(), name: "::args".into() }),
 //     });
 
 //     let mut links = Vec::new();
-//     let mut cb_name_to_cb = HashMap::<Arc<str>, Arc<ir::Broadcast>>::new();
+//     let mut cb_name_to_cb = HashMap::<Arc<str>, Arc<ez::Broadcast>>::new();
 
 //     // link together each chunk via continue broadcasts
 //     for scope in parsed.scopes {
 //         let scope_tag_to_chunk_uuid = Arc::new(scope.tag_to_chunk_uuid);
-//         let mut next_cb: Option<Arc<ir::Broadcast>> = None;
+//         let mut next_cb: Option<Arc<ez::Broadcast>> = None;
 
 //         for (i, chunk) in scope.chunks.into_iter().enumerate().rev() {
 //             let is_scope_root = i == 0;
@@ -60,12 +61,12 @@
 // }
 
 // pub struct Globals {
-//     pub stdout: Arc<ir::List>,
-//     pub stack: Arc<ir::List>,
-//     pub args: Arc<ir::List>,
+//     pub stdout: Arc<ez::List>,
+//     pub stack: Arc<ez::List>,
+//     pub args: Arc<ez::List>,
 // }
 
-// fn create_broadcast(kind: &ScopeKind, chunk_uuid: Uuid, is_scope_root: bool) -> ir::Broadcast {
+// fn create_broadcast(kind: &ScopeKind, chunk_uuid: Uuid, is_scope_root: bool) -> ez::Broadcast {
 //     let scope_name = match kind {
 //         ScopeKind::Main => "::main",
 //         ScopeKind::Fn { name } => name.as_str(),
@@ -77,7 +78,7 @@
 //     };
 
 //     let broadcast_name: Arc<str> = broadcast_name.into();
-//     ir::Broadcast { uuid: Uuid::new_v4(), name: Arc::clone(&broadcast_name) }
+//     ez::Broadcast { uuid: Uuid::new_v4(), name: Arc::clone(&broadcast_name) }
 // }
 
 // struct ScopeTagManager {

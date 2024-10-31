@@ -1,5 +1,7 @@
 // use std::sync::Arc;
 
+// use inter::ez;
+
 // use crate::parser::{
 //     command::Command,
 //     scope::{Chunk, ScopeHeader},
@@ -12,9 +14,9 @@
 //     pub tags: ScopeTagManager,
 //     pub chunk: Chunk,
 //     /// the continue broadcast for this chunk
-//     pub continue_broadcast: Arc<ir::Broadcast>,
+//     pub continue_broadcast: Arc<ez::Broadcast>,
 //     /// the chunk to go to once finished executing
-//     pub next_cb: Option<Arc<ir::Broadcast>>,
+//     pub next_cb: Option<Arc<ez::Broadcast>>,
 // }
 
 // pub fn transpile_link(link: &Link, globals: &Globals) {
@@ -23,13 +25,13 @@
 //     });
 // }
 
-// pub fn transpile_command(command: &Command, globals: &Globals) -> Vec<ir::Op> {
+// pub fn transpile_command(command: &Command, globals: &Globals) -> Vec<ez::Op> {
 //     match command {
-//         Command::Clear => Vec::from([ir::Op::Data(ir::DataOp::DeleteAllOfList {
+//         Command::Clear => Vec::from([ez::Op::Data(ez::DataOp::DeleteAllOfList {
 //             list: Arc::clone(&globals.stdout),
 //         })]),
 //         Command::Out { msg } => {
-//             Vec::from([ir::Op::Data(ir::DataOp::ReplaceItemOfList { list: Arc::clone(&globals.stdout), index: ir::, item: () })])
+//             Vec::from([ez::Op::Data(ez::DataOp::ReplaceItemOfList { list: Arc::clone(&globals.stdout), index: ez::D, item: () })])
 //         }
 //         _ => todo!(),
 //     }

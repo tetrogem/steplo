@@ -18,7 +18,7 @@ pub struct Monitor {
 pub struct Stage {
     pub lists: Arc<Vec<Arc<List>>>,
     pub broadcasts: Arc<Vec<Arc<Broadcast>>>,
-    pub blocks: Arc<Vec<Arc<Block>>>,
+    pub stack: Arc<Stack>,
 }
 
 #[derive(Debug)]
@@ -34,11 +34,9 @@ pub struct Broadcast {
 }
 
 #[derive(Debug)]
-pub struct Block {
-    pub uuid: Uuid,
-    pub op: Op,
-    pub next: Option<Uuid>,
-    pub parent: Option<Uuid>,
+pub struct Stack {
+    pub root: Arc<Op>,
+    pub rest: Arc<Vec<Arc<Op>>>,
 }
 
 #[derive(Debug)]
@@ -94,6 +92,14 @@ pub enum OperatorOp {
 }
 
 #[derive(Debug)]
+pub enum Expr {
+    Literal(Arc<Literal>),
+    Derived(Arc<Op>),
+    Broadcast(Arc<Broadcast>),
+    Stack(Arc<Stack>),
+}
+
+#[derive(Debug)]
 pub enum Literal {
     Num(f64),
     PosNum(f64),
@@ -102,12 +108,4 @@ pub enum Literal {
     Angle(f64),
     Color { r: u8, g: u8, b: u8 },
     String(Arc<str>),
-}
-
-#[derive(Debug)]
-pub enum Expr {
-    Literal(Arc<Literal>),
-    Derived(Arc<Block>),
-    Broadcast(Arc<Broadcast>),
-    Stack(Arc<Block>),
 }

@@ -68,7 +68,7 @@ fn ez() {
         item: ez::Expr::derived(&sum_block),
     }));
 
-    let stack = Arc::new(ez::Stack { ops: Arc::new(Vec::from([root_block, push_block])) });
+    let stack = Arc::new(ez::Stack { root: root_block, rest: Arc::new(Vec::from([push_block])) });
 
     let stage = Arc::new(ez::Stage {
         lists: Arc::new(Vec::from([dummy_list])),
@@ -122,7 +122,8 @@ fn ez_2() {
 
     // finalize
     let stack = Arc::new(ez::Stack {
-        ops: Arc::new(Vec::from([start_op, push_1_op, push_2_op, push_sum_op])),
+        root: start_op,
+        rest: Arc::new(Vec::from([push_1_op, push_2_op, push_sum_op])),
     });
 
     let stage = Arc::new(ez::Stage {
