@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ir = { path = "../ir" }
+inter = { path = "../inter" }
 itertools = "0.13.0"
 uuid = { version = "1.11.0", features = ["v4"]}

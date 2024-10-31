@@ -1,3 +1,3 @@
 [workspace]
-members = ["compiler", "ir", "sandbox"]
+members = ["compiler", "inter", "sandbox"]
 resolver = "2"

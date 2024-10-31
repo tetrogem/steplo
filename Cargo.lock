@@ -110,7 +110,7 @@ dependencies = [
  "anyhow",
  "extend",
  "fs_extra",
- "ir",
+ "inter",
  "itertools",
  "serde_json",
  "strum",
@@ -402,9 +402,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "ir"
+name = "inter"
 version = "0.1.0"
 dependencies = [
+ "itertools",
  "serde_json",
  "uuid",
 ]
@@ -583,7 +584,7 @@ checksum = "f3cb5ba0dc43242ce17de99c180e96db90b235b8a9fdc9543c96d2209116bd9f"
 name = "sandbox"
 version = "0.1.0"
 dependencies = [
- "ir",
+ "inter",
  "itertools",
  "uuid",
 ]

@@ -1,5 +1,3 @@
-pub mod compile;
-
 use std::sync::Arc;
 
 use uuid::Uuid;

@@ -3,11 +3,9 @@ use std::{fmt::Display, sync::Arc};
 use serde_json::{json, Map as JsMap, Value as JsVal};
 use uuid::Uuid;
 
-use crate::{Monitor, Program};
-
 use super::{
-    Block, Broadcast, ControlOp, DataOp, EventOp, Expr, List, Literal, Op, OperatorOp, SensingOp,
-    Stage,
+    Block, Broadcast, ControlOp, DataOp, EventOp, Expr, List, Literal, Monitor, Op, OperatorOp,
+    Program, SensingOp, Stage,
 };
 
 impl Program {
