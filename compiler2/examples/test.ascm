@@ -1,32 +1,39 @@
 ; init globals
-push "0" ; stack pointer
-push "0" ; r2
-push "0" ; r3
-push "0" ; r4
-push "0" ; r5
-push "0" ; r6
-set "2" "6" ; r2 = 6
-add "1" "1" "2" ; sp = sp + r2
+; sp
+; r2
+; r3
+; r4
+; r5
+lit "1" "5"
+lit "2" "0"
+lit "3" "0"
+lit "4" "0"
+lit "5" "0"
 
-push "10"
-set "2" "1" ; r2 = 1
+; create 3 locals, initialize first 2
+lit "2" "1" ; r2 = 1
+add "1" "1" "2" ; *1 = *1 + *2
+lit "2" "10" ; *2 = 10
+store "1" "2" ; **1 = *2
+lit "2" "1" ; *2 = 1
 add "1" "1" "2" ; sp = sp + r2
+lit "2" "25" ; *2 = 25
+store "1" "2" ; **1 = *2
+lit "2" "1" ; *2 = 1
+add "1" "1" "2" ; *1 = *1 + r2
 
-push "25"
-set "2" "1" ; r2 = 1
-add "1" "1" "2" ; sp = sp + r2
-
-push "0"
-set "2" "1" ; r2 = 1
-add "1" "1" "2" ; sp = sp + r2
-
-set "2" "1" ; r2 = 1
+; store address of 10 in r3
+lit "2" "1" ; r2 = 1
 sub "3" "1" "2" ; r3 = sp - r2
 load "3" "3" ; r3 = *r3
 
-set "2" "2" ; r2 = 2
+; store address of 25 in r4
+lit "2" "2" ; r2 = 2
 sub "4" "1" "2" ; r4 = sp - r2
 load "4" "4" ; r4 = *r4
 
+; add r3 (10) and r4 (25) together, store sum in r5
 add "5" "3" "4" ; r5 = r3 + r4
+
+; move sum into last local addr
 store "1" "5" ; *sp = r5

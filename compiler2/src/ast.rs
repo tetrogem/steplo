@@ -1,22 +1,56 @@
 use std::sync::Arc;
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 
 use crate::token;
 
 #[derive(Debug)]
 pub enum Command {
-    Push { val: Value },
-    Set { dest: Value, val: Value },
-    Load { dest: Value, src: Value },
-    Store { dest: Value, src: Value },
-    Add { dest: Value, left: Value, right: Value },
-    Sub { dest: Value, left: Value, right: Value },
+    Set(BinaryArgs),
+    Load(BinaryArgs),
+    Store(BinaryArgs),
+    Add(TernaryArgs),
+    Sub(TernaryArgs),
+}
+
+#[derive(Debug)]
+pub struct BinaryArgs {
+    pub dest: Value,
+    pub val: Value,
+}
+
+#[derive(Debug)]
+pub struct TernaryArgs {
+    pub dest: Value,
+    pub left: Value,
+    pub right: Value,
 }
 
 #[derive(Debug)]
 pub struct Value {
     pub str: Arc<str>,
+}
+
+fn parse_value<'a>(tokens: &mut impl Iterator<Item = &'a token::Token>) -> anyhow::Result<Value> {
+    let Some(token::Token::Value(value)) = tokens.next() else { bail!("Expected value") };
+    Ok(Value { str: Arc::clone(value) })
+}
+
+fn parse_binary_args<'a>(
+    tokens: &mut impl Iterator<Item = &'a token::Token>,
+) -> anyhow::Result<BinaryArgs> {
+    let dest = parse_value(tokens).with_context(|| "For arg [dest]")?;
+    let val = parse_value(tokens).with_context(|| "For arg [val]")?;
+    Ok(BinaryArgs { dest, val })
+}
+
+fn parse_ternary_args<'a>(
+    tokens: &mut impl Iterator<Item = &'a token::Token>,
+) -> anyhow::Result<TernaryArgs> {
+    let dest = parse_value(tokens).with_context(|| "For arg [dest]")?;
+    let left = parse_value(tokens).with_context(|| "For arg [left]")?;
+    let right = parse_value(tokens).with_context(|| "For arg [right]")?;
+    Ok(TernaryArgs { dest, left, right })
 }
 
 pub fn parse<'a>(
@@ -26,86 +60,16 @@ pub fn parse<'a>(
 
     let mut tokens = tokens.into_iter().peekable();
     while let Some(next) = tokens.peek() {
-        dbg!(next);
         let command = match next {
             token::Token::Op(_) => {
                 let Some(token::Token::Op(op_token)) = tokens.next() else { bail!("Expected op") };
 
                 let command = match op_token {
-                    token::Op::Push => {
-                        let Some(token::Token::Value(val)) = tokens.next() else {
-                            bail!("Expected value for [val]")
-                        };
-                        Command::Push { val: Value { str: Arc::clone(val) } }
-                    },
-                    token::Op::Set => {
-                        let Some(token::Token::Value(dest)) = tokens.next() else {
-                            bail!("Expected value for [dest]")
-                        };
-                        let Some(token::Token::Value(val)) = tokens.next() else {
-                            bail!("Expected value for [val]")
-                        };
-                        Command::Set {
-                            dest: Value { str: Arc::clone(dest) },
-                            val: Value { str: Arc::clone(val) },
-                        }
-                    },
-                    token::Op::Load => {
-                        let Some(token::Token::Value(dest)) = tokens.next() else {
-                            bail!("Expected value for [dest]")
-                        };
-                        let Some(token::Token::Value(src)) = tokens.next() else {
-                            bail!("Expected value for [val]")
-                        };
-                        Command::Load {
-                            dest: Value { str: Arc::clone(dest) },
-                            src: Value { str: Arc::clone(src) },
-                        }
-                    },
-                    token::Op::Store => {
-                        let Some(token::Token::Value(dest)) = tokens.next() else {
-                            bail!("Expected value for [dest]")
-                        };
-                        let Some(token::Token::Value(src)) = tokens.next() else {
-                            bail!("Expected value for [val]")
-                        };
-                        Command::Store {
-                            dest: Value { str: Arc::clone(dest) },
-                            src: Value { str: Arc::clone(src) },
-                        }
-                    },
-                    token::Op::Add => {
-                        let Some(token::Token::Value(dest)) = tokens.next() else {
-                            bail!("Expected value for [dest]")
-                        };
-                        let Some(token::Token::Value(left)) = tokens.next() else {
-                            bail!("Expected value for [left]")
-                        };
-                        let Some(token::Token::Value(right)) = tokens.next() else {
-                            bail!("Expected value for [right]")
-                        };
-                        Command::Add {
-                            dest: Value { str: Arc::clone(dest) },
-                            left: Value { str: Arc::clone(left) },
-                            right: Value { str: Arc::clone(right) },
-                        }
-                    },
-                    token::Op::Sub => {
-                        let Some(token::Token::Value(dest)) = tokens.next() else {
-                            bail!("Expected value for [dest]")
-                        };
-                        let Some(token::Token::Value(left)) = tokens.next() else {
-                            bail!("Expected value for [left]")
-                        };
-                        let Some(token::Token::Value(right)) = tokens.next() else {
-                            bail!("Expected value for [right]")
-                        };
-                        Command::Sub {
-                            dest: Value { str: Arc::clone(dest) },
-                            left: Value { str: Arc::clone(left) },
-                            right: Value { str: Arc::clone(right) },
-                        }
-                    },
+                    token::Op::Lit => Command::Set(parse_binary_args(&mut tokens)?),
+                    token::Op::Load => Command::Load(parse_binary_args(&mut tokens)?),
+                    token::Op::Store => Command::Store(parse_binary_args(&mut tokens)?),
+                    token::Op::Add => Command::Add(parse_ternary_args(&mut tokens)?),
+                    token::Op::Sub => Command::Sub(parse_ternary_args(&mut tokens)?),
                 };
 
                 Some(command)

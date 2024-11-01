@@ -12,8 +12,7 @@ pub enum Token {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Op {
-    Push,
-    Set,
+    Lit,
     Add,
     Sub,
     Load,
@@ -43,8 +42,7 @@ pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
                     }
 
                     let op = match word.to_lowercase().as_str() {
-                        "push" => Op::Push,
-                        "set" => Op::Set,
+                        "lit" => Op::Lit,
                         "add" => Op::Add,
                         "sub" => Op::Sub,
                         "load" => Op::Load,

@@ -194,6 +194,10 @@ impl Op {
                     ControlOp::Wait { duration } => {
                         ir::ControlOp::Wait { duration: compile(duration) }
                     },
+                    ControlOp::Repeat { times, looped_substack } => ir::ControlOp::Repeat {
+                        times: compile(times),
+                        looped_substack: compile(looped_substack),
+                    },
                 };
 
                 ir::Op::Control(ir_op)

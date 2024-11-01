@@ -71,6 +71,7 @@ pub enum ControlOp {
     If { condition: Arc<Expr>, then_substack: Arc<Expr> },
     IfElse { condition: Arc<Expr>, then_substack: Arc<Expr>, else_substack: Arc<Expr> },
     Wait { duration: Arc<Expr> },
+    Repeat { times: Arc<Expr>, looped_substack: Arc<Expr> },
 }
 
 #[derive(Debug)]

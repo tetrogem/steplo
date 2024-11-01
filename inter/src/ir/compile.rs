@@ -192,6 +192,14 @@ impl Op {
                 ControlOp::Wait { .. } => {
                     ExprMetadata { opcode: "control_wait", inputs: todo!(), fields: todo!() }
                 },
+                ControlOp::Repeat { times, looped_substack } => ExprMetadata {
+                    opcode: "control_repeat",
+                    inputs: obj([
+                        ("TIMES", compile(times)),
+                        ("SUBSTACK", compile(looped_substack)),
+                    ]),
+                    fields: JsMap::new(),
+                },
             },
             Self::Sensing(op) => match op {
                 SensingOp::AskAndWait { .. } => {
