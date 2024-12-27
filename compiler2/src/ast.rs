@@ -1,7 +1,4 @@
-use std::{
-    mem::{replace, swap},
-    sync::Arc,
-};
+use std::{mem::replace, sync::Arc};
 
 use anyhow::{bail, Context};
 
@@ -32,17 +29,12 @@ pub struct TernaryArgs {
 
 #[derive(Debug)]
 pub struct JumpArgs {
-    pub target: ProcedureHeader,
+    pub src: Value,
 }
 
 #[derive(Debug)]
 pub struct Value {
     pub str: Arc<str>,
-}
-
-#[derive(Debug)]
-pub struct ProcedureHeader {
-    pub name: Arc<str>,
 }
 
 #[derive(Debug)]
@@ -60,15 +52,6 @@ pub enum ProcedureKind {
 fn parse_value<'a>(tokens: &mut impl Iterator<Item = &'a token::Token>) -> anyhow::Result<Value> {
     let Some(token::Token::Value(value)) = tokens.next() else { bail!("Expected value") };
     Ok(Value { str: Arc::clone(value) })
-}
-
-fn parse_header<'a>(
-    tokens: &mut impl Iterator<Item = &'a token::Token>,
-) -> anyhow::Result<ProcedureHeader> {
-    let Some(token::Token::ProcHeader(value)) = tokens.next() else {
-        bail!("Expected proc header")
-    };
-    Ok(ProcedureHeader { name: Arc::clone(value) })
 }
 
 fn parse_binary_args<'a>(
@@ -91,8 +74,8 @@ fn parse_ternary_args<'a>(
 fn parse_jump_args<'a>(
     tokens: &mut impl Iterator<Item = &'a token::Token>,
 ) -> anyhow::Result<JumpArgs> {
-    let target = parse_header(tokens).with_context(|| "For arg [target]")?;
-    Ok(JumpArgs { target })
+    let target = parse_value(tokens).with_context(|| "For arg [target]")?;
+    Ok(JumpArgs { src: target })
 }
 
 pub fn parse<'a>(
@@ -130,9 +113,13 @@ pub fn parse<'a>(
                 tokens.next();
                 None
             },
-            token::Token::ProcHeader(_) => {
-                let Some(token::Token::ProcHeader(name)) = tokens.next() else {
+            token::Token::ProcHeader => {
+                let Some(token::Token::ProcHeader) = tokens.next() else {
                     bail!("Expected proc header")
+                };
+
+                let Some(token::Token::Value(name)) = tokens.next() else {
+                    bail!("Expected value [proc name]");
                 };
 
                 let parsed_proc = replace(

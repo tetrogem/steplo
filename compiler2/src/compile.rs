@@ -207,17 +207,16 @@ fn compile_proc<'a>(
                     },
                 )))),
             }),
-            ast::Command::Jump(args) => {
-                let target_name = &args.target.name;
-                let Some(target_broadcast) = sub_proc_name_to_broadcast.get(target_name) else {
-                    bail!("couldn't find procedure named {}", target_name);
-                };
-
-                ez::Op::Event(ez::EventOp::BroadcastAndWait {
-                    // get from hashmap of names to broadcasts
-                    input: Arc::new(ez::Expr::Broadcast(Arc::clone(target_broadcast))),
-                })
-            },
+            ast::Command::Jump(args) => ez::Op::Event(ez::EventOp::BroadcastAndWait {
+                input: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Data(
+                    ez::DataOp::ItemOfList {
+                        list: Arc::clone(stack_list),
+                        index: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
+                            Arc::clone(&args.src.str),
+                        )))),
+                    },
+                )))),
+            }),
         };
 
         ez_compiled_ops.push(Arc::new(ez_op));

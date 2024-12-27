@@ -1,5 +1,6 @@
 lit "1" "hello"
-jmp #second
+lit "3" "second"
+jmp "3"
 
-#second
+# "second"
 lit "2" "world"

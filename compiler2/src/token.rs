@@ -7,7 +7,7 @@ pub enum Token {
     Op(Op),
     Value(Arc<str>),
     Comment(Arc<str>),
-    ProcHeader(Arc<str>),
+    ProcHeader,
     Eol,
 }
 
@@ -85,15 +85,7 @@ pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
                 },
                 '#' => {
                     let Some('#') = chars.next() else { bail!("Expected hashtag") };
-                    let mut name = String::new();
-                    for c in chars.by_ref() {
-                        if c.is_whitespace() {
-                            break;
-                        }
-
-                        name.push(c);
-                    }
-                    Some(Token::ProcHeader(name.into()))
+                    Some(Token::ProcHeader)
                 },
                 _ => bail!("Unexpected character: {next}"),
             };
