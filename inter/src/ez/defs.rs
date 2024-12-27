@@ -18,7 +18,7 @@ pub struct Monitor {
 pub struct Stage {
     pub lists: Arc<Vec<Arc<List>>>,
     pub broadcasts: Arc<Vec<Arc<Broadcast>>>,
-    pub stack: Arc<Stack>,
+    pub stacks: Arc<Vec<Arc<Stack>>>,
 }
 
 #[derive(Debug)]

@@ -27,14 +27,17 @@ impl Monitor {
 
 impl Stage {
     pub fn compile(&self) -> ir::Stage {
-        let stack_compiled = self.stack.compile();
+        let ir_blocks =
+            self.stacks.iter().flat_map(|stack| stack.compile().ir_all_blocks).collect_vec();
+
+        println!("{:?}", ir_blocks);
 
         ir::Stage {
             lists: Arc::new(self.lists.iter().map(|x| Arc::new(x.compile())).collect_vec()),
             broadcasts: Arc::new(
                 self.broadcasts.iter().map(|x| Arc::new(x.compile())).collect_vec(),
             ),
-            blocks: Arc::new(stack_compiled.ir_all_blocks),
+            blocks: Arc::new(ir_blocks),
         }
     }
 }

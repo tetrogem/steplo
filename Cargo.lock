@@ -127,6 +127,7 @@ dependencies = [
  "anyhow",
  "fs_extra",
  "inter",
+ "itertools",
  "uuid",
  "zip",
  "zip-extensions",

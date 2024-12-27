@@ -1,0 +1,9 @@
+global $sp $1 $2 $3 $4
+
+lit $sp "5"
+lit $1 "0"
+lit $2 "0"
+lit $3 "0"
+lit $4 "0"
+
+push

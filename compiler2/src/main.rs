@@ -15,6 +15,7 @@ use std::{
 use anyhow::bail;
 use ast::parse;
 use compile::compile;
+use itertools::Itertools;
 use token::tokenize;
 use zip::ZipWriter;
 use zip_extensions::ZipWriterExtensions;
@@ -39,8 +40,11 @@ fn main() -> anyhow::Result<()> {
     };
 
     let tokens = time("Tokenizing...", || tokenize(input))?;
+    dbg!(&tokens);
     let ast = time("Parsing...", || parse(tokens.iter().map(AsRef::as_ref)))?;
-    let ez = time("Transpiling to EZ...", || compile(ast.iter().map(AsRef::as_ref)));
+    dbg!(&ast);
+    let ez =
+        time("Transpiling to EZ...", || compile(&ast.iter().map(AsRef::as_ref).collect_vec()))?;
     let ir = time("Transpiling to IR...", || ez.compile());
     let js_val = time("Compiling to JSON...", || ir.compile());
     let json = time("Serializing...", || format!("{:#}", js_val));

@@ -1,0 +1,5 @@
+lit "1" "hello"
+jmp #second
+
+#second
+lit "2" "world"

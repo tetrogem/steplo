@@ -7,6 +7,7 @@ pub enum Token {
     Op(Op),
     Value(Arc<str>),
     Comment(Arc<str>),
+    ProcHeader(Arc<str>),
     Eol,
 }
 
@@ -17,6 +18,7 @@ pub enum Op {
     Sub,
     Load,
     Store,
+    Jump,
 }
 
 pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
@@ -47,6 +49,7 @@ pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
                         "sub" => Op::Sub,
                         "load" => Op::Load,
                         "store" => Op::Store,
+                        "jmp" => Op::Jump,
                         _ => bail!("Invalid operator: {}", word),
                     };
 
@@ -79,6 +82,18 @@ pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
                         comment.push(c);
                     }
                     Some(Token::Comment(comment.into()))
+                },
+                '#' => {
+                    let Some('#') = chars.next() else { bail!("Expected hashtag") };
+                    let mut name = String::new();
+                    for c in chars.by_ref() {
+                        if c.is_whitespace() {
+                            break;
+                        }
+
+                        name.push(c);
+                    }
+                    Some(Token::ProcHeader(name.into()))
                 },
                 _ => bail!("Unexpected character: {next}"),
             };

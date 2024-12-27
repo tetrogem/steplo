@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    mem::{replace, swap},
+    sync::Arc,
+};
 
 use anyhow::{bail, Context};
 
@@ -11,6 +14,7 @@ pub enum Command {
     Store(BinaryArgs),
     Add(TernaryArgs),
     Sub(TernaryArgs),
+    Jump(JumpArgs),
 }
 
 #[derive(Debug)]
@@ -27,13 +31,44 @@ pub struct TernaryArgs {
 }
 
 #[derive(Debug)]
+pub struct JumpArgs {
+    pub target: ProcedureHeader,
+}
+
+#[derive(Debug)]
 pub struct Value {
     pub str: Arc<str>,
+}
+
+#[derive(Debug)]
+pub struct ProcedureHeader {
+    pub name: Arc<str>,
+}
+
+#[derive(Debug)]
+pub struct Procedure {
+    pub kind: ProcedureKind,
+    pub commands: Vec<Arc<Command>>,
+}
+
+#[derive(Debug)]
+pub enum ProcedureKind {
+    Main,
+    Sub { name: Arc<str> },
 }
 
 fn parse_value<'a>(tokens: &mut impl Iterator<Item = &'a token::Token>) -> anyhow::Result<Value> {
     let Some(token::Token::Value(value)) = tokens.next() else { bail!("Expected value") };
     Ok(Value { str: Arc::clone(value) })
+}
+
+fn parse_header<'a>(
+    tokens: &mut impl Iterator<Item = &'a token::Token>,
+) -> anyhow::Result<ProcedureHeader> {
+    let Some(token::Token::ProcHeader(value)) = tokens.next() else {
+        bail!("Expected proc header")
+    };
+    Ok(ProcedureHeader { name: Arc::clone(value) })
 }
 
 fn parse_binary_args<'a>(
@@ -53,10 +88,19 @@ fn parse_ternary_args<'a>(
     Ok(TernaryArgs { dest, left, right })
 }
 
+fn parse_jump_args<'a>(
+    tokens: &mut impl Iterator<Item = &'a token::Token>,
+) -> anyhow::Result<JumpArgs> {
+    let target = parse_header(tokens).with_context(|| "For arg [target]")?;
+    Ok(JumpArgs { target })
+}
+
 pub fn parse<'a>(
     tokens: impl Iterator<Item = &'a token::Token>,
-) -> anyhow::Result<Vec<Arc<Command>>> {
-    let mut commands = Vec::<Arc<Command>>::new();
+) -> anyhow::Result<Vec<Arc<Procedure>>> {
+    let mut parsed_procs = Vec::new();
+
+    let mut proc = Procedure { kind: ProcedureKind::Main, commands: Vec::new() };
 
     let mut tokens = tokens.into_iter().peekable();
     while let Some(next) = tokens.peek() {
@@ -70,6 +114,7 @@ pub fn parse<'a>(
                     token::Op::Store => Command::Store(parse_binary_args(&mut tokens)?),
                     token::Op::Add => Command::Add(parse_ternary_args(&mut tokens)?),
                     token::Op::Sub => Command::Sub(parse_ternary_args(&mut tokens)?),
+                    token::Op::Jump => Command::Jump(parse_jump_args(&mut tokens)?),
                 };
 
                 Some(command)
@@ -85,12 +130,31 @@ pub fn parse<'a>(
                 tokens.next();
                 None
             },
+            token::Token::ProcHeader(_) => {
+                let Some(token::Token::ProcHeader(name)) = tokens.next() else {
+                    bail!("Expected proc header")
+                };
+
+                let parsed_proc = replace(
+                    &mut proc,
+                    Procedure {
+                        kind: ProcedureKind::Sub { name: Arc::clone(name) },
+                        commands: Vec::new(),
+                    },
+                );
+
+                parsed_procs.push(Arc::new(parsed_proc));
+                None
+            },
         };
 
         if let Some(command) = command {
-            commands.push(Arc::new(command));
+            proc.commands.push(Arc::new(command));
         }
     }
 
-    Ok(commands)
+    // push final proc
+    parsed_procs.push(Arc::new(proc));
+
+    Ok(parsed_procs)
 }
