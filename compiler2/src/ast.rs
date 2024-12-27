@@ -7,11 +7,13 @@ use crate::token;
 #[derive(Debug)]
 pub enum Command {
     Set(BinaryArgs),
-    Load(BinaryArgs),
-    Store(BinaryArgs),
+    Move(BinaryArgs),
+    MoveDerefDest(BinaryArgs),
+    MoveDerefSrc(BinaryArgs),
     Add(TernaryArgs),
     Sub(TernaryArgs),
     Jump(JumpArgs),
+    BranchEq(BranchArgs),
 }
 
 #[derive(Debug)]
@@ -30,6 +32,13 @@ pub struct TernaryArgs {
 #[derive(Debug)]
 pub struct JumpArgs {
     pub src: Value,
+}
+
+#[derive(Debug)]
+pub struct BranchArgs {
+    pub src: Value,
+    pub left: Value,
+    pub right: Value,
 }
 
 #[derive(Debug)]
@@ -74,8 +83,17 @@ fn parse_ternary_args<'a>(
 fn parse_jump_args<'a>(
     tokens: &mut impl Iterator<Item = &'a token::Token>,
 ) -> anyhow::Result<JumpArgs> {
-    let target = parse_value(tokens).with_context(|| "For arg [target]")?;
-    Ok(JumpArgs { src: target })
+    let src = parse_value(tokens).with_context(|| "For arg [src]")?;
+    Ok(JumpArgs { src })
+}
+
+fn parse_branch_args<'a>(
+    tokens: &mut impl Iterator<Item = &'a token::Token>,
+) -> anyhow::Result<BranchArgs> {
+    let src = parse_value(tokens).with_context(|| "For arg [src]")?;
+    let left = parse_value(tokens).with_context(|| "For arg [left]")?;
+    let right = parse_value(tokens).with_context(|| "For arg [right]")?;
+    Ok(BranchArgs { src, left, right })
 }
 
 pub fn parse<'a>(
@@ -93,11 +111,17 @@ pub fn parse<'a>(
 
                 let command = match op_token {
                     token::Op::Lit => Command::Set(parse_binary_args(&mut tokens)?),
-                    token::Op::Load => Command::Load(parse_binary_args(&mut tokens)?),
-                    token::Op::Store => Command::Store(parse_binary_args(&mut tokens)?),
+                    token::Op::Move => Command::Move(parse_binary_args(&mut tokens)?),
+                    token::Op::MoveDerefDest => {
+                        Command::MoveDerefDest(parse_binary_args(&mut tokens)?)
+                    },
+                    token::Op::MoveDerefSrc => {
+                        Command::MoveDerefSrc(parse_binary_args(&mut tokens)?)
+                    },
                     token::Op::Add => Command::Add(parse_ternary_args(&mut tokens)?),
                     token::Op::Sub => Command::Sub(parse_ternary_args(&mut tokens)?),
                     token::Op::Jump => Command::Jump(parse_jump_args(&mut tokens)?),
+                    token::Op::BranchEq => Command::BranchEq(parse_branch_args(&mut tokens)?),
                 };
 
                 Some(command)

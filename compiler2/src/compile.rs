@@ -121,24 +121,19 @@ fn compile_proc<'a>(
                     &args.val.str,
                 ))))),
             }),
-            ast::Command::Load(args) => ez::Op::Data(ez::DataOp::ReplaceItemOfList {
+            ast::Command::Move(args) => ez::Op::Data(ez::DataOp::ReplaceItemOfList {
                 list: Arc::clone(stack_list),
                 index: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(Arc::clone(
                     &args.dest.str,
                 ))))),
                 item: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::ItemOfList {
                     list: Arc::clone(stack_list),
-                    index: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Data(
-                        ez::DataOp::ItemOfList {
-                            list: Arc::clone(stack_list),
-                            index: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
-                                Arc::clone(&args.val.str),
-                            )))),
-                        },
-                    )))),
+                    index: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(Arc::clone(
+                        &args.val.str,
+                    ))))),
                 })))),
             }),
-            ast::Command::Store(args) => ez::Op::Data(ez::DataOp::ReplaceItemOfList {
+            ast::Command::MoveDerefDest(args) => ez::Op::Data(ez::DataOp::ReplaceItemOfList {
                 list: Arc::clone(stack_list),
                 index: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Data(
                     ez::DataOp::ItemOfList {
@@ -153,6 +148,23 @@ fn compile_proc<'a>(
                     index: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(Arc::clone(
                         &args.val.str,
                     ))))),
+                })))),
+            }),
+            ast::Command::MoveDerefSrc(args) => ez::Op::Data(ez::DataOp::ReplaceItemOfList {
+                list: Arc::clone(stack_list),
+                index: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(Arc::clone(
+                    &args.dest.str,
+                ))))),
+                item: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::ItemOfList {
+                    list: Arc::clone(stack_list),
+                    index: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Data(
+                        ez::DataOp::ItemOfList {
+                            list: Arc::clone(stack_list),
+                            index: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
+                                Arc::clone(&args.val.str),
+                            )))),
+                        },
+                    )))),
                 })))),
             }),
             ast::Command::Add(args) => ez::Op::Data(ez::DataOp::ReplaceItemOfList {
@@ -217,6 +229,48 @@ fn compile_proc<'a>(
                     },
                 )))),
             }),
+            ast::Command::BranchEq(args) => {
+                let broadcast_op = Arc::new(ez::Op::Event(ez::EventOp::BroadcastAndWait {
+                    input: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Data(
+                        ez::DataOp::ItemOfList {
+                            list: Arc::clone(stack_list),
+                            index: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
+                                Arc::clone(&args.src.str),
+                            )))),
+                        },
+                    )))),
+                }));
+
+                let left_op =
+                    Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::ItemOfList {
+                        list: Arc::clone(stack_list),
+                        index: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
+                            Arc::clone(&args.left.str),
+                        )))),
+                    }))));
+
+                let right_op =
+                    Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::ItemOfList {
+                        list: Arc::clone(stack_list),
+                        index: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
+                            Arc::clone(&args.right.str),
+                        )))),
+                    }))));
+
+                let condition_expr =
+                    ez::Expr::derived(&Arc::new(ez::Op::Operator(ez::OperatorOp::Equals {
+                        operand_a: left_op,
+                        operand_b: right_op,
+                    })));
+
+                ez::Op::Control(ez::ControlOp::If {
+                    condition: condition_expr,
+                    then_substack: Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                        root: broadcast_op,
+                        rest: Default::default(),
+                    }))),
+                })
+            },
         };
 
         ez_compiled_ops.push(Arc::new(ez_op));

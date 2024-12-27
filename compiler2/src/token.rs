@@ -16,9 +16,11 @@ pub enum Op {
     Lit,
     Add,
     Sub,
-    Load,
-    Store,
+    Move,
+    MoveDerefDest,
+    MoveDerefSrc,
     Jump,
+    BranchEq,
 }
 
 pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
@@ -47,9 +49,11 @@ pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
                         "lit" => Op::Lit,
                         "add" => Op::Add,
                         "sub" => Op::Sub,
-                        "load" => Op::Load,
-                        "store" => Op::Store,
+                        "mv" => Op::Move,
+                        "mvdd" => Op::MoveDerefDest,
+                        "mvds" => Op::MoveDerefSrc,
                         "jmp" => Op::Jump,
+                        "beq" => Op::BranchEq,
                         _ => bail!("Invalid operator: {}", word),
                     };
 

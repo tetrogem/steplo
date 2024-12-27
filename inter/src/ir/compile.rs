@@ -252,6 +252,14 @@ impl Op {
                     inputs: obj([("FROM", compile(from)), ("TO", compile(to))]),
                     fields: JsMap::new(),
                 },
+                OperatorOp::Equals { operand_a, operand_b } => ExprMetadata {
+                    opcode: "operator_equals",
+                    inputs: obj([
+                        ("OPERAND1", compile(operand_a)),
+                        ("OPERAND2", compile(operand_b)),
+                    ]),
+                    fields: JsMap::new(),
+                },
             },
         }
     }

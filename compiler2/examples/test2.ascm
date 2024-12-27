@@ -1,6 +1,10 @@
 lit "1" "hello"
+lit "2" "hello"
 lit "3" "second"
-jmp "3"
+beq "3" "1" "2"
 
 # "second"
 lit "2" "world"
+
+# "other"
+lit "2" "everyone"

@@ -90,6 +90,7 @@ pub enum OperatorOp {
     Divide { num_a: Arc<Expr>, num_b: Arc<Expr> },
     Join { string_a: Arc<Expr>, string_b: Arc<Expr> },
     Random { from: Arc<Expr>, to: Arc<Expr> },
+    Equals { operand_a: Arc<Expr>, operand_b: Arc<Expr> },
 }
 
 #[derive(Debug)]

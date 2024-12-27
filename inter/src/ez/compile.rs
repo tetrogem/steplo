@@ -30,8 +30,6 @@ impl Stage {
         let ir_blocks =
             self.stacks.iter().flat_map(|stack| stack.compile().ir_all_blocks).collect_vec();
 
-        println!("{:?}", ir_blocks);
-
         ir::Stage {
             lists: Arc::new(self.lists.iter().map(|x| Arc::new(x.compile())).collect_vec()),
             broadcasts: Arc::new(
@@ -176,6 +174,10 @@ impl Op {
                     },
                     OperatorOp::Subtract { num_a, num_b } => {
                         ir::OperatorOp::Subtract { num_a: compile(num_a), num_b: compile(num_b) }
+                    },
+                    OperatorOp::Equals { operand_a, operand_b } => ir::OperatorOp::Equals {
+                        operand_a: compile(operand_a),
+                        operand_b: compile(operand_b),
                     },
                 };
 

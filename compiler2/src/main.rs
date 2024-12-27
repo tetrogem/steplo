@@ -40,9 +40,7 @@ fn main() -> anyhow::Result<()> {
     };
 
     let tokens = time("Tokenizing...", || tokenize(input))?;
-    dbg!(&tokens);
     let ast = time("Parsing...", || parse(tokens.iter().map(AsRef::as_ref)))?;
-    dbg!(&ast);
     let ez =
         time("Transpiling to EZ...", || compile(&ast.iter().map(AsRef::as_ref).collect_vec()))?;
     let ir = time("Transpiling to IR...", || ez.compile());
