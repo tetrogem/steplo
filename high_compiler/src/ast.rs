@@ -37,6 +37,7 @@ pub enum Statement {
 #[derive(Debug, Clone)]
 pub enum Command {
     Literal(Arc<str>),
+    Add { left: Arc<str>, right: Arc<str> },
 }
 
 pub fn parse(tokens: Vec<Token>) -> anyhow::Result<Vec<Arc<Item>>> {
@@ -108,6 +109,11 @@ fn parse_statement(
         Comword::Literal => {
             let Some(Token::Literal(value)) = tokens.next() else { bail!("Expected literal") };
             Command::Literal(value.into())
+        },
+        Comword::Add => {
+            let Some(Token::Name(left)) = tokens.next() else { bail!("Expected var") };
+            let Some(Token::Name(right)) = tokens.next() else { bail!("Expected var") };
+            Command::Add { left: left.into(), right: right.into() }
         },
         _ => todo!(),
     };

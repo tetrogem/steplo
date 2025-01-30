@@ -1,0 +1,7 @@
+main |a, b, c, sum1, sum2| {
+    a = lit "10";
+    b = lit "15";
+    c = lit "50";
+    sum1 = add a b;
+    sum2 = add b c;
+}

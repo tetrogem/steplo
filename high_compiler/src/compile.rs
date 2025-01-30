@@ -10,6 +10,8 @@ pub fn compile(ast: Vec<Arc<Item>>) -> anyhow::Result<Vec<Arc<asm_ast::Procedure
     const STACK_POINTER_ADDR: &str = "1";
     const TEMP_RESULT_ADDR: &str = "2";
     const TEMP_OPERAND_ADDR: &str = "3";
+    const TEMP_LEFT_ADDR: &str = "4";
+    const TEMP_RIGHT_ADDR: &str = "5";
 
     let asm_main_setup = asm_ast::Procedure {
         kind: asm_ast::ProcedureKind::Main,
@@ -17,17 +19,7 @@ pub fn compile(ast: Vec<Arc<Item>>) -> anyhow::Result<Vec<Arc<asm_ast::Procedure
             // init stack pointer
             Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
                 dest: asm_ast::Value { str: STACK_POINTER_ADDR.into() }, // stored in mem addr 1
-                val: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() }, // points to last addr in stack (2)
-            })),
-            // init temp result
-            Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
-                dest: asm_ast::Value { str: TEMP_RESULT_ADDR.into() }, // stored in mem addr 2
-                val: asm_ast::Value { str: "".into() },                // empty by default
-            })),
-            // init temp operand
-            Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
-                dest: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() }, // stored in mem addr 3
-                val: asm_ast::Value { str: "".into() },                 // empty by default
+                val: asm_ast::Value { str: TEMP_RIGHT_ADDR.into() }, // points to last addr in stack (2)
             })),
             // run high-level main method
             Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
@@ -82,6 +74,7 @@ pub fn compile(ast: Vec<Arc<Item>>) -> anyhow::Result<Vec<Arc<asm_ast::Procedure
 
                     match command.as_ref() {
                         Command::Literal(literal) => Vec::from([
+                            // store addr for var in temp_result
                             Arc::new(asm_ast::Command::Move(asm_ast::BinaryArgs {
                                 dest: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
                                 val: asm_ast::Value { str: STACK_POINTER_ADDR.into() },
@@ -95,6 +88,7 @@ pub fn compile(ast: Vec<Arc<Item>>) -> anyhow::Result<Vec<Arc<asm_ast::Procedure
                                 left: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
                                 right: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
                             })),
+                            // set var to literal stored in temp_operand
                             Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
                                 dest: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
                                 val: asm_ast::Value { str: literal.clone() },
@@ -104,6 +98,80 @@ pub fn compile(ast: Vec<Arc<Item>>) -> anyhow::Result<Vec<Arc<asm_ast::Procedure
                                 val: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
                             })),
                         ]),
+                        Command::Add { left, right } => {
+                            let Some(left_offset) = var_to_offset.get(left) else {
+                                bail!("Failed to find left offset")
+                            };
+
+                            let Some(right_offset) = var_to_offset.get(right) else {
+                                bail!("Failed to find right offset")
+                            };
+
+                            Vec::from([
+                                // store addr for left in temp_result
+                                Arc::new(asm_ast::Command::Move(asm_ast::BinaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                    val: asm_ast::Value { str: STACK_POINTER_ADDR.into() },
+                                })),
+                                Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                                    val: asm_ast::Value { str: left_offset.to_string().into() },
+                                })),
+                                Arc::new(asm_ast::Command::Sub(asm_ast::TernaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                    left: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                    right: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                                })),
+                                // store left value in temp_left
+                                Arc::new(asm_ast::Command::MoveDerefSrc(asm_ast::BinaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_LEFT_ADDR.into() },
+                                    val: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                })),
+                                // store addr for right in temp_result
+                                Arc::new(asm_ast::Command::Move(asm_ast::BinaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                    val: asm_ast::Value { str: STACK_POINTER_ADDR.into() },
+                                })),
+                                Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                                    val: asm_ast::Value { str: right_offset.to_string().into() },
+                                })),
+                                Arc::new(asm_ast::Command::Sub(asm_ast::TernaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                    left: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                    right: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                                })),
+                                // store right value in temp_left
+                                Arc::new(asm_ast::Command::MoveDerefSrc(asm_ast::BinaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_RIGHT_ADDR.into() },
+                                    val: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                })),
+                                // store addr for var in temp_result
+                                Arc::new(asm_ast::Command::Move(asm_ast::BinaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                    val: asm_ast::Value { str: STACK_POINTER_ADDR.into() },
+                                })),
+                                Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                                    val: asm_ast::Value { str: var_offset.to_string().into() },
+                                })),
+                                Arc::new(asm_ast::Command::Sub(asm_ast::TernaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                    left: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                    right: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                                })),
+                                // set var to sum of temp_left and temp_right
+                                Arc::new(asm_ast::Command::Add(asm_ast::TernaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                                    left: asm_ast::Value { str: TEMP_LEFT_ADDR.into() },
+                                    right: asm_ast::Value { str: TEMP_RIGHT_ADDR.into() },
+                                })),
+                                Arc::new(asm_ast::Command::MoveDerefDest(asm_ast::BinaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                    val: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                                })),
+                            ])
+                        },
                     }
                 },
                 Statement::Call { func_item, cond_var } => todo!(),

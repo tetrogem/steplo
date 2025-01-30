@@ -24,6 +24,7 @@ pub enum Comword {
     Literal,
     Eq,
     Ref,
+    Add,
 }
 
 impl FromStr for Comword {
@@ -34,6 +35,7 @@ impl FromStr for Comword {
             "lit" => Self::Literal,
             "eq" => Self::Eq,
             "ref" => Self::Ref,
+            "add" => Self::Add,
             _ => return Err(()),
         };
 
