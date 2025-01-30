@@ -44,7 +44,7 @@ pub fn compile(ast: Vec<Arc<Item>>) -> anyhow::Result<Vec<Arc<asm_ast::Procedure
         let mut var_to_offset = HashMap::<Arc<str>, usize>::new();
 
         // init stack vars
-        for (offset, var) in proc.vars.iter().enumerate() {
+        for (offset, var) in proc.vars.iter().rev().enumerate() {
             var_to_offset.insert(var.clone(), offset);
         }
 
