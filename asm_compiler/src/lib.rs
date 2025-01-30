@@ -1,3 +1,3 @@
 pub mod ast;
-mod compile;
-mod token;
+pub mod compile;
+pub mod token;

@@ -12,20 +12,20 @@ pub enum Item {
 
 #[derive(Debug, Clone)]
 pub struct Main {
-    proc: Arc<Proc>,
+    pub proc: Arc<Proc>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Func {
-    name: Arc<str>,
-    params: Arc<Vec<Arc<str>>>,
-    proc: Arc<Proc>,
+    pub name: Arc<str>,
+    pub params: Arc<Vec<Arc<str>>>,
+    pub proc: Arc<Proc>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Proc {
-    vars: Arc<Vec<Arc<str>>>,
-    statements: Arc<Vec<Arc<Statement>>>,
+    pub vars: Arc<Vec<Arc<str>>>,
+    pub statements: Arc<Vec<Arc<Statement>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -39,7 +39,7 @@ pub enum Command {
     Literal(Arc<str>),
 }
 
-pub fn parse(tokens: Vec<Token>) -> anyhow::Result<Vec<Item>> {
+pub fn parse(tokens: Vec<Token>) -> anyhow::Result<Vec<Arc<Item>>> {
     let mut tokens = tokens.into_iter().peekable();
     let mut items = Vec::new();
 
@@ -50,7 +50,7 @@ pub fn parse(tokens: Vec<Token>) -> anyhow::Result<Vec<Item>> {
             _ => bail!("Expected main or func"),
         };
 
-        items.push(item);
+        items.push(Arc::new(item));
     }
 
     Ok(items)

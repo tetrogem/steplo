@@ -7,3 +7,6 @@ edition = "2021"
 crate-type = ["lib"]
 
 [dependencies]
+fs_extra = "1.3.0"
+zip = "2.2.2"
+zip-extensions = "0.8.1"

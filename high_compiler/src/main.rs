@@ -1,14 +1,17 @@
 use std::{env, fs::File, io::Read, path::Path};
 
+use anyhow::anyhow;
 use ast::parse;
-use shared::time;
+use compile::compile;
+use itertools::Itertools;
+use shared::{time, write_json};
 use token::tokenize;
 
 mod ast;
 mod compile;
 mod token;
 
-fn main() -> Result<(), ()> {
+fn main() -> anyhow::Result<()> {
     let mut args = env::args();
     let Some(_current_path) = args.next() else { panic!("Cannot get current dir") };
     let Some(in_path) = args.next() else { panic!("No input file given") };
@@ -27,10 +30,21 @@ fn main() -> Result<(), ()> {
         buf
     };
 
-    let tokens = time("Tokenizing...", || tokenize(&input))?;
-    dbg!(&tokens);
-    let ast = time("Parsing...", || parse(tokens));
-    dbg!(&ast);
+    let tokens =
+        time("Tokenizing...", || tokenize(&input)).map_err(|_| anyhow!("Failed to tokenize"))?;
+    // dbg!(&tokens);
+    let ast = time("Parsing...", || parse(tokens))?;
+    // dbg!(&ast);
+    let asm = time("Compiling high-level to asm...", || compile(ast))?;
+    // dbg!(&compiled);
+    let ez = time("Transpiling to EZ...", || {
+        asm_compiler::compile::compile(&asm.iter().map(AsRef::as_ref).collect_vec())
+    })?;
+    let ir = time("Transpiling to IR...", || ez.compile());
+    let js_val = time("Compiling to JSON...", || ir.compile());
+    let json = time("Serializing...", || format!("{:#}", js_val));
+
+    time("Exporting...", || write_json(&json, in_path, &out_path));
 
     Ok(())
 }

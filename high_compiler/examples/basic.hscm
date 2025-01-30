@@ -1,3 +1,6 @@
-main |str| {
-    str = lit "Hello!";
+main |a, b, c, d| {
+    c = lit "This";
+    a = lit "Hello";
+    d = lit "works!";
+    b = lit "world!";
 }
