@@ -1,0 +1,9 @@
+[package]
+name = "high_compiler"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.95"
+shared = { path = "../shared" }
+asm_compiler = { path = "../asm_compiler" }

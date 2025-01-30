@@ -1,0 +1,3 @@
+main |str| {
+    str = lit "Hello!";
+}

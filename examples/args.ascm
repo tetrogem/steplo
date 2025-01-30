@@ -1,7 +1,0 @@
-MAIN
-CALL @wrapped_out "Hello world!"
-
-FN @wrapped_out $msg
-OUT "====="
-OUT *$msg
-OUT "====="

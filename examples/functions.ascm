@@ -1,7 +1,0 @@
-MAIN
-CALL @function
-OUT "World!"
-
-FN @function $a
-COPY "Hello" $a
-OUT *$a
