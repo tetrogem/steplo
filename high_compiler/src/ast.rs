@@ -38,6 +38,7 @@ pub enum Statement {
 pub enum Command {
     Literal(Arc<str>),
     Add { left: Arc<str>, right: Arc<str> },
+    Ref { var: Arc<str> },
 }
 
 pub fn parse(tokens: Vec<Token>) -> anyhow::Result<Vec<Arc<Item>>> {
@@ -165,7 +166,18 @@ fn parse_assign(
     var: Arc<str>,
 ) -> anyhow::Result<Statement> {
     let Some(Token::Eq) = tokens.next() else { bail!("Expected =") };
-    let Some(Token::Comword(comword)) = tokens.next() else { bail!("Expected comword") };
+
+    let comword = match tokens.peek() {
+        Some(Token::Comword(_)) => {
+            let Some(Token::Comword(comword)) = tokens.next() else { bail!("Expected comword") };
+            comword
+        },
+        Some(Token::Ref) => {
+            let Some(Token::Ref) = tokens.next() else { bail!("Expected comword ref") };
+            Comword::Ref
+        },
+        _ => bail!("Expected comword"),
+    };
 
     let command = match comword {
         Comword::Literal => {
@@ -176,6 +188,10 @@ fn parse_assign(
             let Some(Token::Name(left)) = tokens.next() else { bail!("Expected var") };
             let Some(Token::Name(right)) = tokens.next() else { bail!("Expected var") };
             Command::Add { left: left.into(), right: right.into() }
+        },
+        Comword::Ref => {
+            let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var") };
+            Command::Ref { var: var.into() }
         },
         _ => todo!(),
     };

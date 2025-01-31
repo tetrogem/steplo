@@ -1,0 +1,8 @@
+main |a, a_ref| {
+    a_ref = ref a;
+    ret(a_ref);
+}
+
+func ret(ret_ref) || {
+    ref ret_ref = lit "Returned!";
+}

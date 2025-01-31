@@ -1,5 +1,7 @@
 use std::{iter::Peekable, str::FromStr};
 
+use anyhow::bail;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     Name(String),
@@ -23,8 +25,8 @@ pub enum Token {
 pub enum Comword {
     Literal,
     Eq,
-    Ref,
     Add,
+    Ref,
 }
 
 impl FromStr for Comword {
@@ -34,8 +36,8 @@ impl FromStr for Comword {
         let comword = match s {
             "lit" => Self::Literal,
             "eq" => Self::Eq,
-            "ref" => Self::Ref,
             "add" => Self::Add,
+            "ref" => Self::Add,
             _ => return Err(()),
         };
 
@@ -48,8 +50,8 @@ fn consume_char(chars: &mut impl Iterator<Item = char>, token: Option<Token>) ->
     token
 }
 
-fn consume_literal(chars: &mut impl Iterator<Item = char>) -> Result<Token, ()> {
-    let Some('"') = chars.next() else { return Err(()) };
+fn consume_literal(chars: &mut impl Iterator<Item = char>) -> anyhow::Result<Token> {
+    let Some('"') = chars.next() else { bail!("Expected literal opening quote") };
 
     let mut value = String::new();
     let mut closed = false;
@@ -63,16 +65,16 @@ fn consume_literal(chars: &mut impl Iterator<Item = char>) -> Result<Token, ()> 
     }
 
     if !closed {
-        return Err(());
+        bail!("Expected literal closing quote");
     }
 
     Ok(Token::Literal(value))
 }
 
-fn consume_word(chars: &mut Peekable<impl Iterator<Item = char>>) -> Result<Token, ()> {
+fn consume_word(chars: &mut Peekable<impl Iterator<Item = char>>) -> anyhow::Result<Token> {
     let mut word = String::new();
     while let Some(&c) = chars.peek() {
-        if c.is_ascii_alphanumeric() {
+        if c.is_ascii_alphanumeric() || c == '_' {
             word.push(c);
             chars.next();
         } else {
@@ -89,7 +91,7 @@ fn consume_word(chars: &mut Peekable<impl Iterator<Item = char>>) -> Result<Toke
             Ok(comword) => Token::Comword(comword),
             Err(()) => {
                 if word.is_empty() {
-                    return Err(());
+                    bail!("Word is empty");
                 }
 
                 Token::Name(word)
@@ -100,7 +102,7 @@ fn consume_word(chars: &mut Peekable<impl Iterator<Item = char>>) -> Result<Toke
     Ok(token)
 }
 
-pub fn tokenize(code: &str) -> Result<Vec<Token>, ()> {
+pub fn tokenize(code: &str) -> anyhow::Result<Vec<Token>> {
     let mut chars = code.chars().peekable();
     let mut tokens = Vec::new();
 
@@ -120,6 +122,7 @@ pub fn tokenize(code: &str) -> Result<Vec<Token>, ()> {
         };
 
         if let Some(token) = token {
+            dbg!(&token);
             tokens.push(token);
         }
     }

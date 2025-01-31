@@ -30,8 +30,7 @@ fn main() -> anyhow::Result<()> {
         buf
     };
 
-    let tokens =
-        time("Tokenizing...", || tokenize(&input)).map_err(|_| anyhow!("Failed to tokenize"))?;
+    let tokens = time("Tokenizing...", || tokenize(&input))?;
     // dbg!(&tokens);
     let ast = time("Parsing...", || parse(tokens))?;
     dbg!(&ast);
