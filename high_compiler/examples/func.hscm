@@ -1,0 +1,8 @@
+main |msg| {
+    world();
+    msg = lit "Hello";
+}
+
+func world() |msg| {
+    msg = lit "world!";
+}

@@ -1,0 +1,9 @@
+main |a, b| {
+    a = lit "3";
+    b = lit "5";
+    sum(a, b);
+}
+
+func sum(c, d) |sum| {
+    sum = add c d;
+}

@@ -34,7 +34,7 @@ fn main() -> anyhow::Result<()> {
         time("Tokenizing...", || tokenize(&input)).map_err(|_| anyhow!("Failed to tokenize"))?;
     // dbg!(&tokens);
     let ast = time("Parsing...", || parse(tokens))?;
-    // dbg!(&ast);
+    dbg!(&ast);
     let asm = time("Compiling high-level to asm...", || compile(ast))?;
     // dbg!(&compiled);
     let ez = time("Transpiling to EZ...", || {

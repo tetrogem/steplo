@@ -1,5 +1,6 @@
 use anyhow::bail;
 use asm_compiler::ast::{self as asm_ast, BinaryArgs, JumpArgs};
+use itertools::Itertools;
 use std::{collections::HashMap, sync::Arc};
 
 use crate::ast::{Command, Item, Statement};
@@ -35,17 +36,19 @@ pub fn compile(ast: Vec<Arc<Item>>) -> anyhow::Result<Vec<Arc<asm_ast::Procedure
     asm_procs.push(Arc::new(asm_main_setup));
 
     for item in ast {
-        let proc = match item.as_ref() {
-            Item::Main(main) => &main.proc,
-            Item::Func(func) => &func.proc,
+        let (proc, stack_vars) = match item.as_ref() {
+            Item::Main(main) => (&main.proc, main.proc.vars.iter().collect_vec()),
+            Item::Func(func) => {
+                (&func.proc, func.params.as_ref().iter().chain(func.proc.vars.iter()).collect_vec())
+            },
         };
 
         let mut asm_commands = Vec::<Arc<asm_ast::Command>>::new();
         let mut var_to_offset = HashMap::<Arc<str>, usize>::new();
 
         // init stack vars
-        for (offset, var) in proc.vars.iter().rev().enumerate() {
-            var_to_offset.insert(var.clone(), offset);
+        for (offset, var) in stack_vars.iter().rev().enumerate() {
+            var_to_offset.insert(Arc::clone(*var), offset);
         }
 
         asm_commands.extend([
@@ -55,7 +58,7 @@ pub fn compile(ast: Vec<Arc<Item>>) -> anyhow::Result<Vec<Arc<asm_ast::Procedure
             })),
             Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
                 dest: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
-                val: asm_ast::Value { str: proc.vars.len().to_string().into() },
+                val: asm_ast::Value { str: stack_vars.len().to_string().into() },
             })),
             Arc::new(asm_ast::Command::Add(asm_ast::TernaryArgs {
                 dest: asm_ast::Value { str: STACK_POINTER_ADDR.into() },
@@ -174,7 +177,71 @@ pub fn compile(ast: Vec<Arc<Item>>) -> anyhow::Result<Vec<Arc<asm_ast::Procedure
                         },
                     }
                 },
-                Statement::Call { func_item, cond_var } => todo!(),
+                Statement::Call { func_item, param_vars, cond_var } => {
+                    // set param values on func's stack
+                    let mut param_asm_commands = Vec::new();
+
+                    for (param_offset, call_var) in param_vars.iter().enumerate() {
+                        let Some(call_var_offset) = var_to_offset.get(call_var) else {
+                            bail!("Failed to find left offset")
+                        };
+
+                        let asm_commands = Vec::from([
+                            // store addr for call var in temp_left
+                            Arc::new(asm_ast::Command::Move(asm_ast::BinaryArgs {
+                                dest: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                val: asm_ast::Value { str: STACK_POINTER_ADDR.into() },
+                            })),
+                            Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
+                                dest: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                                val: asm_ast::Value { str: call_var_offset.to_string().into() },
+                            })),
+                            Arc::new(asm_ast::Command::Sub(asm_ast::TernaryArgs {
+                                dest: asm_ast::Value { str: TEMP_LEFT_ADDR.into() },
+                                left: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                right: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                            })),
+                            // store addr for func param in temp_right
+                            Arc::new(asm_ast::Command::Move(asm_ast::BinaryArgs {
+                                dest: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                val: asm_ast::Value { str: STACK_POINTER_ADDR.into() },
+                            })),
+                            Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
+                                dest: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                                val: asm_ast::Value { str: (param_offset + 1).to_string().into() },
+                            })),
+                            Arc::new(asm_ast::Command::Add(asm_ast::TernaryArgs {
+                                dest: asm_ast::Value { str: TEMP_RIGHT_ADDR.into() },
+                                left: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                right: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                            })),
+                            // move value in call var to func param
+                            Arc::new(asm_ast::Command::MoveDerefSrc(asm_ast::BinaryArgs {
+                                dest: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                                val: asm_ast::Value { str: TEMP_LEFT_ADDR.into() },
+                            })),
+                            Arc::new(asm_ast::Command::MoveDerefDest(asm_ast::BinaryArgs {
+                                dest: asm_ast::Value { str: TEMP_RIGHT_ADDR.into() },
+                                val: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                            })),
+                        ]);
+
+                        param_asm_commands.extend(asm_commands);
+                    }
+
+                    let broadcast_asm_commands = Vec::from([
+                        // broadcast function message
+                        Arc::new(asm_ast::Command::Set(BinaryArgs {
+                            dest: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                            val: asm_ast::Value { str: format!("func_{}", func_item).into() },
+                        })),
+                        Arc::new(asm_ast::Command::Jump(JumpArgs {
+                            src: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                        })),
+                    ]);
+
+                    param_asm_commands.into_iter().chain(broadcast_asm_commands).collect_vec()
+                },
             };
 
             asm_commands.extend(asm_statement_commands);
@@ -188,7 +255,7 @@ pub fn compile(ast: Vec<Arc<Item>>) -> anyhow::Result<Vec<Arc<asm_ast::Procedure
             })),
             Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
                 dest: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
-                val: asm_ast::Value { str: proc.vars.len().to_string().into() },
+                val: asm_ast::Value { str: stack_vars.len().to_string().into() },
             })),
             Arc::new(asm_ast::Command::Sub(asm_ast::TernaryArgs {
                 dest: asm_ast::Value { str: STACK_POINTER_ADDR.into() },
