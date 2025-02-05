@@ -4,5 +4,5 @@ main |a, a_ref| {
 }
 
 func ret(ret_ref) || {
-    ref ret_ref = lit "Returned!";
+    deref ret_ref = lit "Returned!";
 }

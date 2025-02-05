@@ -15,7 +15,7 @@ pub enum Token {
     Pipe,
     Comma,
     Literal(String),
-    Ref,
+    Deref,
     Main,
     Func,
     If,
@@ -27,6 +27,8 @@ pub enum Comword {
     Eq,
     Add,
     Ref,
+    CopyDeref,
+    Copy,
 }
 
 impl FromStr for Comword {
@@ -37,7 +39,9 @@ impl FromStr for Comword {
             "lit" => Self::Literal,
             "eq" => Self::Eq,
             "add" => Self::Add,
-            "ref" => Self::Add,
+            "ref" => Self::Ref,
+            "copy_deref" => Self::CopyDeref,
+            "copy" => Self::Copy,
             _ => return Err(()),
         };
 
@@ -85,7 +89,7 @@ fn consume_word(chars: &mut Peekable<impl Iterator<Item = char>>) -> anyhow::Res
     let token = match word.as_str() {
         "main" => Token::Main,
         "func" => Token::Func,
-        "ref" => Token::Ref,
+        "deref" => Token::Deref,
         "if" => Token::If,
         w => match Comword::from_str(w) {
             Ok(comword) => Token::Comword(comword),

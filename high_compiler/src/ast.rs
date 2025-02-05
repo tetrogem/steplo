@@ -30,7 +30,7 @@ pub struct Proc {
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Assign { ref_var: bool, var: Arc<str>, command: Arc<Command> },
+    Assign { deref_var: bool, var: Arc<str>, command: Arc<Command> },
     Call { func_item: Arc<str>, param_vars: Arc<Vec<Arc<str>>>, cond_var: Option<Arc<str>> },
 }
 
@@ -39,6 +39,8 @@ pub enum Command {
     Literal(Arc<str>),
     Add { left: Arc<str>, right: Arc<str> },
     Ref { var: Arc<str> },
+    CopyDeref { var: Arc<str> },
+    Copy { var: Arc<str> },
 }
 
 pub fn parse(tokens: Vec<Token>) -> anyhow::Result<Vec<Arc<Item>>> {
@@ -132,9 +134,9 @@ fn parse_proc(tokens: &mut Peekable<impl Iterator<Item = Token>>) -> anyhow::Res
 fn parse_statement(
     tokens: &mut Peekable<impl Iterator<Item = Token>>,
 ) -> anyhow::Result<Statement> {
-    let ref_var = match tokens.peek() {
-        Some(Token::Ref) => {
-            let Some(Token::Ref) = tokens.next() else { bail!("Expected ref") };
+    let deref_var = match tokens.peek() {
+        Some(Token::Deref) => {
+            let Some(Token::Deref) = tokens.next() else { bail!("Expected deref") };
             true
         },
         _ => false,
@@ -144,10 +146,10 @@ fn parse_statement(
     let var: Arc<str> = var.into();
 
     let statement = match tokens.peek() {
-        Some(Token::Eq) => parse_assign(tokens, ref_var, var)?,
+        Some(Token::Eq) => parse_assign(tokens, deref_var, var)?,
         Some(Token::LeftParen) => {
-            if ref_var {
-                bail!("Call cannot have ref var");
+            if deref_var {
+                bail!("Cannot deref call");
             }
 
             parse_call(tokens, var)?
@@ -162,22 +164,12 @@ fn parse_statement(
 
 fn parse_assign(
     tokens: &mut Peekable<impl Iterator<Item = Token>>,
-    ref_var: bool,
+    deref_var: bool,
     var: Arc<str>,
 ) -> anyhow::Result<Statement> {
     let Some(Token::Eq) = tokens.next() else { bail!("Expected =") };
 
-    let comword = match tokens.peek() {
-        Some(Token::Comword(_)) => {
-            let Some(Token::Comword(comword)) = tokens.next() else { bail!("Expected comword") };
-            comword
-        },
-        Some(Token::Ref) => {
-            let Some(Token::Ref) = tokens.next() else { bail!("Expected comword ref") };
-            Comword::Ref
-        },
-        _ => bail!("Expected comword"),
-    };
+    let Some(Token::Comword(comword)) = tokens.next() else { bail!("Expected comword") };
 
     let command = match comword {
         Comword::Literal => {
@@ -193,10 +185,18 @@ fn parse_assign(
             let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var") };
             Command::Ref { var: var.into() }
         },
-        _ => todo!(),
+        Comword::CopyDeref => {
+            let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var") };
+            Command::CopyDeref { var: var.into() }
+        },
+        Comword::Copy => {
+            let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var") };
+            Command::Copy { var: var.into() }
+        },
+        Comword::Eq => todo!(),
     };
 
-    let statement = Statement::Assign { ref_var, var, command: Arc::new(command) };
+    let statement = Statement::Assign { deref_var, var, command: Arc::new(command) };
 
     Ok(statement)
 }

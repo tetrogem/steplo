@@ -70,7 +70,7 @@ pub fn compile(ast: Vec<Arc<Item>>) -> anyhow::Result<Vec<Arc<asm_ast::Procedure
         // run statements
         for statement in proc.statements.iter().map(AsRef::as_ref) {
             let asm_statement_commands = match statement {
-                Statement::Assign { ref_var, var, command } => {
+                Statement::Assign { deref_var, var, command } => {
                     let Some(&var_offset) = var_to_offset.get(var) else {
                         bail!("Failed to find var offset")
                     };
@@ -162,6 +162,64 @@ pub fn compile(ast: Vec<Arc<Item>>) -> anyhow::Result<Vec<Arc<asm_ast::Procedure
                                 })),
                             ])
                         },
+                        Command::CopyDeref { var } => {
+                            let Some(ref_offset) = var_to_offset.get(var) else {
+                                bail!("Failed to find ref offset")
+                            };
+
+                            Vec::from([
+                                // store addr for ref in temp_right
+                                Arc::new(asm_ast::Command::Move(asm_ast::BinaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                    val: asm_ast::Value { str: STACK_POINTER_ADDR.into() },
+                                })),
+                                Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                                    val: asm_ast::Value { str: ref_offset.to_string().into() },
+                                })),
+                                Arc::new(asm_ast::Command::Sub(asm_ast::TernaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_RIGHT_ADDR.into() },
+                                    left: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                    right: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                                })),
+                                // deref temp_right and store back in temp_right
+                                Arc::new(asm_ast::Command::MoveDerefSrc(asm_ast::BinaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_RIGHT_ADDR.into() },
+                                    val: asm_ast::Value { str: TEMP_RIGHT_ADDR.into() },
+                                })),
+                                Arc::new(asm_ast::Command::MoveDerefSrc(asm_ast::BinaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_RIGHT_ADDR.into() },
+                                    val: asm_ast::Value { str: TEMP_RIGHT_ADDR.into() },
+                                })),
+                            ])
+                        },
+                        Command::Copy { var } => {
+                            let Some(copy_offset) = var_to_offset.get(var) else {
+                                bail!("Failed to find copy offset")
+                            };
+
+                            Vec::from([
+                                // store addr for ref in temp_right
+                                Arc::new(asm_ast::Command::Move(asm_ast::BinaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                    val: asm_ast::Value { str: STACK_POINTER_ADDR.into() },
+                                })),
+                                Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                                    val: asm_ast::Value { str: copy_offset.to_string().into() },
+                                })),
+                                Arc::new(asm_ast::Command::Sub(asm_ast::TernaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_RIGHT_ADDR.into() },
+                                    left: asm_ast::Value { str: TEMP_RESULT_ADDR.into() },
+                                    right: asm_ast::Value { str: TEMP_OPERAND_ADDR.into() },
+                                })),
+                                // deref temp_right and store back in temp_right
+                                Arc::new(asm_ast::Command::MoveDerefSrc(asm_ast::BinaryArgs {
+                                    dest: asm_ast::Value { str: TEMP_RIGHT_ADDR.into() },
+                                    val: asm_ast::Value { str: TEMP_RIGHT_ADDR.into() },
+                                })),
+                            ])
+                        },
                     };
 
                     // set var addr to assign in temp_left
@@ -182,7 +240,7 @@ pub fn compile(ast: Vec<Arc<Item>>) -> anyhow::Result<Vec<Arc<asm_ast::Procedure
                     ]));
 
                     // deref var addr if its a ref assign
-                    if *ref_var {
+                    if *deref_var {
                         assign_asm_commands.push(Arc::new(asm_ast::Command::MoveDerefSrc(
                             asm_ast::BinaryArgs {
                                 dest: asm_ast::Value { str: TEMP_LEFT_ADDR.into() },
