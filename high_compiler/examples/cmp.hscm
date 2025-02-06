@@ -1,5 +1,7 @@
-main |a, b, c| {
+main |a, b, c, d, e| {
     a = lit "1";
     b = lit "2";
     c = eq a b;
+    d = not c;
+    e = lit "End";
 }

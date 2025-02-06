@@ -248,6 +248,38 @@ fn compile_item(item: &Item) -> anyhow::Result<asm_ast::Procedure> {
                             )
                             .collect_vec()
                     },
+                    Command::Eq { left, right } => {
+                        let Some(left_offset) = var_to_offset.get(left) else {
+                            bail!("Failed to find left offset")
+                        };
+
+                        let Some(right_offset) = var_to_offset.get(right) else {
+                            bail!("Failed to find right offset")
+                        };
+
+                        [].into_iter()
+                            .chain(get_stack_value(LEFT, *left_offset))
+                            .chain(get_stack_value(RIGHT, *right_offset))
+                            .chain([Arc::new(asm_ast::Command::Eq(asm_ast::TernaryArgs {
+                                dest: RIGHT.addr_value(),
+                                left: LEFT.addr_value(),
+                                right: RIGHT.addr_value(),
+                            }))])
+                            .collect_vec()
+                    },
+                    Command::Not { var } => {
+                        let Some(var_offset) = var_to_offset.get(var) else {
+                            bail!("Failed to find var offset")
+                        };
+
+                        [].into_iter()
+                            .chain(get_stack_value(RIGHT, *var_offset))
+                            .chain([Arc::new(asm_ast::Command::Not(asm_ast::BinaryArgs {
+                                dest: RIGHT.addr_value(),
+                                val: RIGHT.addr_value(),
+                            }))])
+                            .collect_vec()
+                    },
                 };
 
                 // set var addr to assign in temp_left

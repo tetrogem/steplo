@@ -25,6 +25,7 @@ pub enum Token {
 pub enum Comword {
     Literal,
     Eq,
+    Not,
     Add,
     Ref,
     CopyDeref,
@@ -38,6 +39,7 @@ impl FromStr for Comword {
         let comword = match s {
             "lit" => Self::Literal,
             "eq" => Self::Eq,
+            "not" => Self::Not,
             "add" => Self::Add,
             "ref" => Self::Ref,
             "copy_deref" => Self::CopyDeref,

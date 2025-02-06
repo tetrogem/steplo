@@ -32,7 +32,7 @@ pub struct Proc {
 pub enum Statement {
     Assign { deref_var: bool, var: Arc<str>, command: Arc<Command> },
     Call { func_item: Arc<str>, param_vars: Arc<Vec<Arc<str>>>, cond_var: Option<Arc<str>> },
-    Native { command: NativeCommand },
+    Native { command: NativeCommand }, // not compiled to by source code, internal/built-ins only
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +42,8 @@ pub enum Command {
     Ref { var: Arc<str> },
     CopyDeref { var: Arc<str> },
     Copy { var: Arc<str> },
+    Eq { left: Arc<str>, right: Arc<str> },
+    Not { var: Arc<str> },
 }
 
 #[derive(Debug, Clone)]
@@ -199,7 +201,15 @@ fn parse_assign(
             let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var") };
             Command::Copy { var: var.into() }
         },
-        Comword::Eq => todo!(),
+        Comword::Eq => {
+            let Some(Token::Name(left)) = tokens.next() else { bail!("Expected var") };
+            let Some(Token::Name(right)) = tokens.next() else { bail!("Expected var") };
+            Command::Eq { left: left.into(), right: right.into() }
+        },
+        Comword::Not => {
+            let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var") };
+            Command::Not { var: var.into() }
+        },
     };
 
     let statement = Statement::Assign { deref_var, var, command: Arc::new(command) };
