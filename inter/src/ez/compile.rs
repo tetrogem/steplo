@@ -28,7 +28,7 @@ impl Monitor {
 impl Stage {
     pub fn compile(&self) -> ir::Stage {
         let ir_blocks =
-            self.stacks.iter().flat_map(|stack| stack.compile().ir_all_blocks).collect_vec();
+            self.stacks.iter().flat_map(|stack| stack.compile(None).ir_all_blocks).collect_vec();
 
         ir::Stage {
             lists: Arc::new(self.lists.iter().map(|x| Arc::new(x.compile())).collect_vec()),
@@ -58,8 +58,8 @@ pub struct StackCompiled {
 }
 
 impl Stack {
-    pub fn compile(&self) -> StackCompiled {
-        let mut uuid_prev = None;
+    pub fn compile(&self, parent: Option<Uuid>) -> StackCompiled {
+        let mut uuid_prev = parent;
         let mut uuid_curr = Uuid::new_v4();
         let mut uuid_next = Uuid::new_v4();
 
@@ -80,7 +80,7 @@ impl Stack {
             uuid_next = Uuid::new_v4();
 
             ir_all_blocks.push(Arc::clone(&ir_block));
-            ir_all_blocks.extend(dependent_ir_op.deps);
+            ir_all_blocks.extend(dependent_ir_op.deps.iter().cloned());
 
             ir_block
         };
@@ -240,7 +240,7 @@ impl Expr {
             Expr::Literal(l) => ir::Expr::Literal(Arc::new(l.compile())),
             Expr::Broadcast(b) => ir::Expr::Broadcast(Arc::new(b.compile())),
             Expr::Stack(s) => {
-                let stack_compiled = s.compile();
+                let stack_compiled = s.compile(Some(parent));
                 deps.extend(stack_compiled.ir_all_blocks);
                 ir::Expr::Stack(stack_compiled.ir_root_block)
             },

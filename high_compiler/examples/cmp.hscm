@@ -1,0 +1,5 @@
+main |a, b, c| {
+    a = lit "1";
+    b = lit "2";
+    c = eq a b;
+}

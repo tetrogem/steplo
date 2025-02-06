@@ -186,8 +186,14 @@ impl Op {
                     ]),
                     fields: JsMap::new(),
                 },
-                ControlOp::IfElse { .. } => {
-                    ExprMetadata { opcode: "control_if_else", inputs: todo!(), fields: todo!() }
+                ControlOp::IfElse { condition, then_substack, else_substack } => ExprMetadata {
+                    opcode: "control_if_else",
+                    inputs: obj([
+                        ("CONDITION", compile(condition)),
+                        ("SUBSTACK", compile(then_substack)),
+                        ("SUBSTACK2", compile(else_substack)),
+                    ]),
+                    fields: JsMap::new(),
                 },
                 ControlOp::Wait { .. } => {
                     ExprMetadata { opcode: "control_wait", inputs: todo!(), fields: todo!() }

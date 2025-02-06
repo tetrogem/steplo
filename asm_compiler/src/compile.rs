@@ -287,6 +287,102 @@ fn compile_proc<'a>(
 
                 ez::Op::Data(ez::DataOp::AddToList { list: Arc::clone(stdout_list), item: value })
             },
+            ast::Command::Eq(args) => {
+                let dest_addr = Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
+                    Arc::clone(&args.dest.str),
+                ))));
+
+                let true_op = Arc::new(ez::Op::Data(ez::DataOp::ReplaceItemOfList {
+                    list: Arc::clone(stack_list),
+                    index: Arc::clone(&dest_addr),
+                    item: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String("1".into())))),
+                }));
+
+                let false_op = Arc::new(ez::Op::Data(ez::DataOp::ReplaceItemOfList {
+                    list: Arc::clone(stack_list),
+                    index: dest_addr,
+                    item: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String("".into())))),
+                }));
+
+                let left_op =
+                    Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::ItemOfList {
+                        list: Arc::clone(stack_list),
+                        index: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
+                            Arc::clone(&args.left.str),
+                        )))),
+                    }))));
+
+                let right_op =
+                    Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::ItemOfList {
+                        list: Arc::clone(stack_list),
+                        index: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
+                            Arc::clone(&args.right.str),
+                        )))),
+                    }))));
+
+                let condition_expr =
+                    ez::Expr::derived(&Arc::new(ez::Op::Operator(ez::OperatorOp::Equals {
+                        operand_a: left_op,
+                        operand_b: right_op,
+                    })));
+
+                ez::Op::Control(ez::ControlOp::IfElse {
+                    condition: condition_expr,
+                    then_substack: Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                        root: true_op,
+                        rest: Default::default(),
+                    }))),
+                    else_substack: Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                        root: false_op,
+                        rest: Default::default(),
+                    }))),
+                })
+            },
+            ast::Command::Not(args) => {
+                let dest_addr = Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
+                    Arc::clone(&args.dest.str),
+                ))));
+
+                let true_op = Arc::new(ez::Op::Data(ez::DataOp::ReplaceItemOfList {
+                    list: Arc::clone(stack_list),
+                    index: Arc::clone(&dest_addr),
+                    item: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String("1".into())))),
+                }));
+
+                let false_op = Arc::new(ez::Op::Data(ez::DataOp::ReplaceItemOfList {
+                    list: Arc::clone(stack_list),
+                    index: dest_addr,
+                    item: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String("".into())))),
+                }));
+
+                let val_op =
+                    Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::ItemOfList {
+                        list: Arc::clone(stack_list),
+                        index: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
+                            Arc::clone(&args.val.str),
+                        )))),
+                    }))));
+
+                let condition_expr =
+                    ez::Expr::derived(&Arc::new(ez::Op::Operator(ez::OperatorOp::Equals {
+                        operand_a: val_op,
+                        operand_b: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
+                            "".into(),
+                        )))),
+                    })));
+
+                ez::Op::Control(ez::ControlOp::IfElse {
+                    condition: condition_expr,
+                    then_substack: Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                        root: true_op,
+                        rest: Default::default(),
+                    }))),
+                    else_substack: Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                        root: false_op,
+                        rest: Default::default(),
+                    }))),
+                })
+            },
         };
 
         ez_compiled_ops.push(Arc::new(ez_op));

@@ -15,6 +15,8 @@ pub enum Command {
     Jump(UnaryArgs),
     BranchEq(TernaryArgs),
     Out(UnaryArgs),
+    Eq(TernaryArgs),
+    Not(BinaryArgs),
 }
 
 #[derive(Debug)]
@@ -115,6 +117,8 @@ pub fn parse<'a>(
                     token::Op::Jump => Command::Jump(parse_unary_args(&mut tokens)?),
                     token::Op::BranchEq => Command::BranchEq(parse_ternary_args(&mut tokens)?),
                     token::Op::Out => Command::Out(parse_unary_args(&mut tokens)?),
+                    token::Op::Eq => Command::Eq(parse_ternary_args(&mut tokens)?),
+                    token::Op::Not => Command::Not(parse_binary_args(&mut tokens)?),
                 };
 
                 Some(command)
