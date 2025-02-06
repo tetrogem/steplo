@@ -8,3 +8,4 @@ anyhow = "1.0.95"
 shared = { path = "../shared" }
 asm_compiler = { path = "../asm_compiler" }
 itertools = "0.14.0"
+uuid = "1.13.1"

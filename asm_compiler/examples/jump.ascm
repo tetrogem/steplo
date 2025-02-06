@@ -1,0 +1,9 @@
+lit "1" "Hello"
+lit "5" "end"
+jmp "5"
+
+; TODO: FIX THIS JUMP BUG (this code should never be ran)
+lit "2" "there"
+
+# "end"
+lit "3" "world!"

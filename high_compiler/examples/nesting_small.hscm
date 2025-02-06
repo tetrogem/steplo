@@ -1,0 +1,19 @@
+main |msg| {
+    msg = lit "Enter main";
+    out(msg);
+
+    a();
+
+    msg = lit "Exit main";
+    out(msg);
+}
+
+func a() |msg| {
+    msg = lit "Enter a";
+    out(msg);
+
+    b();
+
+    msg = lit "Exit a";
+    out(msg);
+}

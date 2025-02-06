@@ -1,0 +1,15 @@
+main |a, msg| {
+    msg = lit "Starting...";
+    out(msg);
+
+    a = lit "";
+    foo() if a;
+
+    msg = lit "Stopping...";
+    out(msg);
+}
+
+func foo() |msg| {
+    msg = lit "Foo was called!";
+    out(msg);
+}

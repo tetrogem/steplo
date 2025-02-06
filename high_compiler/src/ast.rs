@@ -1,11 +1,12 @@
 use std::{iter::Peekable, ops::Not, sync::Arc};
 
 use anyhow::bail;
+use itertools::{Itertools, MultiPeek};
 
 use crate::token::{Comword, Token};
 
 #[derive(Debug, Clone)]
-pub enum Item {
+pub enum TopItem {
     Main(Arc<Main>),
     Func(Arc<Func>),
 }
@@ -25,14 +26,27 @@ pub struct Func {
 #[derive(Debug, Clone)]
 pub struct Proc {
     pub vars: Arc<Vec<Arc<str>>>,
-    pub statements: Arc<Vec<Arc<Statement>>>,
+    pub body: Arc<Vec<Arc<BodyItem>>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum BodyItem {
+    Statement(Arc<Statement>),
+    If { cond_var: Arc<str>, body: Arc<Vec<Arc<BodyItem>>> },
 }
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Assign { deref_var: bool, var: Arc<str>, command: Arc<Command> },
-    Call { func_item: Arc<str>, param_vars: Arc<Vec<Arc<str>>>, cond_var: Option<Arc<str>> },
-    Native { command: NativeCommand }, // not compiled to by source code, internal/built-ins only
+    Assign(Arc<Assign>),
+    Call { func_name: Arc<str>, param_vars: Arc<Vec<Arc<str>>> },
+    Native(Arc<NativeCommand>), // not compiled to by source code, internal/built-ins only
+}
+
+#[derive(Debug, Clone)]
+pub struct Assign {
+    pub deref_var: bool,
+    pub var: Arc<str>,
+    pub command: Arc<Command>,
 }
 
 #[derive(Debug, Clone)]
@@ -51,14 +65,15 @@ pub enum NativeCommand {
     Out { var: Arc<str> },
 }
 
-pub fn parse(tokens: Vec<Token>) -> anyhow::Result<Vec<Arc<Item>>> {
-    let mut tokens = tokens.into_iter().peekable();
+pub fn parse(tokens: Vec<Token>) -> anyhow::Result<Vec<Arc<TopItem>>> {
+    let mut tokens = tokens.into_iter().multipeek();
     let mut items = Vec::new();
 
+    tokens.reset_peek();
     while let Some(token) = tokens.peek() {
         let item = match token {
-            Token::Main => Item::Main(Arc::new(parse_main(&mut tokens)?)),
-            Token::Func => Item::Func(Arc::new(parse_func(&mut tokens)?)),
+            Token::Main => TopItem::Main(Arc::new(parse_main(&mut tokens)?)),
+            Token::Func => TopItem::Func(Arc::new(parse_func(&mut tokens)?)),
             _ => bail!("Expected main or func"),
         };
 
@@ -79,6 +94,7 @@ macro_rules! parse_var_list {
 
             let mut vars = Vec::<Arc<str>>::new();
             loop {
+                $tokens.reset_peek();
                 if let Some($closer) = $tokens.peek() {
                     break;
                 };
@@ -86,6 +102,7 @@ macro_rules! parse_var_list {
                 let Some(Token::Name(var)) = $tokens.next() else { bail!("Expected var name") };
                 vars.push(var.into());
 
+                $tokens.reset_peek();
                 if matches!($tokens.peek(), Some(Token::Comma)).not() {
                     break;
                 }
@@ -100,7 +117,7 @@ macro_rules! parse_var_list {
     };
 }
 
-fn parse_main(tokens: &mut Peekable<impl Iterator<Item = Token>>) -> anyhow::Result<Main> {
+fn parse_main(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Main> {
     let Some(Token::Main) = tokens.next() else { bail!("Expected main") };
 
     let proc = parse_proc(tokens)?;
@@ -108,7 +125,7 @@ fn parse_main(tokens: &mut Peekable<impl Iterator<Item = Token>>) -> anyhow::Res
     Ok(main)
 }
 
-fn parse_func(tokens: &mut Peekable<impl Iterator<Item = Token>>) -> anyhow::Result<Func> {
+fn parse_func(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Func> {
     let Some(Token::Func) = tokens.next() else { bail!("Expected func") };
     let Some(Token::Name(name)) = tokens.next() else { bail!("Expected func name") };
     let params = parse_var_list!(tokens, Token::LeftParen = "(", Token::RightParen = ")")?;
@@ -118,30 +135,56 @@ fn parse_func(tokens: &mut Peekable<impl Iterator<Item = Token>>) -> anyhow::Res
     Ok(func)
 }
 
-fn parse_proc(tokens: &mut Peekable<impl Iterator<Item = Token>>) -> anyhow::Result<Proc> {
+fn parse_proc(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Proc> {
     let vars = parse_var_list!(tokens, Token::Pipe = "pipe", Token::Pipe = "pipe")?;
 
     let Some(Token::LeftBrace) = tokens.next() else { bail!("Expected left brace") };
 
     // parse statements
-    let mut statements = Vec::<Arc<Statement>>::new();
+    let mut body_items = Vec::<Arc<BodyItem>>::new();
+    tokens.reset_peek();
     while let Some(token) = tokens.peek() {
         if let &Token::RightBrace = token {
             break;
         }
 
-        let statement = parse_statement(tokens)?;
-        statements.push(Arc::new(statement));
+        let body_item = parse_body_item(tokens)?;
+        body_items.push(Arc::new(body_item));
     }
 
     let Some(Token::RightBrace) = tokens.next() else { bail!("Expected right brace") };
-    let proc = Proc { vars: Arc::new(vars), statements: Arc::new(statements) };
+    let proc = Proc { vars: Arc::new(vars), body: Arc::new(body_items) };
     Ok(proc)
 }
 
-fn parse_statement(
-    tokens: &mut Peekable<impl Iterator<Item = Token>>,
-) -> anyhow::Result<Statement> {
+fn parse_body_item(
+    tokens: &mut MultiPeek<impl Iterator<Item = Token>>,
+) -> anyhow::Result<BodyItem> {
+    tokens.reset_peek();
+    let Some(peek_token) = tokens.peek() else { bail!("Expected statement") };
+
+    let body_item = match peek_token {
+        Token::Deref => BodyItem::Statement(Arc::new(parse_assign(tokens)?)),
+        Token::Name(_) => {
+            let Some(peek_token) = tokens.peek() else {
+                bail!("Unexpected end after var name in statement")
+            };
+
+            match peek_token {
+                Token::Eq => BodyItem::Statement(Arc::new(parse_assign(tokens)?)),
+                Token::LeftParen => BodyItem::Statement(Arc::new(parse_call(tokens)?)),
+                _ => bail!("Expected ( or ="),
+            }
+        },
+        Token::If => parse_if(tokens)?,
+        t => bail!("Expected deref, var name, or if at start of statement (Found: {:?})", t),
+    };
+
+    Ok(body_item)
+}
+
+fn parse_assign(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Statement> {
+    tokens.reset_peek();
     let deref_var = match tokens.peek() {
         Some(Token::Deref) => {
             let Some(Token::Deref) = tokens.next() else { bail!("Expected deref") };
@@ -150,33 +193,8 @@ fn parse_statement(
         _ => false,
     };
 
-    let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var name in statement") };
-    let var: Arc<str> = var.into();
-
-    let statement = match tokens.peek() {
-        Some(Token::Eq) => parse_assign(tokens, deref_var, var)?,
-        Some(Token::LeftParen) => {
-            if deref_var {
-                bail!("Cannot deref call");
-            }
-
-            parse_call(tokens, var)?
-        },
-        _ => bail!("Expected = or ("),
-    };
-
-    let Some(Token::Semi) = tokens.next() else { bail!("Expected semicolon") };
-
-    Ok(statement)
-}
-
-fn parse_assign(
-    tokens: &mut Peekable<impl Iterator<Item = Token>>,
-    deref_var: bool,
-    var: Arc<str>,
-) -> anyhow::Result<Statement> {
+    let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var name") };
     let Some(Token::Eq) = tokens.next() else { bail!("Expected =") };
-
     let Some(Token::Comword(comword)) = tokens.next() else { bail!("Expected comword") };
 
     let command = match comword {
@@ -212,19 +230,42 @@ fn parse_assign(
         },
     };
 
-    let statement = Statement::Assign { deref_var, var, command: Arc::new(command) };
+    let Some(Token::Semi) = tokens.next() else { bail!("Expected semicolon") };
+
+    let assign = Assign { deref_var, var: var.into(), command: Arc::new(command) };
+    let statement = Statement::Assign(Arc::new(assign));
 
     Ok(statement)
 }
 
-fn parse_call(
-    tokens: &mut Peekable<impl Iterator<Item = Token>>,
-    var: Arc<str>,
-) -> anyhow::Result<Statement> {
+fn parse_call(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Statement> {
+    let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var name") };
     let param_vars = parse_var_list!(tokens, Token::LeftParen = "(", Token::RightParen = ")")?;
+    let Some(Token::Semi) = tokens.next() else { bail!("Expected semicolon") };
 
-    let statement =
-        Statement::Call { func_item: var, param_vars: Arc::new(param_vars), cond_var: None };
+    let statement = Statement::Call { func_name: var.into(), param_vars: Arc::new(param_vars) };
 
+    Ok(statement)
+}
+
+fn parse_if(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<BodyItem> {
+    let Some(Token::If) = tokens.next() else { bail!("Expected if") };
+    let Some(Token::Name(cond_var)) = tokens.next() else { bail!("Expected condition var for if") };
+    let Some(Token::LeftBrace) = tokens.next() else { bail!("Expected {{") };
+
+    let mut body_items = Vec::new();
+    loop {
+        tokens.reset_peek();
+        if let Some(Token::RightBrace) = tokens.peek() {
+            break;
+        }
+
+        let body_item = parse_body_item(tokens)?;
+        body_items.push(Arc::new(body_item));
+    }
+
+    let Some(Token::RightBrace) = tokens.next() else { bail!("Expected }}") };
+
+    let statement = BodyItem::If { cond_var: cond_var.into(), body: Arc::new(body_items) };
     Ok(statement)
 }

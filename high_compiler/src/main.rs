@@ -9,6 +9,7 @@ use token::tokenize;
 
 mod ast;
 mod compile;
+mod link;
 mod token;
 
 fn main() -> anyhow::Result<()> {
@@ -35,7 +36,9 @@ fn main() -> anyhow::Result<()> {
     // dbg!(&tokens);
     let ast = time("Parsing...", || parse(tokens))?;
     // dbg!(&ast);
-    let asm = time("Compiling high-level to asm...", || compile(ast))?;
+    let linked = time("Linking...", || link::link(ast))?;
+    dbg!(&linked);
+    let asm = time("Compiling high-level to asm...", || compile(linked))?;
     // dbg!(&compiled);
     let ez = time("Transpiling to EZ...", || {
         asm_compiler::compile::compile(&asm.iter().map(AsRef::as_ref).collect_vec())

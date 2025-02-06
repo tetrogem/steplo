@@ -1,0 +1,11 @@
+main |cond, msg| {
+    cond = lit "1";
+
+    if cond {
+        msg = lit "Inside if!";
+        out(msg);
+    }
+
+    msg = lit "Outside if!";
+    out(msg);
+}
