@@ -126,7 +126,6 @@ pub fn tokenize(code: &str) -> anyhow::Result<Vec<Token>> {
         };
 
         if let Some(token) = token {
-            dbg!(&token);
             tokens.push(token);
         }
     }

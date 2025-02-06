@@ -32,6 +32,7 @@ pub struct Proc {
 pub enum Statement {
     Assign { deref_var: bool, var: Arc<str>, command: Arc<Command> },
     Call { func_item: Arc<str>, param_vars: Arc<Vec<Arc<str>>>, cond_var: Option<Arc<str>> },
+    Native { command: NativeCommand },
 }
 
 #[derive(Debug, Clone)]
@@ -41,6 +42,11 @@ pub enum Command {
     Ref { var: Arc<str> },
     CopyDeref { var: Arc<str> },
     Copy { var: Arc<str> },
+}
+
+#[derive(Debug, Clone)]
+pub enum NativeCommand {
+    Out { var: Arc<str> },
 }
 
 pub fn parse(tokens: Vec<Token>) -> anyhow::Result<Vec<Arc<Item>>> {

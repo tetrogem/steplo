@@ -8,6 +8,7 @@ use crate::ast;
 
 pub fn compile(ast: &[&ast::Procedure]) -> anyhow::Result<ez::Program> {
     let stack_list = Arc::new(ez::List { uuid: Uuid::new_v4(), name: "stack".into() });
+    let stdout_list = Arc::new(ez::List { uuid: Uuid::new_v4(), name: "stdout".into() });
 
     let mut sub_proc_name_to_broadcast = HashMap::<Arc<str>, Arc<ez::Broadcast>>::new();
 
@@ -32,6 +33,7 @@ pub fn compile(ast: &[&ast::Procedure]) -> anyhow::Result<ez::Program> {
         let compiled_proc_ops = compile_proc(
             proc.commands.iter().map(AsRef::as_ref),
             &stack_list,
+            &stdout_list,
             &sub_proc_name_to_broadcast,
         )?;
 
@@ -61,6 +63,8 @@ pub fn compile(ast: &[&ast::Procedure]) -> anyhow::Result<ez::Program> {
     let reset_ops = Vec::from([
         // delete all of stack
         Arc::new(ez::Op::Data(ez::DataOp::DeleteAllOfList { list: Arc::clone(&stack_list) })),
+        // delete all of stdout
+        Arc::new(ez::Op::Data(ez::DataOp::DeleteAllOfList { list: Arc::clone(&stdout_list) })),
         // init stack memory
         Arc::new(ez::Op::Control(ez::ControlOp::Repeat {
             times: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::Int(200_000)))),
@@ -107,6 +111,7 @@ pub fn compile(ast: &[&ast::Procedure]) -> anyhow::Result<ez::Program> {
 fn compile_proc<'a>(
     commands: impl Iterator<Item = &'a ast::Command>,
     stack_list: &Arc<ez::List>,
+    stdout_list: &Arc<ez::List>,
     sub_proc_name_to_broadcast: &HashMap<Arc<str>, Arc<ez::Broadcast>>,
 ) -> anyhow::Result<Vec<Arc<ez::Op>>> {
     let mut ez_compiled_ops = Vec::<Arc<ez::Op>>::new();
@@ -224,7 +229,7 @@ fn compile_proc<'a>(
                     ez::DataOp::ItemOfList {
                         list: Arc::clone(stack_list),
                         index: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
-                            Arc::clone(&args.src.str),
+                            Arc::clone(&args.val.str),
                         )))),
                     },
                 )))),
@@ -235,7 +240,7 @@ fn compile_proc<'a>(
                         ez::DataOp::ItemOfList {
                             list: Arc::clone(stack_list),
                             index: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
-                                Arc::clone(&args.src.str),
+                                Arc::clone(&args.dest.str),
                             )))),
                         },
                     )))),
@@ -270,6 +275,17 @@ fn compile_proc<'a>(
                         rest: Default::default(),
                     }))),
                 })
+            },
+            ast::Command::Out(args) => {
+                let addr = Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(Arc::clone(
+                    &args.val.str,
+                )))));
+
+                let value = Arc::new(ez::Expr::Derived(Arc::new(inter::ez::Op::Data(
+                    ez::DataOp::ItemOfList { list: Arc::clone(stack_list), index: addr },
+                ))));
+
+                ez::Op::Data(ez::DataOp::AddToList { list: Arc::clone(stdout_list), item: value })
             },
         };
 

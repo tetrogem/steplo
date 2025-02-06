@@ -12,8 +12,9 @@ pub enum Command {
     MoveDerefSrc(BinaryArgs),
     Add(TernaryArgs),
     Sub(TernaryArgs),
-    Jump(JumpArgs),
-    BranchEq(BranchArgs),
+    Jump(UnaryArgs),
+    BranchEq(TernaryArgs),
+    Out(UnaryArgs),
 }
 
 #[derive(Debug)]
@@ -30,8 +31,8 @@ pub struct TernaryArgs {
 }
 
 #[derive(Debug)]
-pub struct JumpArgs {
-    pub src: Value,
+pub struct UnaryArgs {
+    pub val: Value,
 }
 
 #[derive(Debug)]
@@ -80,20 +81,11 @@ fn parse_ternary_args<'a>(
     Ok(TernaryArgs { dest, left, right })
 }
 
-fn parse_jump_args<'a>(
+fn parse_unary_args<'a>(
     tokens: &mut impl Iterator<Item = &'a token::Token>,
-) -> anyhow::Result<JumpArgs> {
-    let src = parse_value(tokens).with_context(|| "For arg [src]")?;
-    Ok(JumpArgs { src })
-}
-
-fn parse_branch_args<'a>(
-    tokens: &mut impl Iterator<Item = &'a token::Token>,
-) -> anyhow::Result<BranchArgs> {
-    let src = parse_value(tokens).with_context(|| "For arg [src]")?;
-    let left = parse_value(tokens).with_context(|| "For arg [left]")?;
-    let right = parse_value(tokens).with_context(|| "For arg [right]")?;
-    Ok(BranchArgs { src, left, right })
+) -> anyhow::Result<UnaryArgs> {
+    let src = parse_value(tokens).with_context(|| "For arg [val]")?;
+    Ok(UnaryArgs { val: src })
 }
 
 pub fn parse<'a>(
@@ -120,8 +112,9 @@ pub fn parse<'a>(
                     },
                     token::Op::Add => Command::Add(parse_ternary_args(&mut tokens)?),
                     token::Op::Sub => Command::Sub(parse_ternary_args(&mut tokens)?),
-                    token::Op::Jump => Command::Jump(parse_jump_args(&mut tokens)?),
-                    token::Op::BranchEq => Command::BranchEq(parse_branch_args(&mut tokens)?),
+                    token::Op::Jump => Command::Jump(parse_unary_args(&mut tokens)?),
+                    token::Op::BranchEq => Command::BranchEq(parse_ternary_args(&mut tokens)?),
+                    token::Op::Out => Command::Out(parse_unary_args(&mut tokens)?),
                 };
 
                 Some(command)

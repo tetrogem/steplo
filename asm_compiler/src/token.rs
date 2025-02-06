@@ -21,6 +21,7 @@ pub enum Op {
     MoveDerefSrc,
     Jump,
     BranchEq,
+    Out,
 }
 
 pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
@@ -54,6 +55,7 @@ pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
                         "mvds" => Op::MoveDerefSrc,
                         "jmp" => Op::Jump,
                         "beq" => Op::BranchEq,
+                        "out" => Op::Out,
                         _ => bail!("Invalid operator: {}", word),
                     };
 

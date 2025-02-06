@@ -16,6 +16,7 @@ fn main() -> anyhow::Result<()> {
     let Some(_current_path) = args.next() else { panic!("Cannot get current dir") };
     let Some(in_path) = args.next() else { panic!("No input file given") };
     let Some(out_path) = args.next() else { panic!("No output path given") };
+    let Some(res_path) = args.next() else { panic!("No res path given") };
 
     let in_path = Path::new(&in_path);
     assert!(
@@ -43,7 +44,7 @@ fn main() -> anyhow::Result<()> {
     let js_val = time("Compiling to JSON...", || ir.compile());
     let json = time("Serializing...", || format!("{:#}", js_val));
 
-    time("Exporting...", || write_json(&json, in_path, &out_path));
+    time("Exporting...", || write_json(&json, in_path, &out_path, &res_path));
 
     Ok(())
 }

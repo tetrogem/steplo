@@ -18,7 +18,7 @@ pub fn time<R>(message: &str, runner: impl FnOnce() -> R) -> R {
     res
 }
 
-pub fn write_json(json: &str, in_path: &Path, out_path: &str) {
+pub fn write_json(json: &str, in_path: &Path, out_path: &str, res_path: &str) {
     let in_filename = in_path.file_name().and_then(|name| name.to_str());
     let out_name = in_filename.map(|name| name.split('.')).and_then(|mut parts| parts.next());
     let out_name = out_name.expect("input path should have a filename prefix");
@@ -33,8 +33,6 @@ pub fn write_json(json: &str, in_path: &Path, out_path: &str) {
         .expect("should be able to create project file");
 
     project_file.write_all(json.as_bytes()).expect("should be able to write to out file");
-
-    let res_path = Path::new("./res");
 
     fs_extra::dir::copy(
         res_path,
