@@ -179,6 +179,9 @@ impl Op {
                         operand_a: compile(operand_a),
                         operand_b: compile(operand_b),
                     },
+                    OperatorOp::Not { operand } => {
+                        ir::OperatorOp::Not { operand: compile(operand) }
+                    },
                 };
 
                 ir::Op::Operator(ir_op)

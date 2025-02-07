@@ -441,6 +441,85 @@ fn compile_call(
             },
         },
         link::Call::Exit => None,
+        link::Call::Branch { proc_name_addr, cond_addr } => {
+            let cond_op =
+                Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::ItemOfList {
+                    list: Arc::clone(stack_list),
+                    index: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(Arc::clone(
+                        cond_addr,
+                    ))))),
+                }))));
+
+            let null_op = Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String("".into()))));
+
+            let passthrough_op = match next_proc {
+                None => None,
+                Some(next_proc) => match &next_proc.kind {
+                    link::ProcedureKind::Main => {
+                        bail!("Attempted to passthrough to main");
+                    },
+                    link::ProcedureKind::Sub { name } => {
+                        let Some(next_proc_broadcast) = sub_proc_name_to_broadcast.get(name) else {
+                            bail!("Could not find broadcast for passthrough proc");
+                        };
+
+                        Some(ez::Op::Event(ez::EventOp::BroadcastAndWait {
+                            input: Arc::new(ez::Expr::Broadcast(Arc::clone(next_proc_broadcast))),
+                        }))
+                    },
+                },
+            };
+
+            let false_op = passthrough_op.map(|passthrough_op| {
+                Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                    root: Arc::new(passthrough_op),
+                    rest: Arc::new(Vec::new()),
+                })))
+            });
+
+            let jump_op = Arc::new(ez::Op::Event(ez::EventOp::BroadcastAndWait {
+                input: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Data(
+                    ez::DataOp::ItemOfList {
+                        list: Arc::clone(stack_list),
+                        index: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
+                            Arc::clone(proc_name_addr),
+                        )))),
+                    },
+                )))),
+            }));
+
+            let true_op = Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                root: jump_op,
+                rest: Arc::new(Vec::new()),
+            })));
+
+            let cond_op =
+                Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::Equals {
+                    operand_a: cond_op,
+                    operand_b: null_op,
+                }))));
+
+            let branch_op = match false_op {
+                Some(false_op) => {
+                    ez::Op::Control(ez::ControlOp::IfElse {
+                        condition: cond_op,
+                        // if condition was false, passthrough
+                        then_substack: false_op,
+                        // if condition was true, jump
+                        else_substack: true_op,
+                    })
+                },
+                // if
+                None => ez::Op::Control(ez::ControlOp::If {
+                    condition: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
+                        ez::OperatorOp::Not { operand: cond_op },
+                    )))),
+                    then_substack: true_op,
+                }),
+            };
+
+            Some(branch_op)
+        },
     };
 
     Ok(ez_op)

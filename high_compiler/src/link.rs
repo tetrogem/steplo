@@ -29,6 +29,7 @@ pub struct SubProc {
 pub enum Call {
     Func { name: Arc<str>, param_vars: Arc<Vec<Arc<str>>>, return_sub_proc: Arc<SubProc> },
     SubProc(Arc<SubProc>),
+    If { cond_var: Arc<str>, body_sub_proc: Arc<SubProc>, pop_sub_proc: Arc<SubProc> },
     Return,
     Terminate,
 }
@@ -68,7 +69,7 @@ pub fn link(mut ast: Vec<Arc<ast::TopItem>>) -> anyhow::Result<Vec<Arc<Proc>>> {
         let mut body_items = ast_proc.body.iter().map(AsRef::as_ref).peekable();
 
         let create_sub_proc_res =
-            create_sub_proc(&mut body_items, matches!(proc_kind, ProcKind::Main));
+            create_sub_proc(&mut body_items, matches!(proc_kind, ProcKind::Main), None);
 
         let sub_procs = Vec::from([Arc::new(create_sub_proc_res.root)])
             .into_iter()
@@ -95,18 +96,37 @@ struct CreateSubProcRes {
 fn create_sub_proc<'a>(
     body_items: &mut Peekable<impl Iterator<Item = &'a ast::BodyItem>>,
     main: bool,
+    pop_sub_proc: Option<&Arc<SubProc>>,
 ) -> CreateSubProcRes {
-    println!("run");
     let mut rest_sps = Vec::<Arc<SubProc>>::new();
     let mut statements = Vec::<Arc<Statement>>::new();
 
     let mut next_call = None;
 
     while let Some(body_item) = body_items.next() {
-        dbg!(body_item);
         match body_item {
             ast::BodyItem::If { cond_var, body } => {
-                todo!()
+                let pop_sp_res = create_sub_proc(body_items, main, pop_sub_proc);
+
+                let pop_sp = Arc::new(pop_sp_res.root);
+                rest_sps.push(Arc::clone(&pop_sp));
+                rest_sps.extend(pop_sp_res.rest);
+
+                let body_sp_res = create_sub_proc(
+                    &mut body.iter().map(AsRef::as_ref).peekable(),
+                    main,
+                    Some(&pop_sp),
+                );
+
+                let body_sp = Arc::new(body_sp_res.root);
+                rest_sps.push(Arc::clone(&body_sp));
+                rest_sps.extend(body_sp_res.rest);
+
+                next_call = Some(Call::If {
+                    cond_var: Arc::clone(cond_var),
+                    body_sub_proc: body_sp,
+                    pop_sub_proc: pop_sp,
+                });
             },
             ast::BodyItem::Statement(statement) => match statement.as_ref() {
                 ast::Statement::Assign(assign) => {
@@ -116,7 +136,7 @@ fn create_sub_proc<'a>(
                     statements.push(Arc::new(Statement::Native(Arc::clone(native))));
                 },
                 ast::Statement::Call { func_name, param_vars } => {
-                    let return_sp_res = create_sub_proc(body_items, main);
+                    let return_sp_res = create_sub_proc(body_items, main, pop_sub_proc);
 
                     let return_sp = Arc::new(return_sp_res.root);
                     rest_sps.push(Arc::clone(&return_sp));
@@ -136,12 +156,15 @@ fn create_sub_proc<'a>(
         Some(next_call) => next_call,
         None => {
             if body_items.peek().is_none() {
-                match main {
-                    true => Call::Terminate,
-                    false => Call::Return,
+                match pop_sub_proc {
+                    Some(pop_sub_proc) => Call::SubProc(Arc::clone(pop_sub_proc)),
+                    None => match main {
+                        true => Call::Terminate,
+                        false => Call::Return,
+                    },
                 }
             } else {
-                let sp_res = create_sub_proc(body_items, main);
+                let sp_res = create_sub_proc(body_items, main, None);
 
                 let return_sp = Arc::new(sp_res.root);
                 rest_sps.push(Arc::clone(&return_sp));

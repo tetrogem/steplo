@@ -174,7 +174,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
     let mut asm_procs = Vec::new();
     for (sub_proc_index, sub_proc) in proc.sub_procs.iter().enumerate() {
         let is_head = sub_proc_index == 0;
-        let is_tail = sub_proc_index == proc.sub_procs.len().saturating_sub(1);
+        let is_tail = matches!(sub_proc.next_call.as_ref(), Call::Return | Call::Terminate);
 
         let mut asm_commands = Vec::<Arc<asm_ast::Command>>::new();
 
@@ -386,7 +386,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                 for (param_offset, call_var) in param_vars.iter().enumerate() {
                     let Some(call_var_offset) = var_to_offset.get(&Var::User(Arc::clone(call_var)))
                     else {
-                        bail!("Failed to find left offset")
+                        bail!("Failed to find call var offset")
                     };
 
                     let asm_commands: Vec<Arc<asm_ast::Command>> = chain!(
@@ -473,6 +473,44 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                 )
             },
             Call::Terminate => Vec::from([control(asm_ast::ControlCommand::Exit)]),
+            Call::If { cond_var, body_sub_proc, pop_sub_proc } => {
+                let Some(cond_var_offset) = var_to_offset.get(&Var::User(Arc::clone(cond_var)))
+                else {
+                    bail!("Failed to find cond var offset")
+                };
+
+                let Some(body_proc_index) = sub_proc_uuid_to_index.get(&body_sub_proc.uuid) else {
+                    bail!("Failed to find body sub proc index");
+                };
+
+                let Some(pop_proc_index) = sub_proc_uuid_to_index.get(&pop_sub_proc.uuid) else {
+                    bail!("Failed to find pop sub proc index");
+                };
+
+                chain!(
+                    get_stack_value(RIGHT, *cond_var_offset),
+                    // store `then` sub proc name in OPERAND and `pop` sub proc name in RESULT
+                    [
+                        data(asm_ast::DataCommand::Set(BinaryArgs {
+                            dest: OPERAND.addr_value(),
+                            val: label(&format!("{}.{}", asm_proc_name, body_proc_index)),
+                        })),
+                        data(asm_ast::DataCommand::Set(BinaryArgs {
+                            dest: RESULT.addr_value(),
+                            val: label(&format!("{}.{}", asm_proc_name, pop_proc_index)),
+                        })),
+                    ],
+                    [
+                        control(asm_ast::ControlCommand::Branch(asm_ast::BinaryArgs {
+                            dest: OPERAND.addr_value(),
+                            val: RIGHT.addr_value(),
+                        })),
+                        control(asm_ast::ControlCommand::Jump(asm_ast::UnaryArgs {
+                            val: RESULT.addr_value(),
+                        }))
+                    ]
+                )
+            },
         };
 
         asm_commands.extend(asm_call_commands);

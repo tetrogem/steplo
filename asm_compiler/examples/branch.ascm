@@ -1,0 +1,18 @@
+lit "1" "true"
+lit "2" "false"
+lit "3" #"branch"
+eq "5" "1" "2"
+
+brc "3" "5"
+
+lit "4" "Didn't branch"
+out "4"
+lit "3" #"exit"
+jmp "3"
+
+# "branch"
+lit "4" "Branched!"
+out "4"
+
+# "exit"
+exit

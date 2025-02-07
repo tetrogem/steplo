@@ -37,7 +37,7 @@ fn main() -> anyhow::Result<()> {
     let ast = time("Parsing...", || parse(tokens))?;
     // dbg!(&ast);
     let linked = time("Linking...", || link::link(ast))?;
-    dbg!(&linked);
+    // dbg!(&linked);
     let asm_ast = time("Compiling high-level to asm...", || compile(linked))?;
     let asm_linked = time("Linking asm...", || asm_compiler::link::link(&asm_ast));
     // dbg!(&compiled);

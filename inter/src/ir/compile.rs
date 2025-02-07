@@ -266,6 +266,11 @@ impl Op {
                     ]),
                     fields: JsMap::new(),
                 },
+                OperatorOp::Not { operand } => ExprMetadata {
+                    opcode: "operator_not",
+                    inputs: obj([("OPERAND", compile(operand))]),
+                    fields: JsMap::new(),
+                },
             },
         }
     }

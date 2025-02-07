@@ -23,6 +23,7 @@ pub struct Body {
 #[derive(Debug)]
 pub enum Call {
     Jump { proc_name_addr: Arc<str> },
+    Branch { proc_name_addr: Arc<str>, cond_addr: Arc<str> },
     Passthrough,
     Exit,
 }
@@ -146,8 +147,18 @@ fn link_proc(ast_proc: &Arc<ast::Procedure>) -> Vec<Body> {
 
                     linked_bodies.push(body);
                 },
-                ast::ControlCommand::BranchEq(_) => {
-                    todo!();
+                ast::ControlCommand::Branch(args) => {
+                    let commands = mem::take(&mut linking);
+
+                    let body = Body {
+                        commands,
+                        next_call: Arc::new(Call::Branch {
+                            proc_name_addr: value_to_str(&args.dest),
+                            cond_addr: value_to_str(&args.val),
+                        }),
+                    };
+
+                    linked_bodies.push(body);
                 },
                 ast::ControlCommand::Exit => {
                     let commands = mem::take(&mut linking);

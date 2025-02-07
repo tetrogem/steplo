@@ -26,7 +26,7 @@ pub enum DataCommand {
 #[derive(Debug)]
 pub enum ControlCommand {
     Jump(UnaryArgs),
-    BranchEq(TernaryArgs),
+    Branch(BinaryArgs),
     Exit,
 }
 
@@ -159,8 +159,8 @@ pub fn parse<'a>(
                     token::Op::Jump => Command::Control(Arc::new(ControlCommand::Jump(
                         parse_unary_args(&mut tokens)?,
                     ))),
-                    token::Op::BranchEq => Command::Control(Arc::new(ControlCommand::BranchEq(
-                        parse_ternary_args(&mut tokens)?,
+                    token::Op::Branch => Command::Control(Arc::new(ControlCommand::Branch(
+                        parse_binary_args(&mut tokens)?,
                     ))),
                     token::Op::Out => {
                         Command::Data(Arc::new(DataCommand::Out(parse_unary_args(&mut tokens)?)))

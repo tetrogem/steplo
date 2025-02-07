@@ -2,8 +2,10 @@ main |a, msg| {
     msg = lit "Starting...";
     out(msg);
 
-    a = lit "";
-    foo() if a;
+    a = lit "1";
+    if a {
+        foo();
+    }
 
     msg = lit "Stopping...";
     out(msg);
