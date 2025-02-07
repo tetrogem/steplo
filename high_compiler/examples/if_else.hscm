@@ -1,0 +1,13 @@
+main |a, b, cond, msg| {
+    a = lit "1";
+    b = lit "10";
+    cond = eq a b;
+
+    if cond {
+        msg = lit "Inside if!";
+    } else {
+        msg = lit "Inside else!";
+    }
+
+    out(msg);
+}

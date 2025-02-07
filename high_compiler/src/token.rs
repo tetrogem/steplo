@@ -19,6 +19,7 @@ pub enum Token {
     Main,
     Func,
     If,
+    Else,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,6 +31,7 @@ pub enum Comword {
     Ref,
     CopyDeref,
     Copy,
+    Sub,
 }
 
 impl FromStr for Comword {
@@ -44,6 +46,7 @@ impl FromStr for Comword {
             "ref" => Self::Ref,
             "copy_deref" => Self::CopyDeref,
             "copy" => Self::Copy,
+            "sub" => Self::Sub,
             _ => return Err(()),
         };
 
@@ -93,6 +96,7 @@ fn consume_word(chars: &mut Peekable<impl Iterator<Item = char>>) -> anyhow::Res
         "func" => Token::Func,
         "deref" => Token::Deref,
         "if" => Token::If,
+        "else" => Token::Else,
         w => match Comword::from_str(w) {
             Ok(comword) => Token::Comword(comword),
             Err(()) => {

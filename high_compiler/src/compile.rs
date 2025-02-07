@@ -315,6 +315,31 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                                 }))],
                             )
                         },
+                        Command::Sub { left, right } => {
+                            let Some(left_offset) = var_to_offset.get(&Var::User(Arc::clone(left)))
+                            else {
+                                bail!("Failed to find left offset")
+                            };
+
+                            let Some(right_offset) =
+                                var_to_offset.get(&Var::User(Arc::clone(right)))
+                            else {
+                                bail!("Failed to find right offset")
+                            };
+
+                            chain!(
+                                // store value for left in LEFT
+                                get_stack_value(LEFT, *left_offset),
+                                // store value for right in RIGHT
+                                get_stack_value(RIGHT, *right_offset),
+                                // set var to sum of temp_left and temp_right
+                                [data(asm_ast::DataCommand::Sub(asm_ast::TernaryArgs {
+                                    dest: RIGHT.addr_value(),
+                                    left: LEFT.addr_value(),
+                                    right: RIGHT.addr_value(),
+                                }))],
+                            )
+                        },
                     };
 
                     // set var addr to assign in temp_left
@@ -390,21 +415,15 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     };
 
                     let asm_commands: Vec<Arc<asm_ast::Command>> = chain!(
-                        // store addr for call var in LEFT
-                        compute_stack_addr(LEFT, *call_var_offset),
-                        // store addr for func param in RIGHT
-                        compute_param_addr(RIGHT, param_offset + 2),
+                        // store addr for func param in LEFT
+                        compute_param_addr(LEFT, param_offset + 2),
+                        // store value to put in func param in RIGHT
+                        get_stack_value(RIGHT, *call_var_offset),
                         // move value in call var to func param
-                        [
-                            data(asm_ast::DataCommand::MoveDerefSrc(asm_ast::BinaryArgs {
-                                dest: OPERAND.addr_value(),
-                                val: LEFT.addr_value(),
-                            })),
-                            data(asm_ast::DataCommand::MoveDerefDest(asm_ast::BinaryArgs {
-                                dest: RIGHT.addr_value(),
-                                val: OPERAND.addr_value(),
-                            })),
-                        ]
+                        [data(asm_ast::DataCommand::MoveDerefDest(asm_ast::BinaryArgs {
+                            dest: LEFT.addr_value(),
+                            val: RIGHT.addr_value(),
+                        })),]
                     );
 
                     param_asm_commands.extend(asm_commands);
@@ -473,14 +492,14 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                 )
             },
             Call::Terminate => Vec::from([control(asm_ast::ControlCommand::Exit)]),
-            Call::If { cond_var, body_sub_proc, pop_sub_proc } => {
+            Call::IfBranch { cond_var, then_sub_proc, pop_sub_proc } => {
                 let Some(cond_var_offset) = var_to_offset.get(&Var::User(Arc::clone(cond_var)))
                 else {
                     bail!("Failed to find cond var offset")
                 };
 
-                let Some(body_proc_index) = sub_proc_uuid_to_index.get(&body_sub_proc.uuid) else {
-                    bail!("Failed to find body sub proc index");
+                let Some(then_proc_index) = sub_proc_uuid_to_index.get(&then_sub_proc.uuid) else {
+                    bail!("Failed to find then sub proc index");
                 };
 
                 let Some(pop_proc_index) = sub_proc_uuid_to_index.get(&pop_sub_proc.uuid) else {
@@ -493,11 +512,49 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     [
                         data(asm_ast::DataCommand::Set(BinaryArgs {
                             dest: OPERAND.addr_value(),
-                            val: label(&format!("{}.{}", asm_proc_name, body_proc_index)),
+                            val: label(&format!("{}.{}", asm_proc_name, then_proc_index)),
                         })),
                         data(asm_ast::DataCommand::Set(BinaryArgs {
                             dest: RESULT.addr_value(),
                             val: label(&format!("{}.{}", asm_proc_name, pop_proc_index)),
+                        })),
+                    ],
+                    [
+                        control(asm_ast::ControlCommand::Branch(asm_ast::BinaryArgs {
+                            dest: OPERAND.addr_value(),
+                            val: RIGHT.addr_value(),
+                        })),
+                        control(asm_ast::ControlCommand::Jump(asm_ast::UnaryArgs {
+                            val: RESULT.addr_value(),
+                        }))
+                    ]
+                )
+            },
+            Call::IfElseBranch { cond_var, then_sub_proc, else_sub_proc } => {
+                let Some(cond_var_offset) = var_to_offset.get(&Var::User(Arc::clone(cond_var)))
+                else {
+                    bail!("Failed to find cond var offset")
+                };
+
+                let Some(then_proc_index) = sub_proc_uuid_to_index.get(&then_sub_proc.uuid) else {
+                    bail!("Failed to find then sub proc index");
+                };
+
+                let Some(else_proc_index) = sub_proc_uuid_to_index.get(&else_sub_proc.uuid) else {
+                    bail!("Failed to find else sub proc index");
+                };
+
+                chain!(
+                    get_stack_value(RIGHT, *cond_var_offset),
+                    // store `then` sub proc name in OPERAND and `else` sub proc name in RESULT
+                    [
+                        data(asm_ast::DataCommand::Set(BinaryArgs {
+                            dest: OPERAND.addr_value(),
+                            val: label(&format!("{}.{}", asm_proc_name, then_proc_index)),
+                        })),
+                        data(asm_ast::DataCommand::Set(BinaryArgs {
+                            dest: RESULT.addr_value(),
+                            val: label(&format!("{}.{}", asm_proc_name, else_proc_index)),
                         })),
                     ],
                     [

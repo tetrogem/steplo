@@ -23,9 +23,6 @@ func b() |msg| {
     out(msg);
 
     c();
-    c();
-    c();
-    c();
 
     msg = lit "Exit b";
     out(msg);

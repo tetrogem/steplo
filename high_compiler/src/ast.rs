@@ -32,7 +32,11 @@ pub struct Proc {
 #[derive(Debug, Clone)]
 pub enum BodyItem {
     Statement(Arc<Statement>),
-    If { cond_var: Arc<str>, body: Arc<Vec<Arc<BodyItem>>> },
+    If {
+        cond_var: Arc<str>,
+        then_body: Arc<Vec<Arc<BodyItem>>>,
+        else_body: Option<Arc<Vec<Arc<BodyItem>>>>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +62,7 @@ pub enum Command {
     Copy { var: Arc<str> },
     Eq { left: Arc<str>, right: Arc<str> },
     Not { var: Arc<str> },
+    Sub { left: Arc<str>, right: Arc<str> },
 }
 
 #[derive(Debug, Clone)]
@@ -150,6 +155,7 @@ fn parse_proc(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Re
 
         let body_item = parse_body_item(tokens)?;
         body_items.push(Arc::new(body_item));
+        tokens.reset_peek();
     }
 
     let Some(Token::RightBrace) = tokens.next() else { bail!("Expected right brace") };
@@ -228,6 +234,11 @@ fn parse_assign(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::
             let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var") };
             Command::Not { var: var.into() }
         },
+        Comword::Sub => {
+            let Some(Token::Name(left)) = tokens.next() else { bail!("Expected var") };
+            let Some(Token::Name(right)) = tokens.next() else { bail!("Expected var") };
+            Command::Sub { left: left.into(), right: right.into() }
+        },
     };
 
     let Some(Token::Semi) = tokens.next() else { bail!("Expected semicolon") };
@@ -251,6 +262,29 @@ fn parse_call(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Re
 fn parse_if(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<BodyItem> {
     let Some(Token::If) = tokens.next() else { bail!("Expected if") };
     let Some(Token::Name(cond_var)) = tokens.next() else { bail!("Expected condition var for if") };
+
+    let then_body_items = Arc::new(parse_body(tokens)?);
+
+    tokens.reset_peek();
+    let else_body_items = match tokens.peek() {
+        Some(Token::Else) => {
+            let Some(Token::Else) = tokens.next() else { bail!("Expected else") };
+            Some(Arc::new(parse_body(tokens)?))
+        },
+        _ => None,
+    };
+
+    let statement = BodyItem::If {
+        cond_var: cond_var.into(),
+        then_body: then_body_items,
+        else_body: else_body_items,
+    };
+    Ok(statement)
+}
+
+fn parse_body(
+    tokens: &mut MultiPeek<impl Iterator<Item = Token>>,
+) -> anyhow::Result<Vec<Arc<BodyItem>>> {
     let Some(Token::LeftBrace) = tokens.next() else { bail!("Expected {{") };
 
     let mut body_items = Vec::new();
@@ -266,6 +300,5 @@ fn parse_if(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Resu
 
     let Some(Token::RightBrace) = tokens.next() else { bail!("Expected }}") };
 
-    let statement = BodyItem::If { cond_var: cond_var.into(), body: Arc::new(body_items) };
-    Ok(statement)
+    Ok(body_items)
 }

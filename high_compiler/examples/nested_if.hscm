@@ -1,6 +1,6 @@
 main |a, b, c, cond, msg| {
     a = lit "5";
-    b = lit "10";
+    b = lit "5";
     c = lit "12";
 
     cond = eq a b;
@@ -11,35 +11,23 @@ main |a, b, c, cond, msg| {
         cond = eq a c;
         if cond {
             msg = lit "...and equal to C!";
-            out(msg);
-        }
-
-        cond = eq a c;
-        cond = not cond;
-        if cond {
+        } else {
             msg = lit "...but not equal to C...";
-            out(msg);
         }
-    }
 
-    cond = eq a b;
-    cond = not cond;
-    if cond {
+        out(msg);
+    } else {
         msg = lit "A is not equal to B...";
         out(msg);
 
         cond = eq a c;
         if cond {
             msg = lit "...but it is equal to C!";
-            out(msg);
+        } else {
+            msg = lit "...or C...";
         }
 
-        cond = eq a c;
-        cond = not cond;
-        if cond {
-            msg = lit "...or C...";
-            out(msg);
-        }
+        out(msg);
     }
 
     msg = lit "Done!";
