@@ -1,0 +1,17 @@
+; this code currently doesn't work at all I just needed to visualize the logic
+
+lit "1" "1"
+
+; while
+
+# "while_start" ; we need one sp for the condition check
+
+; check condition
+brc #"while_body"
+jmp #"while_end"
+
+# "while_body" ; and one for the body
+
+jmp #"while_start"
+
+# "while_end" ; this would be the pop sp

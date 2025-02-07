@@ -37,6 +37,10 @@ pub enum BodyItem {
         then_body: Arc<Vec<Arc<BodyItem>>>,
         else_body: Option<Arc<Vec<Arc<BodyItem>>>>,
     },
+    While {
+        cond_var: Arc<str>,
+        body: Arc<Vec<Arc<BodyItem>>>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -183,6 +187,7 @@ fn parse_body_item(
             }
         },
         Token::If => parse_if(tokens)?,
+        Token::While => parse_while(tokens)?,
         t => bail!("Expected deref, var name, or if at start of statement (Found: {:?})", t),
     };
 
@@ -279,6 +284,18 @@ fn parse_if(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Resu
         then_body: then_body_items,
         else_body: else_body_items,
     };
+    Ok(statement)
+}
+
+fn parse_while(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<BodyItem> {
+    let Some(Token::While) = tokens.next() else { bail!("Expected while") };
+    let Some(Token::Name(cond_var)) = tokens.next() else {
+        bail!("Expected condition var for while")
+    };
+
+    let body_items = Arc::new(parse_body(tokens)?);
+
+    let statement = BodyItem::While { cond_var: cond_var.into(), body: body_items };
     Ok(statement)
 }
 

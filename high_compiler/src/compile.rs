@@ -430,7 +430,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                 }
 
                 // set return addr
-                let Some(return_sub_proc_index) = sub_proc_uuid_to_index.get(&return_sub_proc.uuid)
+                let Some(return_sub_proc_index) = sub_proc_uuid_to_index.get(return_sub_proc)
                 else {
                     bail!("Failed to find return sub proc index");
                 };
@@ -462,7 +462,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                 chain!(param_asm_commands, return_asm_commands, broadcast_asm_commands)
             },
             Call::SubProc(sub_proc) => {
-                let Some(sub_proc_index) = sub_proc_uuid_to_index.get(&sub_proc.uuid) else {
+                let Some(sub_proc_index) = sub_proc_uuid_to_index.get(sub_proc) else {
                     bail!("Failed to find sub proc index");
                 };
 
@@ -498,11 +498,11 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     bail!("Failed to find cond var offset")
                 };
 
-                let Some(then_proc_index) = sub_proc_uuid_to_index.get(&then_sub_proc.uuid) else {
+                let Some(then_proc_index) = sub_proc_uuid_to_index.get(then_sub_proc) else {
                     bail!("Failed to find then sub proc index");
                 };
 
-                let Some(pop_proc_index) = sub_proc_uuid_to_index.get(&pop_sub_proc.uuid) else {
+                let Some(pop_proc_index) = sub_proc_uuid_to_index.get(pop_sub_proc) else {
                     bail!("Failed to find pop sub proc index");
                 };
 
@@ -536,11 +536,11 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     bail!("Failed to find cond var offset")
                 };
 
-                let Some(then_proc_index) = sub_proc_uuid_to_index.get(&then_sub_proc.uuid) else {
+                let Some(then_proc_index) = sub_proc_uuid_to_index.get(then_sub_proc) else {
                     bail!("Failed to find then sub proc index");
                 };
 
-                let Some(else_proc_index) = sub_proc_uuid_to_index.get(&else_sub_proc.uuid) else {
+                let Some(else_proc_index) = sub_proc_uuid_to_index.get(else_sub_proc) else {
                     bail!("Failed to find else sub proc index");
                 };
 

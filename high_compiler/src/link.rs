@@ -27,10 +27,10 @@ pub struct SubProc {
 
 #[derive(Debug, Clone)]
 pub enum Call {
-    Func { name: Arc<str>, param_vars: Arc<Vec<Arc<str>>>, return_sub_proc: Arc<SubProc> },
-    SubProc(Arc<SubProc>),
-    IfBranch { cond_var: Arc<str>, then_sub_proc: Arc<SubProc>, pop_sub_proc: Arc<SubProc> },
-    IfElseBranch { cond_var: Arc<str>, then_sub_proc: Arc<SubProc>, else_sub_proc: Arc<SubProc> },
+    Func { name: Arc<str>, param_vars: Arc<Vec<Arc<str>>>, return_sub_proc: Uuid },
+    SubProc(Uuid),
+    IfBranch { cond_var: Arc<str>, then_sub_proc: Uuid, pop_sub_proc: Uuid },
+    IfElseBranch { cond_var: Arc<str>, then_sub_proc: Uuid, else_sub_proc: Uuid },
     Return,
     Terminate,
 }
@@ -97,12 +97,12 @@ struct CreateSubProcRes {
 fn create_sub_proc<'a>(
     body_items: &mut Peekable<impl Iterator<Item = &'a ast::BodyItem>>,
     main: bool,
-    pop_sub_proc: Option<&Arc<SubProc>>,
+    pop_sub_proc: Option<Uuid>,
 ) -> CreateSubProcRes {
     let mut rest_sps = Vec::<Arc<SubProc>>::new();
 
     macro_rules! next_sp {
-        ($body_items:expr, $pop_sp:expr) => {{
+        ($body_items:expr, $pop_sp:expr $(,)?) => {{
             let sp_res = create_sub_proc($body_items, main, $pop_sp);
 
             let sp = Arc::new(sp_res.root);
@@ -122,28 +122,65 @@ fn create_sub_proc<'a>(
             ast::BodyItem::If { cond_var, then_body, else_body } => {
                 let pop_sp = next_sp!(body_items, pop_sub_proc);
 
-                let then_sp =
-                    next_sp!(&mut then_body.iter().map(AsRef::as_ref).peekable(), Some(&pop_sp));
+                let then_sp = next_sp!(
+                    &mut then_body.iter().map(AsRef::as_ref).peekable(),
+                    Some(pop_sp.uuid)
+                );
 
-                next_call = Some(match else_body {
+                let call = match else_body {
                     None => Call::IfBranch {
                         cond_var: Arc::clone(cond_var),
-                        then_sub_proc: then_sp,
-                        pop_sub_proc: pop_sp,
+                        then_sub_proc: then_sp.uuid,
+                        pop_sub_proc: pop_sp.uuid,
                     },
                     Some(else_body) => {
                         let else_sp = next_sp!(
                             &mut else_body.iter().map(AsRef::as_ref).peekable(),
-                            Some(&pop_sp)
+                            Some(pop_sp.uuid)
                         );
 
                         Call::IfElseBranch {
                             cond_var: Arc::clone(cond_var),
-                            then_sub_proc: then_sp,
-                            else_sub_proc: else_sp,
+                            then_sub_proc: then_sp.uuid,
+                            else_sub_proc: else_sp.uuid,
                         }
                     },
-                });
+                };
+
+                next_call = Some(call);
+            },
+            ast::BodyItem::While { cond_var, body } => {
+                // where to go after exiting the loop
+                let pop_sp = next_sp!(body_items, pop_sub_proc);
+
+                let check_uuid = Uuid::new_v4();
+
+                // body of the while loop
+                let then_sp = next_sp!(
+                    &mut body.iter().map(AsRef::as_ref).peekable(),
+                    // tell the body to go back to the check condition once done
+                    Some(check_uuid),
+                );
+
+                // check if the condition is still true... if so, go to body, else pop out
+                let check_sp = SubProc {
+                    uuid: check_uuid,
+                    statements: Arc::new(Vec::new()),
+                    next_call: Arc::new(Call::IfElseBranch {
+                        cond_var: Arc::clone(cond_var),
+                        then_sub_proc: then_sp.uuid,
+                        else_sub_proc: pop_sp.uuid,
+                    }),
+                };
+
+                // start loop by going to check sp
+                let call = Call::SubProc(check_sp.uuid);
+
+                // register manually created sps
+                rest_sps.push(Arc::new(check_sp));
+
+                // finish!
+                next_call = Some(call);
             },
             ast::BodyItem::Statement(statement) => match statement.as_ref() {
                 ast::Statement::Assign(assign) => {
@@ -158,7 +195,7 @@ fn create_sub_proc<'a>(
                     next_call = Some(Call::Func {
                         name: Arc::clone(func_name),
                         param_vars: Arc::clone(param_vars),
-                        return_sub_proc: return_sp,
+                        return_sub_proc: return_sp.uuid,
                     });
                 },
             },
@@ -170,7 +207,7 @@ fn create_sub_proc<'a>(
         None => {
             if body_items.peek().is_none() {
                 match pop_sub_proc {
-                    Some(pop_sub_proc) => Call::SubProc(Arc::clone(pop_sub_proc)),
+                    Some(pop_sub_proc) => Call::SubProc(pop_sub_proc),
                     None => match main {
                         true => Call::Terminate,
                         false => Call::Return,
@@ -178,7 +215,7 @@ fn create_sub_proc<'a>(
                 }
             } else {
                 let return_sp = next_sp!(body_items, None);
-                Call::SubProc(return_sp)
+                Call::SubProc(return_sp.uuid)
             }
         },
     };

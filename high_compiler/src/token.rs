@@ -20,6 +20,7 @@ pub enum Token {
     Func,
     If,
     Else,
+    While,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,6 +98,7 @@ fn consume_word(chars: &mut Peekable<impl Iterator<Item = char>>) -> anyhow::Res
         "deref" => Token::Deref,
         "if" => Token::If,
         "else" => Token::Else,
+        "while" => Token::While,
         w => match Comword::from_str(w) {
             Ok(comword) => Token::Comword(comword),
             Err(()) => {
