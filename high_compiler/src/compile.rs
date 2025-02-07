@@ -1,11 +1,11 @@
 use anyhow::bail;
-use asm_compiler::ast::{self as asm_ast, BinaryArgs, UnaryArgs};
+use asm_compiler::ast::{self as asm_ast, BinaryArgs, UnaryArgs, Value};
 use itertools::Itertools;
 use std::{collections::HashMap, sync::Arc};
 use uuid::Uuid;
 
 use crate::{
-    ast::{Assign, BodyItem, Command, NativeCommand},
+    ast::{Assign, Command, NativeCommand},
     link::{Call, Proc, ProcKind, Statement},
 };
 
@@ -18,8 +18,8 @@ struct PubRegister(&'static str);
 trait Register {
     fn addr(&self) -> &'static str;
 
-    fn addr_value(&self) -> asm_ast::Value {
-        asm_ast::Value { str: self.addr().into() }
+    fn addr_value(&self) -> Arc<asm_ast::Value> {
+        Arc::new(asm_ast::Value::Literal(Arc::new(asm_ast::Literal { val: self.addr().into() })))
     }
 }
 
@@ -51,17 +51,33 @@ macro_rules! chain {
     };
 }
 
+fn data(command: asm_ast::DataCommand) -> Arc<asm_ast::Command> {
+    Arc::new(asm_ast::Command::Data(Arc::new(command)))
+}
+
+fn control(command: asm_ast::ControlCommand) -> Arc<asm_ast::Command> {
+    Arc::new(asm_ast::Command::Control(Arc::new(command)))
+}
+
+fn literal(value: impl ToString) -> Arc<Value> {
+    Arc::new(asm_ast::Value::Literal(Arc::new(asm_ast::Literal { val: value.to_string().into() })))
+}
+
+fn label(value: &str) -> Arc<Value> {
+    Arc::new(asm_ast::Value::Label(Arc::new(asm_ast::Label { name: value.into() })))
+}
+
 fn compute_stack_addr(dest: PubRegister, offset: usize) -> Vec<Arc<asm_ast::Command>> {
     Vec::from([
-        Arc::new(asm_ast::Command::Move(asm_ast::BinaryArgs {
+        data(asm_ast::DataCommand::Move(asm_ast::BinaryArgs {
             dest: RESULT.addr_value(),
             val: STACK_POINTER.addr_value(),
         })),
-        Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
+        data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
             dest: OPERAND.addr_value(),
-            val: asm_ast::Value { str: offset.to_string().into() },
+            val: literal(offset),
         })),
-        Arc::new(asm_ast::Command::Sub(asm_ast::TernaryArgs {
+        data(asm_ast::DataCommand::Sub(asm_ast::TernaryArgs {
             dest: dest.addr_value(),
             left: RESULT.addr_value(),
             right: OPERAND.addr_value(),
@@ -71,15 +87,15 @@ fn compute_stack_addr(dest: PubRegister, offset: usize) -> Vec<Arc<asm_ast::Comm
 
 fn compute_param_addr(dest: PubRegister, offset: usize) -> Vec<Arc<asm_ast::Command>> {
     Vec::from([
-        Arc::new(asm_ast::Command::Move(asm_ast::BinaryArgs {
+        data(asm_ast::DataCommand::Move(asm_ast::BinaryArgs {
             dest: RESULT.addr_value(),
             val: STACK_POINTER.addr_value(),
         })),
-        Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
+        data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
             dest: OPERAND.addr_value(),
-            val: asm_ast::Value { str: offset.to_string().into() },
+            val: literal(offset),
         })),
-        Arc::new(asm_ast::Command::Add(asm_ast::TernaryArgs {
+        data(asm_ast::DataCommand::Add(asm_ast::TernaryArgs {
             dest: dest.addr_value(),
             left: RESULT.addr_value(),
             right: OPERAND.addr_value(),
@@ -90,7 +106,7 @@ fn compute_param_addr(dest: PubRegister, offset: usize) -> Vec<Arc<asm_ast::Comm
 fn get_stack_value(dest: PubRegister, offset: usize) -> Vec<Arc<asm_ast::Command>> {
     [].into_iter()
         .chain(compute_stack_addr(dest, offset))
-        .chain([Arc::new(asm_ast::Command::MoveDerefSrc(asm_ast::BinaryArgs {
+        .chain([data(asm_ast::DataCommand::MoveDerefSrc(asm_ast::BinaryArgs {
             dest: dest.addr_value(),
             val: dest.addr_value(),
         }))])
@@ -105,16 +121,16 @@ pub fn compile(linked: Vec<Arc<Proc>>) -> anyhow::Result<Vec<Arc<asm_ast::Proced
         kind: asm_ast::ProcedureKind::Main,
         commands: Vec::from([
             // init stack pointer
-            Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
+            data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
                 dest: STACK_POINTER.addr_value(), // stored in mem addr 1
                 val: RIGHT.addr_value(),          // points to last addr in stack (2)
             })),
             // run high-level main method
-            Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
+            data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
                 dest: RESULT.addr_value(),
-                val: asm_ast::Value { str: "main.0".into() },
+                val: label("main.0"),
             })),
-            Arc::new(asm_ast::Command::Jump(asm_ast::UnaryArgs { val: RESULT.addr_value() })),
+            control(asm_ast::ControlCommand::Jump(asm_ast::UnaryArgs { val: RESULT.addr_value() })),
         ]),
     };
 
@@ -165,15 +181,15 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
         // allocate stack vars
         if is_head {
             asm_commands.extend([
-                Arc::new(asm_ast::Command::Move(asm_ast::BinaryArgs {
+                data(asm_ast::DataCommand::Move(asm_ast::BinaryArgs {
                     dest: RESULT.addr_value(),
                     val: STACK_POINTER.addr_value(),
                 })),
-                Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
+                data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
                     dest: OPERAND.addr_value(),
-                    val: asm_ast::Value { str: stack_vars.len().to_string().into() },
+                    val: literal(stack_vars.len()),
                 })),
-                Arc::new(asm_ast::Command::Add(asm_ast::TernaryArgs {
+                data(asm_ast::DataCommand::Add(asm_ast::TernaryArgs {
                     dest: STACK_POINTER.addr_value(),
                     left: RESULT.addr_value(),
                     right: OPERAND.addr_value(),
@@ -193,11 +209,11 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
 
                     // value to assign to var should end up in temp_right
                     let mut assign_asm_commands = match command.as_ref() {
-                        Command::Literal(literal) => Vec::from([
+                        Command::Literal(val) => Vec::from([
                             // set var to literal stored in temp_operand
-                            Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
+                            data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
                                 dest: RIGHT.addr_value(),
-                                val: asm_ast::Value { str: literal.clone() },
+                                val: literal(val),
                             })),
                         ]),
                         Command::Add { left, right } => {
@@ -218,7 +234,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                                 // store value for right in RIGHT
                                 get_stack_value(RIGHT, *right_offset),
                                 // set var to sum of temp_left and temp_right
-                                [Arc::new(asm_ast::Command::Add(asm_ast::TernaryArgs {
+                                [data(asm_ast::DataCommand::Add(asm_ast::TernaryArgs {
                                     dest: RIGHT.addr_value(),
                                     left: LEFT.addr_value(),
                                     right: RIGHT.addr_value(),
@@ -246,7 +262,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                                 // store value of var in RIGHT
                                 get_stack_value(RIGHT, *var_offset),
                                 // deref RIGHT
-                                [Arc::new(asm_ast::Command::MoveDerefSrc(asm_ast::BinaryArgs {
+                                [data(asm_ast::DataCommand::MoveDerefSrc(asm_ast::BinaryArgs {
                                     dest: RIGHT.addr_value(),
                                     val: RIGHT.addr_value(),
                                 }))]
@@ -278,7 +294,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                             chain!(
                                 get_stack_value(LEFT, *left_offset),
                                 get_stack_value(RIGHT, *right_offset),
-                                [Arc::new(asm_ast::Command::Eq(asm_ast::TernaryArgs {
+                                [data(asm_ast::DataCommand::Eq(asm_ast::TernaryArgs {
                                     dest: RIGHT.addr_value(),
                                     left: LEFT.addr_value(),
                                     right: RIGHT.addr_value(),
@@ -293,7 +309,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
 
                             chain!(
                                 get_stack_value(RIGHT, *var_offset),
-                                [Arc::new(asm_ast::Command::Not(asm_ast::BinaryArgs {
+                                [data(asm_ast::DataCommand::Not(asm_ast::BinaryArgs {
                                     dest: RIGHT.addr_value(),
                                     val: RIGHT.addr_value(),
                                 }))],
@@ -306,13 +322,13 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
 
                     // deref var addr if its a ref assign
                     if *deref_var {
-                        assign_asm_commands.push(Arc::new(asm_ast::Command::MoveDerefSrc(
+                        assign_asm_commands.push(data(asm_ast::DataCommand::MoveDerefSrc(
                             asm_ast::BinaryArgs { dest: LEFT.addr_value(), val: LEFT.addr_value() },
                         )));
                     }
 
                     // move value at addr in temp_right to addr in temp_left
-                    assign_asm_commands.push(Arc::new(asm_ast::Command::MoveDerefDest(
+                    assign_asm_commands.push(data(asm_ast::DataCommand::MoveDerefDest(
                         asm_ast::BinaryArgs { dest: LEFT.addr_value(), val: RIGHT.addr_value() },
                     )));
 
@@ -327,8 +343,8 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
 
                         chain!(
                             get_stack_value(RIGHT, var_offset),
-                            [Arc::new(asm_ast::Command::Out(asm_ast::UnaryArgs {
-                                val: RIGHT.addr_value(),
+                            [data(asm_ast::DataCommand::Out(asm_ast::UnaryArgs {
+                                val: RIGHT.addr_value()
                             }))],
                         )
                     },
@@ -341,15 +357,15 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
         if is_tail {
             // cleanup stack vars
             asm_commands.extend([
-                Arc::new(asm_ast::Command::Move(asm_ast::BinaryArgs {
+                data(asm_ast::DataCommand::Move(asm_ast::BinaryArgs {
                     dest: RESULT.addr_value(),
                     val: STACK_POINTER.addr_value(),
                 })),
-                Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
+                data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
                     dest: OPERAND.addr_value(),
-                    val: asm_ast::Value { str: stack_vars.len().to_string().into() },
+                    val: literal(stack_vars.len()),
                 })),
-                Arc::new(asm_ast::Command::Sub(asm_ast::TernaryArgs {
+                data(asm_ast::DataCommand::Sub(asm_ast::TernaryArgs {
                     dest: STACK_POINTER.addr_value(),
                     left: RESULT.addr_value(),
                     right: OPERAND.addr_value(),
@@ -380,11 +396,11 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                         compute_param_addr(RIGHT, param_offset + 2),
                         // move value in call var to func param
                         [
-                            Arc::new(asm_ast::Command::MoveDerefSrc(asm_ast::BinaryArgs {
+                            data(asm_ast::DataCommand::MoveDerefSrc(asm_ast::BinaryArgs {
                                 dest: OPERAND.addr_value(),
                                 val: LEFT.addr_value(),
                             })),
-                            Arc::new(asm_ast::Command::MoveDerefDest(asm_ast::BinaryArgs {
+                            data(asm_ast::DataCommand::MoveDerefDest(asm_ast::BinaryArgs {
                                 dest: RIGHT.addr_value(),
                                 val: OPERAND.addr_value(),
                             })),
@@ -404,26 +420,24 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     // store addr for call var in LEFT
                     compute_param_addr(LEFT, 1),
                     // store return addr in RIGHT
-                    [Arc::new(asm_ast::Command::Set(asm_ast::BinaryArgs {
+                    [data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
                         dest: RIGHT.addr_value(),
-                        val: asm_ast::Value {
-                            str: format!("{}.{}", asm_proc_name, return_sub_proc_index).into()
-                        },
+                        val: label(&format!("{}.{}", asm_proc_name, return_sub_proc_index)),
                     }))],
                     // move value in RIGHT (return addr) to addr in LEFT (return addr var)
-                    [Arc::new(asm_ast::Command::MoveDerefDest(asm_ast::BinaryArgs {
+                    [data(asm_ast::DataCommand::MoveDerefDest(asm_ast::BinaryArgs {
                         dest: LEFT.addr_value(),
-                        val: RIGHT.addr_value(),
+                        val: RIGHT.addr_value()
                     }))],
                 );
 
                 let broadcast_asm_commands = Vec::from([
                     // broadcast function message
-                    Arc::new(asm_ast::Command::Set(BinaryArgs {
+                    data(asm_ast::DataCommand::Set(BinaryArgs {
                         dest: RESULT.addr_value(),
-                        val: asm_ast::Value { str: format!("func_{}.0", name).into() },
+                        val: label(&format!("func_{}.0", name)),
                     })),
-                    Arc::new(asm_ast::Command::Jump(UnaryArgs { val: RESULT.addr_value() })),
+                    control(asm_ast::ControlCommand::Jump(UnaryArgs { val: RESULT.addr_value() })),
                 ]);
 
                 chain!(param_asm_commands, return_asm_commands, broadcast_asm_commands)
@@ -435,13 +449,11 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
 
                 Vec::from([
                     // broadcast function message
-                    Arc::new(asm_ast::Command::Set(BinaryArgs {
+                    data(asm_ast::DataCommand::Set(BinaryArgs {
                         dest: RESULT.addr_value(),
-                        val: asm_ast::Value {
-                            str: format!("{}.{}", asm_proc_name, sub_proc_index).into(),
-                        },
+                        val: label(&format!("{}.{}", asm_proc_name, sub_proc_index)),
                     })),
-                    Arc::new(asm_ast::Command::Jump(UnaryArgs { val: RESULT.addr_value() })),
+                    control(asm_ast::ControlCommand::Jump(UnaryArgs { val: RESULT.addr_value() })),
                 ])
             },
             Call::Return => {
@@ -450,15 +462,17 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     compute_param_addr(RIGHT, 1),
                     // broadcast function message
                     [
-                        Arc::new(asm_ast::Command::MoveDerefSrc(BinaryArgs {
+                        data(asm_ast::DataCommand::MoveDerefSrc(BinaryArgs {
                             dest: RESULT.addr_value(),
-                            val: RIGHT.addr_value(),
+                            val: RIGHT.addr_value()
                         })),
-                        Arc::new(asm_ast::Command::Jump(UnaryArgs { val: RESULT.addr_value() })),
-                    ]
+                        control(asm_ast::ControlCommand::Jump(UnaryArgs {
+                            val: RESULT.addr_value()
+                        })),
+                    ],
                 )
             },
-            Call::Terminate => Vec::new(),
+            Call::Terminate => Vec::from([control(asm_ast::ControlCommand::Exit)]),
         };
 
         asm_commands.extend(asm_call_commands);

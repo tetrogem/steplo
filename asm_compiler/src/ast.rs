@@ -1,4 +1,4 @@
-use std::{mem::replace, sync::Arc};
+use std::{iter::Peekable, mem::replace, sync::Arc};
 
 use anyhow::{bail, Context};
 
@@ -6,47 +6,62 @@ use crate::token;
 
 #[derive(Debug)]
 pub enum Command {
+    Data(Arc<DataCommand>),
+    Control(Arc<ControlCommand>),
+}
+
+#[derive(Debug)]
+pub enum DataCommand {
     Set(BinaryArgs),
     Move(BinaryArgs),
     MoveDerefDest(BinaryArgs),
     MoveDerefSrc(BinaryArgs),
     Add(TernaryArgs),
     Sub(TernaryArgs),
-    Jump(UnaryArgs),
-    BranchEq(TernaryArgs),
     Out(UnaryArgs),
     Eq(TernaryArgs),
     Not(BinaryArgs),
 }
 
 #[derive(Debug)]
-pub struct BinaryArgs {
-    pub dest: Value,
-    pub val: Value,
-}
-
-#[derive(Debug)]
-pub struct TernaryArgs {
-    pub dest: Value,
-    pub left: Value,
-    pub right: Value,
+pub enum ControlCommand {
+    Jump(UnaryArgs),
+    BranchEq(TernaryArgs),
+    Exit,
 }
 
 #[derive(Debug)]
 pub struct UnaryArgs {
-    pub val: Value,
+    pub val: Arc<Value>,
 }
 
 #[derive(Debug)]
-pub struct BranchArgs {
-    pub src: Value,
-    pub left: Value,
-    pub right: Value,
+pub struct BinaryArgs {
+    pub dest: Arc<Value>,
+    pub val: Arc<Value>,
 }
 
 #[derive(Debug)]
-pub struct Value {
-    pub str: Arc<str>,
+pub struct TernaryArgs {
+    pub dest: Arc<Value>,
+    pub left: Arc<Value>,
+    pub right: Arc<Value>,
+}
+
+#[derive(Debug)]
+pub enum Value {
+    Literal(Arc<Literal>),
+    Label(Arc<Label>),
+}
+
+#[derive(Debug)]
+pub struct Literal {
+    pub val: Arc<str>,
+}
+
+#[derive(Debug)]
+pub struct Label {
+    pub name: Arc<str>,
 }
 
 #[derive(Debug)]
@@ -61,33 +76,52 @@ pub enum ProcedureKind {
     Sub { name: Arc<str> },
 }
 
-fn parse_value<'a>(tokens: &mut impl Iterator<Item = &'a token::Token>) -> anyhow::Result<Value> {
+fn parse_value<'a>(
+    tokens: &mut Peekable<impl Iterator<Item = &'a token::Token>>,
+) -> anyhow::Result<Value> {
+    let value = match tokens.peek() {
+        Some(token::Token::Hashtag) => Value::Label(Arc::new(parse_label(tokens)?)),
+        _ => Value::Literal(Arc::new(parse_literal(tokens)?)),
+    };
+
+    Ok(value)
+}
+
+fn parse_literal<'a>(
+    tokens: &mut impl Iterator<Item = &'a token::Token>,
+) -> anyhow::Result<Literal> {
     let Some(token::Token::Value(value)) = tokens.next() else { bail!("Expected value") };
-    Ok(Value { str: Arc::clone(value) })
+    Ok(Literal { val: Arc::clone(value) })
+}
+
+fn parse_label<'a>(tokens: &mut impl Iterator<Item = &'a token::Token>) -> anyhow::Result<Label> {
+    let Some(token::Token::Hashtag) = tokens.next() else { bail!("Expected proc name hashtag") };
+    let Some(token::Token::Value(name)) = tokens.next() else { bail!("Expected proc name value") };
+    Ok(Label { name: Arc::clone(name) })
+}
+
+fn parse_unary_args<'a>(
+    tokens: &mut Peekable<impl Iterator<Item = &'a token::Token>>,
+) -> anyhow::Result<UnaryArgs> {
+    let val = Arc::new(parse_value(tokens).with_context(|| "For arg [val]")?);
+    Ok(UnaryArgs { val })
 }
 
 fn parse_binary_args<'a>(
-    tokens: &mut impl Iterator<Item = &'a token::Token>,
+    tokens: &mut Peekable<impl Iterator<Item = &'a token::Token>>,
 ) -> anyhow::Result<BinaryArgs> {
-    let dest = parse_value(tokens).with_context(|| "For arg [dest]")?;
-    let val = parse_value(tokens).with_context(|| "For arg [val]")?;
+    let dest = Arc::new(parse_value(tokens).with_context(|| "For arg [dest]")?);
+    let val = Arc::new(parse_value(tokens).with_context(|| "For arg [val]")?);
     Ok(BinaryArgs { dest, val })
 }
 
 fn parse_ternary_args<'a>(
-    tokens: &mut impl Iterator<Item = &'a token::Token>,
+    tokens: &mut Peekable<impl Iterator<Item = &'a token::Token>>,
 ) -> anyhow::Result<TernaryArgs> {
-    let dest = parse_value(tokens).with_context(|| "For arg [dest]")?;
-    let left = parse_value(tokens).with_context(|| "For arg [left]")?;
-    let right = parse_value(tokens).with_context(|| "For arg [right]")?;
+    let dest = Arc::new(parse_value(tokens).with_context(|| "For arg [dest]")?);
+    let left = Arc::new(parse_value(tokens).with_context(|| "For arg [left]")?);
+    let right = Arc::new(parse_value(tokens).with_context(|| "For arg [right]")?);
     Ok(TernaryArgs { dest, left, right })
-}
-
-fn parse_unary_args<'a>(
-    tokens: &mut impl Iterator<Item = &'a token::Token>,
-) -> anyhow::Result<UnaryArgs> {
-    let src = parse_value(tokens).with_context(|| "For arg [val]")?;
-    Ok(UnaryArgs { val: src })
 }
 
 pub fn parse<'a>(
@@ -104,21 +138,40 @@ pub fn parse<'a>(
                 let Some(token::Token::Op(op_token)) = tokens.next() else { bail!("Expected op") };
 
                 let command = match op_token {
-                    token::Op::Lit => Command::Set(parse_binary_args(&mut tokens)?),
-                    token::Op::Move => Command::Move(parse_binary_args(&mut tokens)?),
-                    token::Op::MoveDerefDest => {
-                        Command::MoveDerefDest(parse_binary_args(&mut tokens)?)
+                    token::Op::Lit => {
+                        Command::Data(Arc::new(DataCommand::Set(parse_binary_args(&mut tokens)?)))
                     },
-                    token::Op::MoveDerefSrc => {
-                        Command::MoveDerefSrc(parse_binary_args(&mut tokens)?)
+                    token::Op::Move => {
+                        Command::Data(Arc::new(DataCommand::Move(parse_binary_args(&mut tokens)?)))
                     },
-                    token::Op::Add => Command::Add(parse_ternary_args(&mut tokens)?),
-                    token::Op::Sub => Command::Sub(parse_ternary_args(&mut tokens)?),
-                    token::Op::Jump => Command::Jump(parse_unary_args(&mut tokens)?),
-                    token::Op::BranchEq => Command::BranchEq(parse_ternary_args(&mut tokens)?),
-                    token::Op::Out => Command::Out(parse_unary_args(&mut tokens)?),
-                    token::Op::Eq => Command::Eq(parse_ternary_args(&mut tokens)?),
-                    token::Op::Not => Command::Not(parse_binary_args(&mut tokens)?),
+                    token::Op::MoveDerefDest => Command::Data(Arc::new(
+                        DataCommand::MoveDerefDest(parse_binary_args(&mut tokens)?),
+                    )),
+                    token::Op::MoveDerefSrc => Command::Data(Arc::new(DataCommand::MoveDerefSrc(
+                        parse_binary_args(&mut tokens)?,
+                    ))),
+                    token::Op::Add => {
+                        Command::Data(Arc::new(DataCommand::Add(parse_ternary_args(&mut tokens)?)))
+                    },
+                    token::Op::Sub => {
+                        Command::Data(Arc::new(DataCommand::Sub(parse_ternary_args(&mut tokens)?)))
+                    },
+                    token::Op::Jump => Command::Control(Arc::new(ControlCommand::Jump(
+                        parse_unary_args(&mut tokens)?,
+                    ))),
+                    token::Op::BranchEq => Command::Control(Arc::new(ControlCommand::BranchEq(
+                        parse_ternary_args(&mut tokens)?,
+                    ))),
+                    token::Op::Out => {
+                        Command::Data(Arc::new(DataCommand::Out(parse_unary_args(&mut tokens)?)))
+                    },
+                    token::Op::Eq => {
+                        Command::Data(Arc::new(DataCommand::Eq(parse_ternary_args(&mut tokens)?)))
+                    },
+                    token::Op::Not => {
+                        Command::Data(Arc::new(DataCommand::Not(parse_binary_args(&mut tokens)?)))
+                    },
+                    token::Op::Exit => Command::Control(Arc::new(ControlCommand::Exit)),
                 };
 
                 Some(command)
@@ -134,8 +187,8 @@ pub fn parse<'a>(
                 tokens.next();
                 None
             },
-            token::Token::ProcHeader => {
-                let Some(token::Token::ProcHeader) = tokens.next() else {
+            token::Token::Hashtag => {
+                let Some(token::Token::Hashtag) = tokens.next() else {
                     bail!("Expected proc header")
                 };
 

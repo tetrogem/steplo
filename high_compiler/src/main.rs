@@ -38,10 +38,11 @@ fn main() -> anyhow::Result<()> {
     // dbg!(&ast);
     let linked = time("Linking...", || link::link(ast))?;
     dbg!(&linked);
-    let asm = time("Compiling high-level to asm...", || compile(linked))?;
+    let asm_ast = time("Compiling high-level to asm...", || compile(linked))?;
+    let asm_linked = time("Linking asm...", || asm_compiler::link::link(&asm_ast));
     // dbg!(&compiled);
     let ez = time("Transpiling to EZ...", || {
-        asm_compiler::compile::compile(&asm.iter().map(AsRef::as_ref).collect_vec())
+        asm_compiler::compile::compile(&asm_linked.iter().map(AsRef::as_ref).collect_vec())
     })?;
     let ir = time("Transpiling to IR...", || ez.compile());
     let js_val = time("Compiling to JSON...", || ir.compile());

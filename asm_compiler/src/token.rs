@@ -7,7 +7,7 @@ pub enum Token {
     Op(Op),
     Value(Arc<str>),
     Comment(Arc<str>),
-    ProcHeader,
+    Hashtag,
     Eol,
 }
 
@@ -24,6 +24,7 @@ pub enum Op {
     Out,
     Eq,
     Not,
+    Exit,
 }
 
 pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
@@ -60,6 +61,7 @@ pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
                         "out" => Op::Out,
                         "eq" => Op::Eq,
                         "not" => Op::Not,
+                        "exit" => Op::Exit,
                         _ => bail!("Invalid operator: {}", word),
                     };
 
@@ -95,7 +97,7 @@ pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
                 },
                 '#' => {
                     let Some('#') = chars.next() else { bail!("Expected hashtag") };
-                    Some(Token::ProcHeader)
+                    Some(Token::Hashtag)
                 },
                 _ => bail!("Unexpected character: {next}"),
             };

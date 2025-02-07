@@ -1,5 +1,6 @@
 mod ast;
 mod compile;
+mod link;
 mod token;
 
 use std::{
@@ -37,8 +38,9 @@ fn main() -> anyhow::Result<()> {
 
     let tokens = time("Tokenizing...", || tokenize(input))?;
     let ast = time("Parsing...", || parse(tokens.iter().map(AsRef::as_ref)))?;
+    let linked = time("Linking...", || link::link(&ast));
     let ez =
-        time("Transpiling to EZ...", || compile(&ast.iter().map(AsRef::as_ref).collect_vec()))?;
+        time("Transpiling to EZ...", || compile(&linked.iter().map(AsRef::as_ref).collect_vec()))?;
     let ir = time("Transpiling to IR...", || ez.compile());
     let js_val = time("Compiling to JSON...", || ir.compile());
     let json = time("Serializing...", || format!("{:#}", js_val));
