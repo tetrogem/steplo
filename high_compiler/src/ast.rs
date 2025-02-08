@@ -33,12 +33,12 @@ pub struct Proc {
 pub enum BodyItem {
     Statement(Arc<Statement>),
     If {
-        cond_var: Arc<str>,
+        cond_com: Arc<Command>,
         then_body: Arc<Vec<Arc<BodyItem>>>,
         else_body: Option<Arc<Vec<Arc<BodyItem>>>>,
     },
     While {
-        cond_var: Arc<str>,
+        cond_com: Arc<Command>,
         body: Arc<Vec<Arc<BodyItem>>>,
     },
 }
@@ -310,7 +310,7 @@ fn parse_call(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Re
 
 fn parse_if(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<BodyItem> {
     let Some(Token::If) = tokens.next() else { bail!("Expected if") };
-    let Some(Token::Name(cond_var)) = tokens.next() else { bail!("Expected condition var for if") };
+    let cond_com = parse_command(tokens)?;
 
     let then_body_items = Arc::new(parse_body(tokens)?);
 
@@ -324,7 +324,7 @@ fn parse_if(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Resu
     };
 
     let statement = BodyItem::If {
-        cond_var: cond_var.into(),
+        cond_com: Arc::new(cond_com),
         then_body: then_body_items,
         else_body: else_body_items,
     };
@@ -333,13 +333,11 @@ fn parse_if(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Resu
 
 fn parse_while(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<BodyItem> {
     let Some(Token::While) = tokens.next() else { bail!("Expected while") };
-    let Some(Token::Name(cond_var)) = tokens.next() else {
-        bail!("Expected condition var for while")
-    };
+    let cond_com = parse_command(tokens)?;
 
     let body_items = Arc::new(parse_body(tokens)?);
 
-    let statement = BodyItem::While { cond_var: cond_var.into(), body: body_items };
+    let statement = BodyItem::While { cond_com: Arc::new(cond_com), body: body_items };
     Ok(statement)
 }
 

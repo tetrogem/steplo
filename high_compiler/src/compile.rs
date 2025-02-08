@@ -357,12 +357,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                 )
             },
             Call::Terminate => Vec::from([control(asm_ast::ControlCommand::Exit)]),
-            Call::IfBranch { cond_var, then_sub_proc, pop_sub_proc } => {
-                let Some(cond_var_offset) = var_to_offset.get(&Var::User(Arc::clone(cond_var)))
-                else {
-                    bail!("Failed to find cond var offset")
-                };
-
+            Call::IfBranch { cond_com, then_sub_proc, pop_sub_proc } => {
                 let Some(then_proc_index) = sub_proc_uuid_to_index.get(then_sub_proc) else {
                     bail!("Failed to find then sub proc index");
                 };
@@ -372,7 +367,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                 };
 
                 chain!(
-                    get_stack_value(RIGHT, *cond_var_offset),
+                    compile_command(cond_com, &var_to_offset)?,
                     // store `then` sub proc name in OPERAND and `pop` sub proc name in RESULT
                     [
                         data(asm_ast::DataCommand::Set(BinaryArgs {
@@ -395,12 +390,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     ]
                 )
             },
-            Call::IfElseBranch { cond_var, then_sub_proc, else_sub_proc } => {
-                let Some(cond_var_offset) = var_to_offset.get(&Var::User(Arc::clone(cond_var)))
-                else {
-                    bail!("Failed to find cond var offset")
-                };
-
+            Call::IfElseBranch { cond_com, then_sub_proc, else_sub_proc } => {
                 let Some(then_proc_index) = sub_proc_uuid_to_index.get(then_sub_proc) else {
                     bail!("Failed to find then sub proc index");
                 };
@@ -410,7 +400,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                 };
 
                 chain!(
-                    get_stack_value(RIGHT, *cond_var_offset),
+                    compile_command(cond_com, &var_to_offset)?,
                     // store `then` sub proc name in OPERAND and `else` sub proc name in RESULT
                     [
                         data(asm_ast::DataCommand::Set(BinaryArgs {
