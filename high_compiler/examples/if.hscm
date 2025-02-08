@@ -1,7 +1,7 @@
 main || {
-    if lit "1" {
-        out(lit "Inside if!");
+    if "1" {
+        out("Inside if!");
     }
 
-    out(lit "Outside if!");
+    out("Outside if!");
 }

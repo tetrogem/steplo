@@ -1,22 +1,22 @@
 main || {
-    out(lit "Enter main");
+    out("Enter main");
     a();
-    out(lit "Exit main");
+    out("Exit main");
 }
 
 func a() || {
-    out(lit "Enter a");
+    out("Enter a");
     b();
-    out(lit "Exit a");
+    out("Exit a");
 }
 
 func b() || {
-    out(lit "Enter b");
+    out("Enter b");
     c();
-    out(lit "Exit b");
+    out("Exit b");
 }
 
 func c() || {
-    out(lit "Enter c");
-    out(lit "Exit c");
+    out("Enter c");
+    out("Exit c");
 }

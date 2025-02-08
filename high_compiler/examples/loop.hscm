@@ -1,24 +1,18 @@
-main |i, i_ref| {
-    i = lit "20";
-    i_ref = ref i;
-    iterate(i_ref);
+main |i| {
+    i = "20";
+    iterate(ref i);
 }
 
-func iterate(i_ref) |i, x| {
-    i = copy_deref i_ref;
-    x = lit "0";
-    x = eq i x;
-    x = not x;
+func iterate(i_ref) |i| {
+    i = i_ref | deref;
 
-    if x {
-        x = lit "1";
-        deref i_ref = sub i x;
+    if "0" | eq i | not {
+        deref i_ref = i | sub "1";
         greet();
         iterate(i_ref);
     }
 }
 
-func greet() |msg| {
-    msg = lit "Hello!";
-    out(msg);
+func greet() || {
+    out("Hello!");
 }

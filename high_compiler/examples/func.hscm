@@ -1,8 +1,8 @@
 main |msg| {
     world();
-    msg = lit "Hello";
+    msg = "Hello";
 }
 
 func world() |msg| {
-    msg = lit "world!";
+    msg = "world!";
 }

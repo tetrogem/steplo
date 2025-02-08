@@ -1,5 +1,6 @@
 main |i, cond| {
-    i = "10";
+    out("Enter how many iterations to do:");
+    in(ref i);
 
     out("Start!");
 

@@ -1,6 +1,4 @@
-main |a| {
-    a = lit "Hello";
-    out(a);
-    a = lit "world!";
-    out(a);
+main || {
+    out("Hello");
+    out("world!");
 }

@@ -1,17 +1,13 @@
-main |a, msg| {
-    msg = lit "Starting...";
-    out(msg);
+main || {
+    out("Starting...");
 
-    a = lit "1";
-    if a {
+    if "1" {
         foo();
     }
 
-    msg = lit "Stopping...";
-    out(msg);
+    out("Stopping...");
 }
 
-func foo() |msg| {
-    msg = lit "Foo was called!";
-    out(msg);
+func foo() || {
+    out("Foo was called!");
 }

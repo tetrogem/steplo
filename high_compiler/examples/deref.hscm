@@ -1,9 +1,8 @@
-main |a, a_ref| {
-    a = lit "Hello!";
-    a_ref = ref a;
-    use_ref(a_ref);
+main |a| {
+    a = "Hello!";
+    use_ref(ref a);
 }
 
 func use_ref(a_ref) |msg| {
-    msg = copy_deref a_ref;
+    msg = a_ref | deref;
 }

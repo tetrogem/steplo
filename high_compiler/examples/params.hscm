@@ -1,9 +1,7 @@
-main |a, b| {
-    a = lit "3";
-    b = lit "5";
-    sum(a, b);
+main || {
+    sum("3", "5");
 }
 
 func sum(c, d) |sum| {
-    sum = add c d;
+    out(c | add d);
 }

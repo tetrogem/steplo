@@ -1,4 +1,4 @@
 main |a, b| {
-    a = lit "12345";
-    b = copy a;
+    a = "12345";
+    b = a;
 }
