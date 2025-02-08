@@ -5,7 +5,7 @@ use anyhow::bail;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     Name(String),
-    Comword(Comword),
+    Comword(Opword),
     Eq,
     Semi,
     LeftParen,
@@ -21,32 +21,27 @@ pub enum Token {
     If,
     Else,
     While,
+    Ref,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Comword {
-    Literal,
+pub enum Opword {
     Eq,
     Not,
     Add,
-    Ref,
     Deref,
-    Copy,
     Sub,
 }
 
-impl FromStr for Comword {
+impl FromStr for Opword {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let comword = match s {
-            "lit" => Self::Literal,
             "eq" => Self::Eq,
             "not" => Self::Not,
             "add" => Self::Add,
-            "ref" => Self::Ref,
             "deref" => Self::Deref,
-            "copy" => Self::Copy,
             "sub" => Self::Sub,
             _ => return Err(()),
         };
@@ -95,11 +90,12 @@ fn consume_word(chars: &mut Peekable<impl Iterator<Item = char>>) -> anyhow::Res
     let token = match word.as_str() {
         "main" => Token::Main,
         "func" => Token::Func,
+        "ref" => Token::Ref,
         "deref" => Token::Deref,
         "if" => Token::If,
         "else" => Token::Else,
         "while" => Token::While,
-        w => match Comword::from_str(w) {
+        w => match Opword::from_str(w) {
             Ok(comword) => Token::Comword(comword),
             Err(()) => {
                 if word.is_empty() {

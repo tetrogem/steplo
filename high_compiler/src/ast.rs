@@ -3,7 +3,7 @@ use std::{iter::Peekable, ops::Not, sync::Arc};
 use anyhow::bail;
 use itertools::{Itertools, MultiPeek};
 
-use crate::token::{Comword, Token};
+use crate::token::{Opword, Token};
 
 #[derive(Debug, Clone)]
 pub enum TopItem {
@@ -33,12 +33,12 @@ pub struct Proc {
 pub enum BodyItem {
     Statement(Arc<Statement>),
     If {
-        cond_com: Arc<Command>,
+        cond_pipeline: Arc<Pipeline>,
         then_body: Arc<Vec<Arc<BodyItem>>>,
         else_body: Option<Arc<Vec<Arc<BodyItem>>>>,
     },
     While {
-        cond_com: Arc<Command>,
+        cond_pipeline: Arc<Pipeline>,
         body: Arc<Vec<Arc<BodyItem>>>,
     },
 }
@@ -46,31 +46,41 @@ pub enum BodyItem {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Assign(Arc<Assign>),
-    Call { func_name: Arc<str>, param_coms: Arc<Vec<Arc<Command>>> },
-    Native(Arc<NativeCommand>), // not compiled to by source code, internal/built-ins only
+    Call { func_name: Arc<str>, param_pipelines: Arc<Vec<Arc<Pipeline>>> },
+    Native(Arc<NativeOperation>), // not compiled to by source code, internal/built-ins only
 }
 
 #[derive(Debug, Clone)]
 pub struct Assign {
     pub deref_var: bool,
     pub var: Arc<str>,
-    pub command: Arc<Command>,
+    pub pipeline: Arc<Pipeline>,
 }
 
 #[derive(Debug, Clone)]
-pub enum Command {
+pub enum Value {
     Literal(Arc<str>),
-    Add { left: Arc<str>, right: Arc<str> },
-    Ref { var: Arc<str> },
-    CopyDeref { var: Arc<str> },
-    Copy { var: Arc<str> },
-    Eq { left: Arc<str>, right: Arc<str> },
-    Not { var: Arc<str> },
-    Sub { left: Arc<str>, right: Arc<str> },
+    Var(Arc<str>),
+    Ref(Arc<str>),
 }
 
 #[derive(Debug, Clone)]
-pub enum NativeCommand {
+pub struct Pipeline {
+    pub initial_val: Arc<Value>,
+    pub operations: Arc<Vec<Arc<Operation>>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Operation {
+    Deref,
+    Add { operand: Arc<Value> },
+    Eq { operand: Arc<Value> },
+    Not,
+    Sub { operand: Arc<Value> },
+}
+
+#[derive(Debug, Clone)]
+pub enum NativeOperation {
     Out { var: Arc<str> },
 }
 
@@ -126,7 +136,7 @@ macro_rules! parse_var_list {
     };
 }
 
-macro_rules! parse_command_list {
+macro_rules! parse_pipeline_list {
     (
         $tokens:expr,
         $opener:pat = $opener_name:expr,
@@ -135,15 +145,15 @@ macro_rules! parse_command_list {
         (|| {
             let Some($opener) = $tokens.next() else { bail!("Expected opening {}", $opener_name) };
 
-            let mut commands = Vec::<Arc<Command>>::new();
+            let mut pipelines = Vec::<Arc<Pipeline>>::new();
             loop {
                 $tokens.reset_peek();
                 if let Some($closer) = $tokens.peek() {
                     break;
                 };
 
-                let command = parse_command($tokens)?;
-                commands.push(Arc::new(command));
+                let pipeline = parse_pipeline($tokens)?;
+                pipelines.push(Arc::new(pipeline));
 
                 $tokens.reset_peek();
                 if matches!($tokens.peek(), Some(Token::Comma)).not() {
@@ -155,7 +165,7 @@ macro_rules! parse_command_list {
 
             let Some($closer) = $tokens.next() else { bail!("Expected closing {}", $closer_name) };
 
-            Ok(commands)
+            Ok(pipelines)
         })()
     };
 }
@@ -240,77 +250,83 @@ fn parse_assign(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::
 
     let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var name") };
     let Some(Token::Eq) = tokens.next() else { bail!("Expected =") };
-    let command = parse_command(tokens)?;
+    let pipeline = parse_pipeline(tokens)?;
 
     let Some(Token::Semi) = tokens.next() else { bail!("Expected semicolon") };
 
-    let assign = Assign { deref_var, var: var.into(), command: Arc::new(command) };
+    let assign = Assign { deref_var, var: var.into(), pipeline: Arc::new(pipeline) };
     let statement = Statement::Assign(Arc::new(assign));
 
     Ok(statement)
 }
 
-fn parse_command(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Command> {
-    let comword = match tokens.next() {
-        Some(Token::Deref) => Comword::Deref,
-        Some(Token::Comword(comword)) => comword,
-        _ => bail!("Expected comword"),
+fn parse_pipeline(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Pipeline> {
+    let initial_val = parse_value(tokens)?;
+
+    let mut operations = Vec::<Arc<Operation>>::new();
+    loop {
+        tokens.reset_peek();
+        if !matches!(tokens.peek(), Some(Token::Pipe)) {
+            break;
+        }
+
+        let Some(Token::Pipe) = tokens.next() else { bail!("Expected pipe") };
+
+        let opword = match tokens.next() {
+            Some(Token::Deref) => Opword::Deref,
+            Some(Token::Comword(comword)) => comword,
+            _ => bail!("Expected comword"),
+        };
+
+        let operation = match opword {
+            Opword::Add => Operation::Add { operand: Arc::new(parse_value(tokens)?) },
+            Opword::Deref => Operation::Deref,
+            Opword::Eq => Operation::Eq { operand: Arc::new(parse_value(tokens)?) },
+            Opword::Not => Operation::Not,
+            Opword::Sub => Operation::Sub { operand: Arc::new(parse_value(tokens)?) },
+        };
+
+        operations.push(Arc::new(operation));
+    }
+
+    let pipeline =
+        Pipeline { initial_val: Arc::new(initial_val), operations: Arc::new(operations) };
+
+    Ok(pipeline)
+}
+
+fn parse_value(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Value> {
+    let value = match tokens.next() {
+        Some(Token::Literal(val)) => Value::Literal(val.into()),
+        Some(Token::Name(name)) => Value::Var(name.into()),
+        Some(Token::Ref) => {
+            let Some(Token::Name(name)) = tokens.next() else {
+                bail!("Expected var name after `ref`")
+            };
+
+            Value::Ref(name.into())
+        },
+        _ => bail!("Expected value"),
     };
 
-    let command = match comword {
-        Comword::Literal => {
-            let Some(Token::Literal(value)) = tokens.next() else { bail!("Expected literal") };
-            Command::Literal(value.into())
-        },
-        Comword::Add => {
-            let Some(Token::Name(left)) = tokens.next() else { bail!("Expected var") };
-            let Some(Token::Name(right)) = tokens.next() else { bail!("Expected var") };
-            Command::Add { left: left.into(), right: right.into() }
-        },
-        Comword::Ref => {
-            let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var") };
-            Command::Ref { var: var.into() }
-        },
-        Comword::Deref => {
-            let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var") };
-            Command::CopyDeref { var: var.into() }
-        },
-        Comword::Copy => {
-            let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var") };
-            Command::Copy { var: var.into() }
-        },
-        Comword::Eq => {
-            let Some(Token::Name(left)) = tokens.next() else { bail!("Expected var") };
-            let Some(Token::Name(right)) = tokens.next() else { bail!("Expected var") };
-            Command::Eq { left: left.into(), right: right.into() }
-        },
-        Comword::Not => {
-            let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var") };
-            Command::Not { var: var.into() }
-        },
-        Comword::Sub => {
-            let Some(Token::Name(left)) = tokens.next() else { bail!("Expected var") };
-            let Some(Token::Name(right)) = tokens.next() else { bail!("Expected var") };
-            Command::Sub { left: left.into(), right: right.into() }
-        },
-    };
-
-    Ok(command)
+    Ok(value)
 }
 
 fn parse_call(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Statement> {
     let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var name") };
-    let param_coms = parse_command_list!(tokens, Token::LeftParen = "(", Token::RightParen = ")")?;
+    let param_pipelines =
+        parse_pipeline_list!(tokens, Token::LeftParen = "(", Token::RightParen = ")")?;
     let Some(Token::Semi) = tokens.next() else { bail!("Expected semicolon") };
 
-    let statement = Statement::Call { func_name: var.into(), param_coms: Arc::new(param_coms) };
+    let statement =
+        Statement::Call { func_name: var.into(), param_pipelines: Arc::new(param_pipelines) };
 
     Ok(statement)
 }
 
 fn parse_if(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<BodyItem> {
     let Some(Token::If) = tokens.next() else { bail!("Expected if") };
-    let cond_com = parse_command(tokens)?;
+    let cond_pipeline = parse_pipeline(tokens)?;
 
     let then_body_items = Arc::new(parse_body(tokens)?);
 
@@ -324,7 +340,7 @@ fn parse_if(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Resu
     };
 
     let statement = BodyItem::If {
-        cond_com: Arc::new(cond_com),
+        cond_pipeline: Arc::new(cond_pipeline),
         then_body: then_body_items,
         else_body: else_body_items,
     };
@@ -333,11 +349,11 @@ fn parse_if(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Resu
 
 fn parse_while(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<BodyItem> {
     let Some(Token::While) = tokens.next() else { bail!("Expected while") };
-    let cond_com = parse_command(tokens)?;
+    let cond_pipeline = parse_pipeline(tokens)?;
 
     let body_items = Arc::new(parse_body(tokens)?);
 
-    let statement = BodyItem::While { cond_com: Arc::new(cond_com), body: body_items };
+    let statement = BodyItem::While { cond_pipeline: Arc::new(cond_pipeline), body: body_items };
     Ok(statement)
 }
 

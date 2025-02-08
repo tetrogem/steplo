@@ -1,6 +1,6 @@
 main |a| {
     second(ref a);
-    out(copy a);
+    out(a);
 }
 
 func second(a_ref) || {
@@ -8,6 +8,6 @@ func second(a_ref) || {
 }
 
 func third(a_ref2) |a_ref| {
-    a_ref = deref a_ref2;
-    deref a_ref = lit "Hello!";
+    a_ref = a_ref2 | deref;
+    deref a_ref = "Hello!";
 }

@@ -1,17 +1,14 @@
-main |i, zero, one, cond, msg| {
-    i = lit "10";
-    one = lit "1";
-    zero = lit "0";
+main |i, cond| {
+    i = "10";
 
-    out(lit "Start!");
+    out("Start!");
 
-    cond = lit "1";
-    while copy cond {
-        out(copy i);
-        i = sub i one;
-        cond = eq i zero;
-        cond = not cond;
+    cond = "1";
+    while cond {
+        out(i);
+        i = i | sub "1";
+        cond = i | eq "0" | not;
     }
 
-    out(lit "End!");
+    out("End!");
 }

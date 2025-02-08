@@ -27,10 +27,10 @@ pub struct SubProc {
 
 #[derive(Debug, Clone)]
 pub enum Call {
-    Func { name: Arc<str>, param_coms: Arc<Vec<Arc<ast::Command>>>, return_sub_proc: Uuid },
+    Func { name: Arc<str>, param_pipelines: Arc<Vec<Arc<ast::Pipeline>>>, return_sub_proc: Uuid },
     SubProc(Uuid),
-    IfBranch { cond_com: Arc<ast::Command>, then_sub_proc: Uuid, pop_sub_proc: Uuid },
-    IfElseBranch { cond_com: Arc<ast::Command>, then_sub_proc: Uuid, else_sub_proc: Uuid },
+    IfBranch { cond_pipeline: Arc<ast::Pipeline>, then_sub_proc: Uuid, pop_sub_proc: Uuid },
+    IfElseBranch { cond_pipeline: Arc<ast::Pipeline>, then_sub_proc: Uuid, else_sub_proc: Uuid },
     Return,
     Terminate,
 }
@@ -38,7 +38,7 @@ pub enum Call {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Assign(Arc<ast::Assign>),
-    Native(Arc<ast::NativeCommand>),
+    Native(Arc<ast::NativeOperation>),
 }
 
 pub fn link(mut ast: Vec<Arc<ast::TopItem>>) -> anyhow::Result<Vec<Arc<Proc>>> {
@@ -49,7 +49,7 @@ pub fn link(mut ast: Vec<Arc<ast::TopItem>>) -> anyhow::Result<Vec<Arc<Proc>>> {
         proc: Arc::new(ast::Proc {
             vars: Arc::new(Vec::new()),
             body: Arc::new(Vec::from([Arc::new(ast::BodyItem::Statement(Arc::new(
-                ast::Statement::Native(Arc::new(ast::NativeCommand::Out { var: "val".into() })),
+                ast::Statement::Native(Arc::new(ast::NativeOperation::Out { var: "val".into() })),
             )))])),
         }),
     };
@@ -119,7 +119,7 @@ fn create_sub_proc<'a>(
 
     while let Some(body_item) = body_items.next() {
         match body_item {
-            ast::BodyItem::If { cond_com, then_body, else_body } => {
+            ast::BodyItem::If { cond_pipeline, then_body, else_body } => {
                 let pop_sp = next_sp!(body_items, pop_sub_proc);
 
                 let then_sp = next_sp!(
@@ -129,7 +129,7 @@ fn create_sub_proc<'a>(
 
                 let call = match else_body {
                     None => Call::IfBranch {
-                        cond_com: Arc::clone(cond_com),
+                        cond_pipeline: Arc::clone(cond_pipeline),
                         then_sub_proc: then_sp.uuid,
                         pop_sub_proc: pop_sp.uuid,
                     },
@@ -140,7 +140,7 @@ fn create_sub_proc<'a>(
                         );
 
                         Call::IfElseBranch {
-                            cond_com: Arc::clone(cond_com),
+                            cond_pipeline: Arc::clone(cond_pipeline),
                             then_sub_proc: then_sp.uuid,
                             else_sub_proc: else_sp.uuid,
                         }
@@ -149,7 +149,7 @@ fn create_sub_proc<'a>(
 
                 next_call = Some(call);
             },
-            ast::BodyItem::While { cond_com, body } => {
+            ast::BodyItem::While { cond_pipeline, body } => {
                 // where to go after exiting the loop
                 let pop_sp = next_sp!(body_items, pop_sub_proc);
 
@@ -167,7 +167,7 @@ fn create_sub_proc<'a>(
                     uuid: check_uuid,
                     statements: Arc::new(Vec::new()),
                     next_call: Arc::new(Call::IfElseBranch {
-                        cond_com: Arc::clone(cond_com),
+                        cond_pipeline: Arc::clone(cond_pipeline),
                         then_sub_proc: then_sp.uuid,
                         else_sub_proc: pop_sp.uuid,
                     }),
@@ -189,12 +189,12 @@ fn create_sub_proc<'a>(
                 ast::Statement::Native(native) => {
                     statements.push(Arc::new(Statement::Native(Arc::clone(native))));
                 },
-                ast::Statement::Call { func_name, param_coms: param_vars } => {
+                ast::Statement::Call { func_name, param_pipelines } => {
                     let return_sp = next_sp!(body_items, pop_sub_proc);
 
                     next_call = Some(Call::Func {
                         name: Arc::clone(func_name),
-                        param_coms: Arc::clone(param_vars),
+                        param_pipelines: Arc::clone(param_pipelines),
                         return_sub_proc: return_sp.uuid,
                     });
                 },

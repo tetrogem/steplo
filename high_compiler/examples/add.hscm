@@ -1,7 +1,16 @@
-main |a, b, c, sum1, sum2| {
-    a = lit "10";
-    b = lit "15";
-    c = lit "50";
-    sum1 = add a b;
-    sum2 = add b c;
+main |a, b, c, sum| {
+    a = "10";
+    b = "15";
+    c = "50";
+
+    sum = a | add b;
+    out(sum);
+
+    sum = b | add c;
+    out(sum);
+
+    sum = "100" | add "200";
+    out(sum);
+
+    out("500" | add "75");
 }
