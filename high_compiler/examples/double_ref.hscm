@@ -1,14 +1,13 @@
-main |a, a_ref| {
-    a_ref = ref a;
-    second(a_ref);
+main |a| {
+    second(ref a);
+    out(copy a);
 }
 
-func second(a_ref) |a_ref2| {
-    a_ref2 = ref a_ref;
-    third(a_ref2);
+func second(a_ref) || {
+    third(ref a_ref);
 }
 
 func third(a_ref2) |a_ref| {
-    a_ref = copy_deref a_ref2;
+    a_ref = deref a_ref2;
     deref a_ref = lit "Hello!";
 }

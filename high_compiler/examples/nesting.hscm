@@ -1,37 +1,22 @@
-main |msg| {
-    msg = lit "Enter main";
-    out(msg);
-
+main || {
+    out(lit "Enter main");
     a();
-
-    msg = lit "Exit main";
-    out(msg);
+    out(lit "Exit main");
 }
 
-func a() |msg| {
-    msg = lit "Enter a";
-    out(msg);
-
+func a() || {
+    out(lit "Enter a");
     b();
-
-    msg = lit "Exit a";
-    out(msg);
+    out(lit "Exit a");
 }
 
-func b() |msg| {
-    msg = lit "Enter b";
-    out(msg);
-
+func b() || {
+    out(lit "Enter b");
     c();
-
-    msg = lit "Exit b";
-    out(msg);
+    out(lit "Exit b");
 }
 
-func c() |msg| {
-    msg = lit "Enter c";
-    out(msg);
-
-    msg = lit "Exit c";
-    out(msg);
+func c() || {
+    out(lit "Enter c");
+    out(lit "Exit c");
 }

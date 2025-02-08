@@ -144,13 +144,13 @@ pub fn compile(linked: Vec<Arc<Proc>>) -> anyhow::Result<Vec<Arc<asm_ast::Proced
     Ok(asm_procs)
 }
 
-fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
-    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-    enum Var {
-        ReturnAddr,
-        User(Arc<str>),
-    }
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum Var {
+    ReturnAddr,
+    User(Arc<str>),
+}
 
+fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
     let stack_vars: Vec<Var> = match &proc.kind {
         ProcKind::Main => proc.vars.iter().map(|var| Var::User(Arc::clone(var))).collect(),
         ProcKind::Func { params, .. } => chain!(
@@ -208,139 +208,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     };
 
                     // value to assign to var should end up in temp_right
-                    let mut assign_asm_commands = match command.as_ref() {
-                        Command::Literal(val) => Vec::from([
-                            // set var to literal stored in temp_operand
-                            data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-                                dest: RIGHT.addr_value(),
-                                val: literal(val),
-                            })),
-                        ]),
-                        Command::Add { left, right } => {
-                            let Some(left_offset) = var_to_offset.get(&Var::User(Arc::clone(left)))
-                            else {
-                                bail!("Failed to find left offset")
-                            };
-
-                            let Some(right_offset) =
-                                var_to_offset.get(&Var::User(Arc::clone(right)))
-                            else {
-                                bail!("Failed to find right offset")
-                            };
-
-                            chain!(
-                                // store value for left in LEFT
-                                get_stack_value(LEFT, *left_offset),
-                                // store value for right in RIGHT
-                                get_stack_value(RIGHT, *right_offset),
-                                // set var to sum of temp_left and temp_right
-                                [data(asm_ast::DataCommand::Add(asm_ast::TernaryArgs {
-                                    dest: RIGHT.addr_value(),
-                                    left: LEFT.addr_value(),
-                                    right: RIGHT.addr_value(),
-                                }))],
-                            )
-                        },
-                        Command::Ref { var } => {
-                            let Some(ref_offset) = var_to_offset.get(&Var::User(Arc::clone(var)))
-                            else {
-                                bail!("Failed to find ref offset")
-                            };
-
-                            chain!(
-                                // store addr for ref in RIGHT
-                                compute_stack_addr(RIGHT, *ref_offset),
-                            )
-                        },
-                        Command::CopyDeref { var } => {
-                            let Some(var_offset) = var_to_offset.get(&Var::User(Arc::clone(var)))
-                            else {
-                                bail!("Failed to find ref offset")
-                            };
-
-                            chain!(
-                                // store value of var in RIGHT
-                                get_stack_value(RIGHT, *var_offset),
-                                // deref RIGHT
-                                [data(asm_ast::DataCommand::MoveDerefSrc(asm_ast::BinaryArgs {
-                                    dest: RIGHT.addr_value(),
-                                    val: RIGHT.addr_value(),
-                                }))]
-                            )
-                        },
-                        Command::Copy { var } => {
-                            let Some(copy_offset) = var_to_offset.get(&Var::User(Arc::clone(var)))
-                            else {
-                                bail!("Failed to find copy offset")
-                            };
-
-                            chain!(
-                                // get value of var and store in RIGHT
-                                get_stack_value(RIGHT, *copy_offset),
-                            )
-                        },
-                        Command::Eq { left, right } => {
-                            let Some(left_offset) = var_to_offset.get(&Var::User(Arc::clone(left)))
-                            else {
-                                bail!("Failed to find left offset")
-                            };
-
-                            let Some(right_offset) =
-                                var_to_offset.get(&Var::User(Arc::clone(right)))
-                            else {
-                                bail!("Failed to find right offset")
-                            };
-
-                            chain!(
-                                get_stack_value(LEFT, *left_offset),
-                                get_stack_value(RIGHT, *right_offset),
-                                [data(asm_ast::DataCommand::Eq(asm_ast::TernaryArgs {
-                                    dest: RIGHT.addr_value(),
-                                    left: LEFT.addr_value(),
-                                    right: RIGHT.addr_value(),
-                                }))],
-                            )
-                        },
-                        Command::Not { var } => {
-                            let Some(var_offset) = var_to_offset.get(&Var::User(Arc::clone(var)))
-                            else {
-                                bail!("Failed to find var offset")
-                            };
-
-                            chain!(
-                                get_stack_value(RIGHT, *var_offset),
-                                [data(asm_ast::DataCommand::Not(asm_ast::BinaryArgs {
-                                    dest: RIGHT.addr_value(),
-                                    val: RIGHT.addr_value(),
-                                }))],
-                            )
-                        },
-                        Command::Sub { left, right } => {
-                            let Some(left_offset) = var_to_offset.get(&Var::User(Arc::clone(left)))
-                            else {
-                                bail!("Failed to find left offset")
-                            };
-
-                            let Some(right_offset) =
-                                var_to_offset.get(&Var::User(Arc::clone(right)))
-                            else {
-                                bail!("Failed to find right offset")
-                            };
-
-                            chain!(
-                                // store value for left in LEFT
-                                get_stack_value(LEFT, *left_offset),
-                                // store value for right in RIGHT
-                                get_stack_value(RIGHT, *right_offset),
-                                // set var to sum of temp_left and temp_right
-                                [data(asm_ast::DataCommand::Sub(asm_ast::TernaryArgs {
-                                    dest: RIGHT.addr_value(),
-                                    left: LEFT.addr_value(),
-                                    right: RIGHT.addr_value(),
-                                }))],
-                            )
-                        },
-                    };
+                    let mut assign_asm_commands = compile_command(command, &var_to_offset)?;
 
                     // set var addr to assign in temp_left
                     assign_asm_commands.extend(compute_stack_addr(LEFT, var_offset));
@@ -404,21 +272,18 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
         };
 
         let asm_call_commands = match sub_proc.next_call.as_ref() {
-            Call::Func { name, param_vars, return_sub_proc } => {
+            Call::Func { name, param_coms, return_sub_proc } => {
                 // set param values on func's stack
                 let mut param_asm_commands = Vec::new();
 
-                for (param_offset, call_var) in param_vars.iter().enumerate() {
-                    let Some(call_var_offset) = var_to_offset.get(&Var::User(Arc::clone(call_var)))
-                    else {
-                        bail!("Failed to find call var offset")
-                    };
+                for (param_offset, command) in param_coms.iter().enumerate() {
+                    let command_asm_commands = compile_command(command, &var_to_offset)?;
 
                     let asm_commands: Vec<Arc<asm_ast::Command>> = chain!(
+                        // chain commands to put param value in RIGHT
+                        command_asm_commands,
                         // store addr for func param in LEFT
                         compute_param_addr(LEFT, param_offset + 2),
-                        // store value to put in func param in RIGHT
-                        get_stack_value(RIGHT, *call_var_offset),
                         // move value in call var to func param
                         [data(asm_ast::DataCommand::MoveDerefDest(asm_ast::BinaryArgs {
                             dest: LEFT.addr_value(),
@@ -580,4 +445,132 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
     }
 
     Ok(asm_procs)
+}
+
+fn compile_command(
+    command: &Command,
+    var_to_offset: &HashMap<Var, usize>,
+) -> anyhow::Result<Vec<Arc<asm_ast::Command>>> {
+    let asm_commands = match command {
+        Command::Literal(val) => Vec::from([
+            // set var to literal stored in temp_operand
+            data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
+                dest: RIGHT.addr_value(),
+                val: literal(val),
+            })),
+        ]),
+        Command::Add { left, right } => {
+            let Some(left_offset) = var_to_offset.get(&Var::User(Arc::clone(left))) else {
+                bail!("Failed to find left offset")
+            };
+
+            let Some(right_offset) = var_to_offset.get(&Var::User(Arc::clone(right))) else {
+                bail!("Failed to find right offset")
+            };
+
+            chain!(
+                // store value for left in LEFT
+                get_stack_value(LEFT, *left_offset),
+                // store value for right in RIGHT
+                get_stack_value(RIGHT, *right_offset),
+                // set var to sum of temp_left and temp_right
+                [data(asm_ast::DataCommand::Add(asm_ast::TernaryArgs {
+                    dest: RIGHT.addr_value(),
+                    left: LEFT.addr_value(),
+                    right: RIGHT.addr_value(),
+                }))],
+            )
+        },
+        Command::Ref { var } => {
+            let Some(ref_offset) = var_to_offset.get(&Var::User(Arc::clone(var))) else {
+                bail!("Failed to find ref offset")
+            };
+
+            chain!(
+                // store addr for ref in RIGHT
+                compute_stack_addr(RIGHT, *ref_offset),
+            )
+        },
+        Command::CopyDeref { var } => {
+            let Some(var_offset) = var_to_offset.get(&Var::User(Arc::clone(var))) else {
+                bail!("Failed to find ref offset")
+            };
+
+            chain!(
+                // store value of var in RIGHT
+                get_stack_value(RIGHT, *var_offset),
+                // deref RIGHT
+                [data(asm_ast::DataCommand::MoveDerefSrc(asm_ast::BinaryArgs {
+                    dest: RIGHT.addr_value(),
+                    val: RIGHT.addr_value(),
+                }))]
+            )
+        },
+        Command::Copy { var } => {
+            let Some(copy_offset) = var_to_offset.get(&Var::User(Arc::clone(var))) else {
+                bail!("Failed to find copy offset")
+            };
+
+            chain!(
+                // get value of var and store in RIGHT
+                get_stack_value(RIGHT, *copy_offset),
+            )
+        },
+        Command::Eq { left, right } => {
+            let Some(left_offset) = var_to_offset.get(&Var::User(Arc::clone(left))) else {
+                bail!("Failed to find left offset")
+            };
+
+            let Some(right_offset) = var_to_offset.get(&Var::User(Arc::clone(right))) else {
+                bail!("Failed to find right offset")
+            };
+
+            chain!(
+                get_stack_value(LEFT, *left_offset),
+                get_stack_value(RIGHT, *right_offset),
+                [data(asm_ast::DataCommand::Eq(asm_ast::TernaryArgs {
+                    dest: RIGHT.addr_value(),
+                    left: LEFT.addr_value(),
+                    right: RIGHT.addr_value(),
+                }))],
+            )
+        },
+        Command::Not { var } => {
+            let Some(var_offset) = var_to_offset.get(&Var::User(Arc::clone(var))) else {
+                bail!("Failed to find var offset")
+            };
+
+            chain!(
+                get_stack_value(RIGHT, *var_offset),
+                [data(asm_ast::DataCommand::Not(asm_ast::BinaryArgs {
+                    dest: RIGHT.addr_value(),
+                    val: RIGHT.addr_value(),
+                }))],
+            )
+        },
+        Command::Sub { left, right } => {
+            let Some(left_offset) = var_to_offset.get(&Var::User(Arc::clone(left))) else {
+                bail!("Failed to find left offset")
+            };
+
+            let Some(right_offset) = var_to_offset.get(&Var::User(Arc::clone(right))) else {
+                bail!("Failed to find right offset")
+            };
+
+            chain!(
+                // store value for left in LEFT
+                get_stack_value(LEFT, *left_offset),
+                // store value for right in RIGHT
+                get_stack_value(RIGHT, *right_offset),
+                // set var to sum of temp_left and temp_right
+                [data(asm_ast::DataCommand::Sub(asm_ast::TernaryArgs {
+                    dest: RIGHT.addr_value(),
+                    left: LEFT.addr_value(),
+                    right: RIGHT.addr_value(),
+                }))],
+            )
+        },
+    };
+
+    Ok(asm_commands)
 }

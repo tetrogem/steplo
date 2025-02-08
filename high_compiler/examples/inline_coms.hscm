@@ -1,0 +1,4 @@
+main |msg| {
+    msg = lit "Hello!";
+    out(copy msg);
+}

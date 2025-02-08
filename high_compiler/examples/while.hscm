@@ -3,17 +3,15 @@ main |i, zero, one, cond, msg| {
     one = lit "1";
     zero = lit "0";
 
-    msg = lit "Start!";
-    out(msg);
+    out(lit "Start!");
 
     cond = lit "1";
     while cond {
-        out(i);
+        out(copy i);
         i = sub i one;
         cond = eq i zero;
         cond = not cond;
     }
 
-    msg = lit "End!";
-    out(msg);
+    out(lit "End!");
 }

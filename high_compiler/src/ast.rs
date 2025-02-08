@@ -46,7 +46,7 @@ pub enum BodyItem {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Assign(Arc<Assign>),
-    Call { func_name: Arc<str>, param_vars: Arc<Vec<Arc<str>>> },
+    Call { func_name: Arc<str>, param_coms: Arc<Vec<Arc<Command>>> },
     Native(Arc<NativeCommand>), // not compiled to by source code, internal/built-ins only
 }
 
@@ -122,6 +122,40 @@ macro_rules! parse_var_list {
             let Some($closer) = $tokens.next() else { bail!("Expected closing {}", $closer_name) };
 
             Ok(vars)
+        })()
+    };
+}
+
+macro_rules! parse_command_list {
+    (
+        $tokens:expr,
+        $opener:pat = $opener_name:expr,
+        $closer:pat = $closer_name:expr $(,)?
+    ) => {
+        (|| {
+            let Some($opener) = $tokens.next() else { bail!("Expected opening {}", $opener_name) };
+
+            let mut commands = Vec::<Arc<Command>>::new();
+            loop {
+                $tokens.reset_peek();
+                if let Some($closer) = $tokens.peek() {
+                    break;
+                };
+
+                let command = parse_command($tokens)?;
+                commands.push(Arc::new(command));
+
+                $tokens.reset_peek();
+                if matches!($tokens.peek(), Some(Token::Comma)).not() {
+                    break;
+                }
+
+                let Some(Token::Comma) = $tokens.next() else { bail!("Expected comma") };
+            }
+
+            let Some($closer) = $tokens.next() else { bail!("Expected closing {}", $closer_name) };
+
+            Ok(commands)
         })()
     };
 }
@@ -206,7 +240,22 @@ fn parse_assign(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::
 
     let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var name") };
     let Some(Token::Eq) = tokens.next() else { bail!("Expected =") };
-    let Some(Token::Comword(comword)) = tokens.next() else { bail!("Expected comword") };
+    let command = parse_command(tokens)?;
+
+    let Some(Token::Semi) = tokens.next() else { bail!("Expected semicolon") };
+
+    let assign = Assign { deref_var, var: var.into(), command: Arc::new(command) };
+    let statement = Statement::Assign(Arc::new(assign));
+
+    Ok(statement)
+}
+
+fn parse_command(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Command> {
+    let comword = match tokens.next() {
+        Some(Token::Deref) => Comword::Deref,
+        Some(Token::Comword(comword)) => comword,
+        _ => bail!("Expected comword"),
+    };
 
     let command = match comword {
         Comword::Literal => {
@@ -222,7 +271,7 @@ fn parse_assign(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::
             let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var") };
             Command::Ref { var: var.into() }
         },
-        Comword::CopyDeref => {
+        Comword::Deref => {
             let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var") };
             Command::CopyDeref { var: var.into() }
         },
@@ -246,20 +295,15 @@ fn parse_assign(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::
         },
     };
 
-    let Some(Token::Semi) = tokens.next() else { bail!("Expected semicolon") };
-
-    let assign = Assign { deref_var, var: var.into(), command: Arc::new(command) };
-    let statement = Statement::Assign(Arc::new(assign));
-
-    Ok(statement)
+    Ok(command)
 }
 
 fn parse_call(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Statement> {
     let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var name") };
-    let param_vars = parse_var_list!(tokens, Token::LeftParen = "(", Token::RightParen = ")")?;
+    let param_coms = parse_command_list!(tokens, Token::LeftParen = "(", Token::RightParen = ")")?;
     let Some(Token::Semi) = tokens.next() else { bail!("Expected semicolon") };
 
-    let statement = Statement::Call { func_name: var.into(), param_vars: Arc::new(param_vars) };
+    let statement = Statement::Call { func_name: var.into(), param_coms: Arc::new(param_coms) };
 
     Ok(statement)
 }

@@ -30,7 +30,7 @@ pub enum Comword {
     Not,
     Add,
     Ref,
-    CopyDeref,
+    Deref,
     Copy,
     Sub,
 }
@@ -45,7 +45,7 @@ impl FromStr for Comword {
             "not" => Self::Not,
             "add" => Self::Add,
             "ref" => Self::Ref,
-            "copy_deref" => Self::CopyDeref,
+            "deref" => Self::Deref,
             "copy" => Self::Copy,
             "sub" => Self::Sub,
             _ => return Err(()),

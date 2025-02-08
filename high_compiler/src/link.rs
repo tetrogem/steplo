@@ -27,7 +27,7 @@ pub struct SubProc {
 
 #[derive(Debug, Clone)]
 pub enum Call {
-    Func { name: Arc<str>, param_vars: Arc<Vec<Arc<str>>>, return_sub_proc: Uuid },
+    Func { name: Arc<str>, param_coms: Arc<Vec<Arc<ast::Command>>>, return_sub_proc: Uuid },
     SubProc(Uuid),
     IfBranch { cond_var: Arc<str>, then_sub_proc: Uuid, pop_sub_proc: Uuid },
     IfElseBranch { cond_var: Arc<str>, then_sub_proc: Uuid, else_sub_proc: Uuid },
@@ -189,12 +189,12 @@ fn create_sub_proc<'a>(
                 ast::Statement::Native(native) => {
                     statements.push(Arc::new(Statement::Native(Arc::clone(native))));
                 },
-                ast::Statement::Call { func_name, param_vars } => {
+                ast::Statement::Call { func_name, param_coms: param_vars } => {
                     let return_sp = next_sp!(body_items, pop_sub_proc);
 
                     next_call = Some(Call::Func {
                         name: Arc::clone(func_name),
-                        param_vars: Arc::clone(param_vars),
+                        param_coms: Arc::clone(param_vars),
                         return_sub_proc: return_sp.uuid,
                     });
                 },
