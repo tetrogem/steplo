@@ -1,4 +1,4 @@
-use std::{fmt::Display, sync::Arc};
+use std::fmt::Display;
 
 use serde_json::{json, Map as JsMap, Value as JsVal};
 use uuid::Uuid;
@@ -95,7 +95,7 @@ impl Stage {
 
 impl Block {
     pub fn compile(&self) -> (String, JsVal) {
-        let metadata = self.op.compile_metadata(self.uuid);
+        let metadata = self.op.compile_metadata();
 
         let value = json!({
             "opcode": metadata.opcode,
@@ -120,8 +120,8 @@ impl Block {
 }
 
 impl Op {
-    pub fn compile_metadata(&self, uuid: Uuid) -> ExprMetadata {
-        let compile = |expr: &Expr| expr.compile(uuid);
+    fn compile_metadata(&self) -> ExprMetadata {
+        let compile = |expr: &Expr| expr.compile();
         match self {
             Self::Event(op) => match op {
                 EventOp::WhenFlagClicked => ExprMetadata {
@@ -208,8 +208,10 @@ impl Op {
                 },
             },
             Self::Sensing(op) => match op {
-                SensingOp::AskAndWait { .. } => {
-                    ExprMetadata { opcode: "sensing_askandwait", inputs: todo!(), fields: todo!() }
+                SensingOp::AskAndWait { question } => ExprMetadata {
+                    opcode: "sensing_askandwait",
+                    inputs: obj([("QUESTION", compile(question))]),
+                    fields: JsMap::new(),
                 },
                 SensingOp::Answer => ExprMetadata {
                     opcode: "sensing_answer",
@@ -277,7 +279,7 @@ impl Op {
 }
 
 impl Expr {
-    pub fn compile(&self, parent: Uuid) -> JsVal {
+    pub fn compile(&self) -> JsVal {
         match self {
             Self::Literal(l) => l.compile(),
             Self::Derived(d) => {
@@ -315,11 +317,6 @@ struct ExprMetadata {
     fields: JsMap<String, JsVal>,
 }
 
-struct ExprData {
-    metadata: ExprMetadata,
-    deps: Vec<Arc<Dep>>,
-}
-
 fn obj<K: Display>(fields: impl IntoIterator<Item = (K, JsVal)>) -> JsMap<String, JsVal> {
     fields.into_iter().map(|(key, value)| (key.to_string(), value)).collect()
 }
@@ -330,27 +327,4 @@ fn list_ref(list: &List) -> JsVal {
 
 fn broadcast_ref(broadcast: &Broadcast) -> JsVal {
     json!([broadcast.name.to_string(), broadcast.uuid.to_string()])
-}
-
-struct Dep {
-    uuid: Uuid,
-    js_val: JsVal,
-}
-
-impl Dep {
-    fn new(parent: Uuid, uuid: Uuid, metadata: &ExprMetadata) -> Self {
-        let js_val = json!({
-            uuid.to_string(): {
-                "opcode": metadata.opcode.to_string(),
-                "next": null,
-                "parent": parent.to_string(),
-                "inputs": metadata.inputs,
-                "fields": metadata.fields,
-                "shadow": false,
-                "topLevel": false,
-            }
-        });
-
-        Self { uuid, js_val }
-    }
 }

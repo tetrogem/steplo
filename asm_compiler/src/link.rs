@@ -39,6 +39,7 @@ pub enum DataCommand {
     Out(UnaryArgs),
     Eq(TernaryArgs),
     Not(BinaryArgs),
+    In(UnaryArgs),
 }
 
 #[derive(Debug)]
@@ -132,6 +133,7 @@ fn link_proc(ast_proc: &Arc<ast::Procedure>) -> Vec<Body> {
                     ast::DataCommand::Out(args) => DataCommand::Out(args.into()),
                     ast::DataCommand::Set(args) => DataCommand::Set(args.into()),
                     ast::DataCommand::Sub(args) => DataCommand::Sub(args.into()),
+                    ast::DataCommand::In(args) => DataCommand::In(args.into()),
                 };
 
                 linking.push(Arc::new(data_command));

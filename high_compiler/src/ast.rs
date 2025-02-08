@@ -82,6 +82,7 @@ pub enum Operation {
 #[derive(Debug, Clone)]
 pub enum NativeOperation {
     Out { var: Arc<str> },
+    In { dest_var: Arc<str> },
 }
 
 pub fn parse(tokens: Vec<Token>) -> anyhow::Result<Vec<Arc<TopItem>>> {

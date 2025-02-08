@@ -38,8 +38,8 @@ impl Register for PubRegister {
 const STACK_POINTER: PrivRegister = PrivRegister("1");
 const RESULT: PrivRegister = PrivRegister("2");
 const OPERAND: PrivRegister = PrivRegister("3");
-const IN: PubRegister = PubRegister("4");
-const OUT: PubRegister = PubRegister("5");
+const TEMP: PubRegister = PubRegister("4");
+const EXPR: PubRegister = PubRegister("5");
 
 macro_rules! chain {
     ($($iter:expr),* $(,)?) => {
@@ -123,7 +123,7 @@ pub fn compile(linked: Vec<Arc<Proc>>) -> anyhow::Result<Vec<Arc<asm_ast::Proced
             // init stack pointer
             data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
                 dest: STACK_POINTER.addr_value(), // stored in mem addr 1
-                val: OUT.addr_value(),            // points to last addr in stack (2)
+                val: EXPR.addr_value(),           // points to last addr in stack (2)
             })),
             // run high-level main method
             data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
@@ -211,18 +211,18 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     let mut assign_asm_commands = compile_pipeline(pipeline, &var_to_offset)?;
 
                     // set var addr to assign in temp_left
-                    assign_asm_commands.extend(compute_stack_addr(IN, var_offset));
+                    assign_asm_commands.extend(compute_stack_addr(TEMP, var_offset));
 
                     // deref var addr if its a ref assign
                     if *deref_var {
                         assign_asm_commands.push(data(asm_ast::DataCommand::MoveDerefSrc(
-                            asm_ast::BinaryArgs { dest: IN.addr_value(), val: IN.addr_value() },
+                            asm_ast::BinaryArgs { dest: TEMP.addr_value(), val: TEMP.addr_value() },
                         )));
                     }
 
                     // move value at addr in temp_right to addr in temp_left
                     assign_asm_commands.push(data(asm_ast::DataCommand::MoveDerefDest(
-                        asm_ast::BinaryArgs { dest: IN.addr_value(), val: OUT.addr_value() },
+                        asm_ast::BinaryArgs { dest: TEMP.addr_value(), val: EXPR.addr_value() },
                     )));
 
                     assign_asm_commands
@@ -235,9 +235,27 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                         };
 
                         chain!(
-                            get_stack_value(OUT, var_offset),
+                            get_stack_value(EXPR, var_offset),
                             [data(asm_ast::DataCommand::Out(asm_ast::UnaryArgs {
-                                val: OUT.addr_value()
+                                val: EXPR.addr_value()
+                            }))],
+                        )
+                    },
+                    NativeOperation::In { dest_var } => {
+                        let Some(&dest_var_offset) =
+                            var_to_offset.get(&Var::User(Arc::clone(dest_var)))
+                        else {
+                            bail!("Failed to find dest var offset")
+                        };
+
+                        chain!(
+                            [data(asm_ast::DataCommand::In(asm_ast::UnaryArgs {
+                                val: EXPR.addr_value(),
+                            }))],
+                            compute_stack_addr(TEMP, dest_var_offset),
+                            [data(asm_ast::DataCommand::MoveDerefDest(asm_ast::BinaryArgs {
+                                dest: TEMP.addr_value(),
+                                val: EXPR.addr_value()
                             }))],
                         )
                     },
@@ -283,11 +301,11 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                         // chain commands to put param value in RIGHT
                         pipeline_asm_commands,
                         // store addr for func param in LEFT
-                        compute_param_addr(IN, param_offset + 2),
+                        compute_param_addr(TEMP, param_offset + 2),
                         // move value in call var to func param
                         [data(asm_ast::DataCommand::MoveDerefDest(asm_ast::BinaryArgs {
-                            dest: IN.addr_value(),
-                            val: OUT.addr_value(),
+                            dest: TEMP.addr_value(),
+                            val: EXPR.addr_value(),
                         })),]
                     );
 
@@ -302,16 +320,16 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
 
                 let return_asm_commands: Vec<Arc<asm_ast::Command>> = chain!(
                     // store addr for call var in LEFT
-                    compute_param_addr(IN, 1),
+                    compute_param_addr(TEMP, 1),
                     // store return addr in RIGHT
                     [data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-                        dest: OUT.addr_value(),
+                        dest: EXPR.addr_value(),
                         val: label(&format!("{}.{}", asm_proc_name, return_sub_proc_index)),
                     }))],
                     // move value in RIGHT (return addr) to addr in LEFT (return addr var)
                     [data(asm_ast::DataCommand::MoveDerefDest(asm_ast::BinaryArgs {
-                        dest: IN.addr_value(),
-                        val: OUT.addr_value()
+                        dest: TEMP.addr_value(),
+                        val: EXPR.addr_value()
                     }))],
                 );
 
@@ -347,12 +365,12 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
             Call::Return => {
                 chain!(
                     // store return addr in RIGHT
-                    compute_param_addr(OUT, 1),
+                    compute_param_addr(EXPR, 1),
                     // broadcast function message
                     [
                         data(asm_ast::DataCommand::MoveDerefSrc(asm_ast::BinaryArgs {
                             dest: RESULT.addr_value(),
-                            val: OUT.addr_value()
+                            val: EXPR.addr_value()
                         })),
                         control(asm_ast::ControlCommand::Jump(asm_ast::UnaryArgs {
                             val: RESULT.addr_value()
@@ -386,7 +404,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     [
                         control(asm_ast::ControlCommand::Branch(asm_ast::BinaryArgs {
                             dest: OPERAND.addr_value(),
-                            val: OUT.addr_value(),
+                            val: EXPR.addr_value(),
                         })),
                         control(asm_ast::ControlCommand::Jump(asm_ast::UnaryArgs {
                             val: RESULT.addr_value(),
@@ -419,7 +437,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     [
                         control(asm_ast::ControlCommand::Branch(asm_ast::BinaryArgs {
                             dest: OPERAND.addr_value(),
-                            val: OUT.addr_value(),
+                            val: EXPR.addr_value(),
                         })),
                         control(asm_ast::ControlCommand::Jump(asm_ast::UnaryArgs {
                             val: RESULT.addr_value(),
@@ -478,12 +496,12 @@ fn compile_operation(
         Operation::Add { operand } => {
             chain!(
                 // store value for right in RIGHT
-                compile_value(operand, var_to_offset, IN)?,
+                compile_value(operand, var_to_offset, TEMP)?,
                 // set var to sum of temp_left and temp_right
                 [data(asm_ast::DataCommand::Add(asm_ast::TernaryArgs {
-                    dest: OUT.addr_value(),
-                    left: OUT.addr_value(),
-                    right: IN.addr_value(),
+                    dest: EXPR.addr_value(),
+                    left: EXPR.addr_value(),
+                    right: TEMP.addr_value(),
                 }))],
             )
         },
@@ -491,35 +509,35 @@ fn compile_operation(
             chain!(
                 // deref RIGHT
                 [data(asm_ast::DataCommand::MoveDerefSrc(asm_ast::BinaryArgs {
-                    dest: OUT.addr_value(),
-                    val: OUT.addr_value(),
+                    dest: EXPR.addr_value(),
+                    val: EXPR.addr_value(),
                 }))]
             )
         },
         Operation::Eq { operand } => {
             chain!(
-                compile_value(operand, var_to_offset, IN)?,
+                compile_value(operand, var_to_offset, TEMP)?,
                 [data(asm_ast::DataCommand::Eq(asm_ast::TernaryArgs {
-                    dest: OUT.addr_value(),
-                    left: OUT.addr_value(),
-                    right: IN.addr_value(),
+                    dest: EXPR.addr_value(),
+                    left: EXPR.addr_value(),
+                    right: TEMP.addr_value(),
                 }))],
             )
         },
         Operation::Not => {
             chain!([data(asm_ast::DataCommand::Not(asm_ast::BinaryArgs {
-                dest: OUT.addr_value(),
-                val: OUT.addr_value(),
+                dest: EXPR.addr_value(),
+                val: EXPR.addr_value(),
             }))],)
         },
         Operation::Sub { operand } => {
             chain!(
-                compile_value(operand, var_to_offset, IN)?,
+                compile_value(operand, var_to_offset, TEMP)?,
                 // set var to sum of temp_left and temp_right
                 [data(asm_ast::DataCommand::Sub(asm_ast::TernaryArgs {
-                    dest: OUT.addr_value(),
-                    left: OUT.addr_value(),
-                    right: IN.addr_value(),
+                    dest: EXPR.addr_value(),
+                    left: EXPR.addr_value(),
+                    right: TEMP.addr_value(),
                 }))],
             )
         },
@@ -534,7 +552,7 @@ fn compile_pipeline(
 ) -> anyhow::Result<Vec<Arc<asm_ast::Command>>> {
     let mut asm_commands = Vec::new();
 
-    asm_commands.extend(compile_value(&pipeline.initial_val, var_to_offset, OUT)?);
+    asm_commands.extend(compile_value(&pipeline.initial_val, var_to_offset, EXPR)?);
 
     for operation in pipeline.operations.iter().map(AsRef::as_ref) {
         asm_commands.extend(compile_operation(operation, var_to_offset)?);

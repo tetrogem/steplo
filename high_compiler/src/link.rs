@@ -56,6 +56,32 @@ pub fn link(mut ast: Vec<Arc<ast::TopItem>>) -> anyhow::Result<Vec<Arc<Proc>>> {
 
     ast.push(Arc::new(ast::TopItem::Func(Arc::new(out_func))));
 
+    let in_func = ast::Func {
+        name: "in".into(),
+        params: Arc::new(Vec::from(["dest_ref".into()])),
+        proc: Arc::new(ast::Proc {
+            vars: Arc::new(Vec::from(["answer".into()])),
+            body: Arc::new(Vec::from([
+                Arc::new(ast::BodyItem::Statement(Arc::new(ast::Statement::Native(Arc::new(
+                    ast::NativeOperation::In { dest_var: "answer".into() },
+                ))))),
+                Arc::new(ast::BodyItem::Statement(Arc::new(ast::Statement::Assign(Arc::new(
+                    ast::Assign {
+                        deref_var: true,
+                        var: "dest_ref".into(),
+                        pipeline: Arc::new(ast::Pipeline {
+                            initial_val: Arc::new(ast::Value::Var("answer".into())),
+                            operations: Arc::new(Vec::new()),
+                        }),
+                    },
+                ))))),
+            ])),
+        }),
+    };
+
+    ast.push(Arc::new(ast::TopItem::Func(Arc::new(in_func))));
+
+    // parse user top items
     let mut procs = Vec::<Arc<Proc>>::new();
 
     for top_item in ast.iter().map(AsRef::as_ref) {

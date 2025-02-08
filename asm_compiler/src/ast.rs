@@ -21,6 +21,7 @@ pub enum DataCommand {
     Out(UnaryArgs),
     Eq(TernaryArgs),
     Not(BinaryArgs),
+    In(UnaryArgs),
 }
 
 #[derive(Debug)]
@@ -172,6 +173,9 @@ pub fn parse<'a>(
                         Command::Data(Arc::new(DataCommand::Not(parse_binary_args(&mut tokens)?)))
                     },
                     token::Op::Exit => Command::Control(Arc::new(ControlCommand::Exit)),
+                    token::Op::In => {
+                        Command::Data(Arc::new(DataCommand::In(parse_unary_args(&mut tokens)?)))
+                    },
                 };
 
                 Some(command)

@@ -25,6 +25,7 @@ pub enum Op {
     Eq,
     Not,
     Exit,
+    In,
 }
 
 pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
@@ -62,6 +63,7 @@ pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
                         "eq" => Op::Eq,
                         "not" => Op::Not,
                         "exit" => Op::Exit,
+                        "in" => Op::In,
                         _ => bail!("Invalid operator: {}", word),
                     };
 

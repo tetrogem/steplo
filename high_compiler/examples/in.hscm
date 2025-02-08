@@ -1,0 +1,5 @@
+main |msg| {
+    out("Type a message:");
+    in(ref msg);
+    out(msg);
+}

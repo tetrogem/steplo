@@ -232,10 +232,6 @@ impl Expr {
         Arc::new(Expr::Literal(Arc::new(Literal::Num(n))))
     }
 
-    pub fn derived(d: &Arc<Op>) -> Arc<Expr> {
-        Arc::new(Expr::Derived(Arc::clone(d)))
-    }
-
     pub fn compile(&self, parent: Uuid) -> Dependent<ir::Expr> {
         let mut deps = Vec::new();
 
