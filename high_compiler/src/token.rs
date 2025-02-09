@@ -131,7 +131,11 @@ fn consume_word(chars: &mut Peekable<impl Iterator<Item = char>>) -> anyhow::Res
                     bail!("Word is empty");
                 }
 
-                Token::Name(word)
+                if word.chars().next().map(|c| c.is_numeric()).unwrap_or(false) {
+                    Token::Literal(word)
+                } else {
+                    Token::Name(word)
+                }
             },
         },
     };
