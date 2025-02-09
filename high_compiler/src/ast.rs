@@ -364,7 +364,17 @@ fn parse_if(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Resu
     let else_body_items = match tokens.peek() {
         Some(Token::Else) => {
             let Some(Token::Else) = tokens.next() else { bail!("Expected else") };
-            Some(Arc::new(parse_body(tokens)?))
+
+            tokens.reset_peek();
+            let body_items = match tokens.peek() {
+                Some(Token::If) => {
+                    let chained_if_item = parse_if(tokens)?;
+                    Vec::from([Arc::new(chained_if_item)])
+                },
+                _ => parse_body(tokens)?,
+            };
+
+            Some(Arc::new(body_items))
         },
         _ => None,
     };

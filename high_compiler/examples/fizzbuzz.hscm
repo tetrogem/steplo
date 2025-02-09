@@ -6,16 +6,12 @@ main |i, nums| {
     while i | lte nums {
         if i | mod "15" | eq "0" {
             out("FizzBuzz");
+        } else if i | mod "3" | eq "0" {
+            out("Fizz");
+        } else if i | mod "5" | eq "0" {
+            out("Buzz");
         } else {
-            if i | mod "3" | eq "0" {
-                out("Fizz");
-            } else {
-                if i | mod "5" | eq "0" {
-                    out("Buzz");
-                } else {
-                    out(i);
-                }
-            }
+            out(i);
         }
 
         i = i | add "1";
