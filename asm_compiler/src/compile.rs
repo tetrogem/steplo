@@ -158,6 +158,17 @@ fn set(list: &Arc<ez::List>, index: &Arc<ez::Expr>, value: &Arc<ez::Expr>) -> Ar
     }))
 }
 
+macro_rules! stack {
+    ($root:expr $(, $($rest:expr),* $(,)?)?) => {{
+        let rest = vec![$($($rest),*)*];
+
+        Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+            root: $root,
+            rest: Arc::new(rest),
+        })))
+    }};
+}
+
 fn compile_data_command(
     command: &link::DataCommand,
     stack_list: &Arc<ez::List>,
@@ -205,65 +216,25 @@ fn compile_data_command(
         link::DataCommand::Eq(args) => {
             let dest_addr = lit(&args.dest);
 
-            let true_op = Arc::new(ez::Op::Data(ez::DataOp::ReplaceItemOfList {
-                list: Arc::clone(stack_list),
-                index: Arc::clone(&dest_addr),
-                item: lit("1"),
-            }));
-
-            let false_op = Arc::new(ez::Op::Data(ez::DataOp::ReplaceItemOfList {
-                list: Arc::clone(stack_list),
-                index: dest_addr,
-                item: lit(""),
-            }));
-
-            let condition_expr = operator_expr(ez::OperatorOp::Equals {
-                operand_a: index_expr(stack_list, &lit(&args.left)),
-                operand_b: index_expr(stack_list, &lit(&args.right)),
-            });
-
             Vec::from([Arc::new(ez::Op::Control(ez::ControlOp::IfElse {
-                condition: condition_expr,
-                then_substack: Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
-                    root: true_op,
-                    rest: Default::default(),
-                }))),
-                else_substack: Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
-                    root: false_op,
-                    rest: Default::default(),
-                }))),
+                condition: operator_expr(ez::OperatorOp::Equals {
+                    operand_a: index_expr(stack_list, &lit(&args.left)),
+                    operand_b: index_expr(stack_list, &lit(&args.right)),
+                }),
+                then_substack: stack!(set(stack_list, &dest_addr, &lit("1"))),
+                else_substack: stack!(set(stack_list, &dest_addr, &lit(""))),
             }))])
         },
         link::DataCommand::Not(args) => {
             let dest_addr = lit(&args.dest);
 
-            let true_op = Arc::new(ez::Op::Data(ez::DataOp::ReplaceItemOfList {
-                list: Arc::clone(stack_list),
-                index: Arc::clone(&dest_addr),
-                item: lit("1"),
-            }));
-
-            let false_op = Arc::new(ez::Op::Data(ez::DataOp::ReplaceItemOfList {
-                list: Arc::clone(stack_list),
-                index: dest_addr,
-                item: lit(""),
-            }));
-
-            let condition_expr = operator_expr(ez::OperatorOp::Equals {
-                operand_a: index_expr(stack_list, &lit(&args.val)),
-                operand_b: lit(""),
-            });
-
             Vec::from([Arc::new(ez::Op::Control(ez::ControlOp::IfElse {
-                condition: condition_expr,
-                then_substack: Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
-                    root: true_op,
-                    rest: Default::default(),
-                }))),
-                else_substack: Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
-                    root: false_op,
-                    rest: Default::default(),
-                }))),
+                condition: operator_expr(ez::OperatorOp::Equals {
+                    operand_a: index_expr(stack_list, &lit(&args.val)),
+                    operand_b: lit(""),
+                }),
+                then_substack: stack!(set(stack_list, &dest_addr, &lit("1"))),
+                else_substack: stack!(set(stack_list, &dest_addr, &lit(""))),
             }))])
         },
         link::DataCommand::In(args) => {
@@ -277,6 +248,182 @@ fn compile_data_command(
 
             Vec::from([ask_op, save_answer_op])
         },
+        link::DataCommand::Mul(args) => Vec::from([set(
+            stack_list,
+            &lit(&args.dest),
+            &operator_expr(ez::OperatorOp::Multiply {
+                num_a: index_expr(stack_list, &lit(&args.left)),
+                num_b: index_expr(stack_list, &lit(&args.right)),
+            }),
+        )]),
+        link::DataCommand::Div(args) => Vec::from([set(
+            stack_list,
+            &lit(&args.dest),
+            &operator_expr(ez::OperatorOp::Divide {
+                num_a: index_expr(stack_list, &lit(&args.left)),
+                num_b: index_expr(stack_list, &lit(&args.right)),
+            }),
+        )]),
+        link::DataCommand::Mod(args) => Vec::from([set(
+            stack_list,
+            &lit(&args.dest),
+            &operator_expr(ez::OperatorOp::Mod {
+                num_a: index_expr(stack_list, &lit(&args.left)),
+                num_b: index_expr(stack_list, &lit(&args.right)),
+            }),
+        )]),
+        link::DataCommand::Neq(args) => {
+            let dest_addr = lit(&args.dest);
+
+            Vec::from([Arc::new(ez::Op::Control(ez::ControlOp::IfElse {
+                condition: operator_expr(ez::OperatorOp::Equals {
+                    operand_a: index_expr(stack_list, &lit(&args.left)),
+                    operand_b: index_expr(stack_list, &lit(&args.right)),
+                }),
+                then_substack: stack!(set(stack_list, &dest_addr, &lit(""))),
+                else_substack: stack!(set(stack_list, &dest_addr, &lit("1"))),
+            }))])
+        },
+        link::DataCommand::Gt(args) => {
+            let dest_addr = lit(&args.dest);
+
+            Vec::from([Arc::new(ez::Op::Control(ez::ControlOp::IfElse {
+                condition: operator_expr(ez::OperatorOp::GreaterThan {
+                    operand_a: index_expr(stack_list, &lit(&args.left)),
+                    operand_b: index_expr(stack_list, &lit(&args.right)),
+                }),
+                then_substack: stack!(set(stack_list, &dest_addr, &lit("1"))),
+                else_substack: stack!(set(stack_list, &dest_addr, &lit(""))),
+            }))])
+        },
+        link::DataCommand::Lt(args) => {
+            let dest_addr = lit(&args.dest);
+
+            Vec::from([Arc::new(ez::Op::Control(ez::ControlOp::IfElse {
+                condition: operator_expr(ez::OperatorOp::LessThan {
+                    operand_a: index_expr(stack_list, &lit(&args.left)),
+                    operand_b: index_expr(stack_list, &lit(&args.right)),
+                }),
+                then_substack: stack!(set(stack_list, &dest_addr, &lit("1"))),
+                else_substack: stack!(set(stack_list, &dest_addr, &lit(""))),
+            }))])
+        },
+        link::DataCommand::Gte(args) => {
+            let dest_addr = lit(&args.dest);
+            let left_expr = index_expr(stack_list, &lit(&args.left));
+            let right_expr = index_expr(stack_list, &lit(&args.right));
+
+            Vec::from([Arc::new(ez::Op::Control(ez::ControlOp::IfElse {
+                condition: operator_expr(ez::OperatorOp::Or {
+                    operand_a: operator_expr(ez::OperatorOp::GreaterThan {
+                        operand_a: Arc::clone(&left_expr),
+                        operand_b: Arc::clone(&right_expr),
+                    }),
+                    operand_b: operator_expr(ez::OperatorOp::Equals {
+                        operand_a: left_expr,
+                        operand_b: right_expr,
+                    }),
+                }),
+                then_substack: stack!(set(stack_list, &dest_addr, &lit("1"))),
+                else_substack: stack!(set(stack_list, &dest_addr, &lit(""))),
+            }))])
+        },
+        link::DataCommand::Lte(args) => {
+            let dest_addr = lit(&args.dest);
+            let left_expr = index_expr(stack_list, &lit(&args.left));
+            let right_expr = index_expr(stack_list, &lit(&args.right));
+
+            Vec::from([Arc::new(ez::Op::Control(ez::ControlOp::IfElse {
+                condition: operator_expr(ez::OperatorOp::Or {
+                    operand_a: operator_expr(ez::OperatorOp::LessThan {
+                        operand_a: Arc::clone(&left_expr),
+                        operand_b: Arc::clone(&right_expr),
+                    }),
+                    operand_b: operator_expr(ez::OperatorOp::Equals {
+                        operand_a: left_expr,
+                        operand_b: right_expr,
+                    }),
+                }),
+                then_substack: stack!(set(stack_list, &dest_addr, &lit("1"))),
+                else_substack: stack!(set(stack_list, &dest_addr, &lit(""))),
+            }))])
+        },
+        link::DataCommand::And(args) => {
+            let dest_addr = lit(&args.dest);
+
+            Vec::from([Arc::new(ez::Op::Control(ez::ControlOp::IfElse {
+                condition: operator_expr(ez::OperatorOp::Or {
+                    operand_a: operator_expr(ez::OperatorOp::Equals {
+                        operand_a: index_expr(stack_list, &lit(&args.left)),
+                        operand_b: lit(""),
+                    }),
+                    operand_b: operator_expr(ez::OperatorOp::Equals {
+                        operand_a: index_expr(stack_list, &lit(&args.right)),
+                        operand_b: lit(""),
+                    }),
+                }),
+                then_substack: stack!(set(stack_list, &dest_addr, &lit(""))),
+                else_substack: stack!(set(stack_list, &dest_addr, &lit("1"))),
+            }))])
+        },
+        link::DataCommand::Or(args) => {
+            let dest_addr = lit(&args.dest);
+
+            Vec::from([Arc::new(ez::Op::Control(ez::ControlOp::IfElse {
+                condition: operator_expr(ez::OperatorOp::And {
+                    operand_a: operator_expr(ez::OperatorOp::Equals {
+                        operand_a: index_expr(stack_list, &lit(&args.left)),
+                        operand_b: lit(""),
+                    }),
+                    operand_b: operator_expr(ez::OperatorOp::Equals {
+                        operand_a: index_expr(stack_list, &lit(&args.right)),
+                        operand_b: lit(""),
+                    }),
+                }),
+                then_substack: stack!(set(stack_list, &dest_addr, &lit(""))),
+                else_substack: stack!(set(stack_list, &dest_addr, &lit("1"))),
+            }))])
+        },
+        link::DataCommand::Xor(args) => {
+            let dest_addr = lit(&args.dest);
+
+            let left_false = operator_expr(ez::OperatorOp::Equals {
+                operand_a: index_expr(stack_list, &lit(&args.left)),
+                operand_b: lit(""),
+            });
+
+            let right_false = operator_expr(ez::OperatorOp::Equals {
+                operand_a: index_expr(stack_list, &lit(&args.right)),
+                operand_b: lit(""),
+            });
+
+            let left_f_right_t = operator_expr(ez::OperatorOp::And {
+                operand_a: Arc::clone(&left_false),
+                operand_b: operator_expr(ez::OperatorOp::Not { operand: Arc::clone(&right_false) }),
+            });
+
+            let left_t_right_f = operator_expr(ez::OperatorOp::And {
+                operand_a: operator_expr(ez::OperatorOp::Not { operand: left_false }),
+                operand_b: right_false,
+            });
+
+            Vec::from([Arc::new(ez::Op::Control(ez::ControlOp::IfElse {
+                condition: operator_expr(ez::OperatorOp::Or {
+                    operand_a: left_f_right_t,
+                    operand_b: left_t_right_f,
+                }),
+                then_substack: stack!(set(stack_list, &dest_addr, &lit("1"))),
+                else_substack: stack!(set(stack_list, &dest_addr, &lit(""))),
+            }))])
+        },
+        link::DataCommand::Join(args) => Vec::from([set(
+            stack_list,
+            &lit(&args.dest),
+            &operator_expr(ez::OperatorOp::Join {
+                string_a: index_expr(stack_list, &lit(&args.left)),
+                string_b: index_expr(stack_list, &lit(&args.right)),
+            }),
+        )]),
     }
 }
 

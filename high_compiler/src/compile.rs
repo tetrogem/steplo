@@ -492,19 +492,20 @@ fn compile_operation(
     operation: &Operation,
     var_to_offset: &HashMap<Var, usize>,
 ) -> anyhow::Result<Vec<Arc<asm_ast::Command>>> {
-    let asm_commands = match operation {
-        Operation::Add { operand } => {
+    macro_rules! binary_op {
+        ($com:ident, $operand:expr $(,)?) => {
             chain!(
-                // store value for right in RIGHT
-                compile_value(operand, var_to_offset, TEMP)?,
-                // set var to sum of temp_left and temp_right
-                [data(asm_ast::DataCommand::Add(asm_ast::TernaryArgs {
+                compile_value($operand, var_to_offset, TEMP)?,
+                [data(asm_ast::DataCommand::$com(asm_ast::TernaryArgs {
                     dest: EXPR.addr_value(),
                     left: EXPR.addr_value(),
                     right: TEMP.addr_value(),
                 }))],
             )
-        },
+        };
+    }
+
+    let asm_commands = match operation {
         Operation::Deref => {
             chain!(
                 // deref RIGHT
@@ -514,33 +515,27 @@ fn compile_operation(
                 }))]
             )
         },
-        Operation::Eq { operand } => {
-            chain!(
-                compile_value(operand, var_to_offset, TEMP)?,
-                [data(asm_ast::DataCommand::Eq(asm_ast::TernaryArgs {
-                    dest: EXPR.addr_value(),
-                    left: EXPR.addr_value(),
-                    right: TEMP.addr_value(),
-                }))],
-            )
-        },
+        Operation::Add { operand } => binary_op!(Add, operand),
+        Operation::Sub { operand } => binary_op!(Sub, operand),
+        Operation::Mul { operand } => binary_op!(Mul, operand),
+        Operation::Div { operand } => binary_op!(Div, operand),
+        Operation::Mod { operand } => binary_op!(Mod, operand),
+        Operation::Eq { operand } => binary_op!(Eq, operand),
+        Operation::Neq { operand } => binary_op!(Neq, operand),
+        Operation::Gt { operand } => binary_op!(Gt, operand),
+        Operation::Lt { operand } => binary_op!(Lt, operand),
+        Operation::Gte { operand } => binary_op!(Gte, operand),
+        Operation::Lte { operand } => binary_op!(Lte, operand),
+        Operation::And { operand } => binary_op!(And, operand),
+        Operation::Or { operand } => binary_op!(Or, operand),
+        Operation::Xor { operand } => binary_op!(Xor, operand),
         Operation::Not => {
             chain!([data(asm_ast::DataCommand::Not(asm_ast::BinaryArgs {
                 dest: EXPR.addr_value(),
                 val: EXPR.addr_value(),
             }))],)
         },
-        Operation::Sub { operand } => {
-            chain!(
-                compile_value(operand, var_to_offset, TEMP)?,
-                // set var to sum of temp_left and temp_right
-                [data(asm_ast::DataCommand::Sub(asm_ast::TernaryArgs {
-                    dest: EXPR.addr_value(),
-                    left: EXPR.addr_value(),
-                    right: TEMP.addr_value(),
-                }))],
-            )
-        },
+        Operation::Join { operand } => binary_op!(Join, operand),
     };
 
     Ok(asm_commands)

@@ -30,16 +30,34 @@ pub enum Call {
 
 #[derive(Debug)]
 pub enum DataCommand {
+    // memory
     Set(BinaryArgs),
     Move(BinaryArgs),
     MoveDerefDest(BinaryArgs),
     MoveDerefSrc(BinaryArgs),
+    // io
+    In(UnaryArgs),
+    Out(UnaryArgs),
+    // math
     Add(TernaryArgs),
     Sub(TernaryArgs),
-    Out(UnaryArgs),
+    Mul(TernaryArgs),
+    Div(TernaryArgs),
+    Mod(TernaryArgs),
+    // inequality
     Eq(TernaryArgs),
+    Neq(TernaryArgs),
+    Gt(TernaryArgs),
+    Lt(TernaryArgs),
+    Gte(TernaryArgs),
+    Lte(TernaryArgs),
+    // boolean
+    And(TernaryArgs),
+    Or(TernaryArgs),
+    Xor(TernaryArgs),
     Not(BinaryArgs),
-    In(UnaryArgs),
+    // string
+    Join(TernaryArgs),
 }
 
 #[derive(Debug)]
@@ -121,20 +139,41 @@ fn link_proc(ast_proc: &Arc<ast::Procedure>) -> Vec<Body> {
     for ast_command in &ast_proc.commands {
         match ast_command.as_ref() {
             ast::Command::Data(data_command) => {
-                let data_command = match data_command.as_ref() {
-                    ast::DataCommand::Add(args) => DataCommand::Add(args.into()),
-                    ast::DataCommand::Eq(args) => DataCommand::Eq(args.into()),
-                    ast::DataCommand::Move(args) => DataCommand::Move(args.into()),
-                    ast::DataCommand::MoveDerefDest(args) => {
-                        DataCommand::MoveDerefDest(args.into())
-                    },
-                    ast::DataCommand::MoveDerefSrc(args) => DataCommand::MoveDerefSrc(args.into()),
-                    ast::DataCommand::Not(args) => DataCommand::Not(args.into()),
-                    ast::DataCommand::Out(args) => DataCommand::Out(args.into()),
-                    ast::DataCommand::Set(args) => DataCommand::Set(args.into()),
-                    ast::DataCommand::Sub(args) => DataCommand::Sub(args.into()),
-                    ast::DataCommand::In(args) => DataCommand::In(args.into()),
-                };
+                macro_rules! ast_to_link {
+                    ($val:expr => $($com:ident),* $(,)?) => {
+                        match $val.as_ref() {
+                            $(
+                                ast::DataCommand:: $com (args) => DataCommand:: $com (args.into()),
+                            )*
+                        }
+                    };
+                }
+
+                let data_command = ast_to_link!(
+                    data_command =>
+                        Set,
+                        Move,
+                        MoveDerefDest,
+                        MoveDerefSrc,
+                        In,
+                        Out,
+                        Add,
+                        Sub,
+                        Mul,
+                        Div,
+                        Mod,
+                        Eq,
+                        Neq,
+                        Gt,
+                        Lt,
+                        Gte,
+                        Lte,
+                        And,
+                        Or,
+                        Xor,
+                        Not,
+                        Join,
+                );
 
                 linking.push(Arc::new(data_command));
             },

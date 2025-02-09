@@ -182,6 +182,24 @@ impl Op {
                     OperatorOp::Not { operand } => {
                         ir::OperatorOp::Not { operand: compile(operand) }
                     },
+                    OperatorOp::GreaterThan { operand_a, operand_b } => {
+                        ir::OperatorOp::GreaterThan {
+                            operand_a: compile(operand_a),
+                            operand_b: compile(operand_b),
+                        }
+                    },
+                    OperatorOp::LessThan { operand_a, operand_b } => ir::OperatorOp::LessThan {
+                        operand_a: compile(operand_a),
+                        operand_b: compile(operand_b),
+                    },
+                    OperatorOp::And { operand_a, operand_b } => ir::OperatorOp::And {
+                        operand_a: compile(operand_a),
+                        operand_b: compile(operand_b),
+                    },
+                    OperatorOp::Or { operand_a, operand_b } => ir::OperatorOp::Or {
+                        operand_a: compile(operand_a),
+                        operand_b: compile(operand_b),
+                    },
                 };
 
                 ir::Op::Operator(ir_op)

@@ -13,19 +13,38 @@ pub enum Token {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Op {
+    // memory
     Lit,
-    Add,
-    Sub,
     Move,
     MoveDerefDest,
     MoveDerefSrc,
+    // control
     Jump,
     Branch,
-    Out,
-    Eq,
-    Not,
     Exit,
+    // io
     In,
+    Out,
+    // math
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    // inequality
+    Eq,
+    Neq,
+    Gt,
+    Lt,
+    Gte,
+    Lte,
+    // boolean
+    And,
+    Or,
+    Xor,
+    Not,
+    // string
+    Join,
 }
 
 pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
@@ -64,6 +83,18 @@ pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
                         "not" => Op::Not,
                         "exit" => Op::Exit,
                         "in" => Op::In,
+                        "mul" => Op::Mul,
+                        "div" => Op::Div,
+                        "mod" => Op::Mod,
+                        "neq" => Op::Neq,
+                        "gt" => Op::Gt,
+                        "lt" => Op::Lt,
+                        "gte" => Op::Gte,
+                        "lte" => Op::Lte,
+                        "and" => Op::And,
+                        "or" => Op::Or,
+                        "xor" => Op::Xor,
+                        "join" => Op::Join,
                         _ => bail!("Invalid operator: {}", word),
                     };
 

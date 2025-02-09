@@ -8,7 +8,7 @@ main |i, cond| {
     while cond {
         out(i);
         i = i | sub "1";
-        cond = i | eq "0" | not;
+        cond = i | neq "0";
     }
 
     out("End!");

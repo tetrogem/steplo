@@ -26,11 +26,28 @@ pub enum Token {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Opword {
-    Eq,
-    Not,
-    Add,
+    // memory
     Deref,
+    // math
+    Add,
     Sub,
+    Mul,
+    Div,
+    Mod,
+    // inequality
+    Eq,
+    Neq,
+    Gt,
+    Lt,
+    Gte,
+    Lte,
+    // boolean
+    And,
+    Or,
+    Xor,
+    Not,
+    // string
+    Join,
 }
 
 impl FromStr for Opword {
@@ -38,11 +55,23 @@ impl FromStr for Opword {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let comword = match s {
-            "eq" => Self::Eq,
-            "not" => Self::Not,
-            "add" => Self::Add,
-            "deref" => Self::Deref,
-            "sub" => Self::Sub,
+            "deref" => Opword::Deref,
+            "add" => Opword::Add,
+            "sub" => Opword::Sub,
+            "mul" => Opword::Mul,
+            "div" => Opword::Div,
+            "mod" => Opword::Mod,
+            "eq" => Opword::Eq,
+            "neq" => Opword::Neq,
+            "gt" => Opword::Gt,
+            "lt" => Opword::Lt,
+            "gte" => Opword::Gte,
+            "lte" => Opword::Lte,
+            "and" => Opword::And,
+            "or" => Opword::Or,
+            "xor" => Opword::Xor,
+            "not" => Opword::Not,
+            "join" => Opword::Join,
             _ => return Err(()),
         };
 

@@ -94,6 +94,10 @@ pub enum OperatorOp {
     Random { from: Arc<Expr>, to: Arc<Expr> },
     Equals { operand_a: Arc<Expr>, operand_b: Arc<Expr> },
     Not { operand: Arc<Expr> },
+    GreaterThan { operand_a: Arc<Expr>, operand_b: Arc<Expr> },
+    LessThan { operand_a: Arc<Expr>, operand_b: Arc<Expr> },
+    And { operand_a: Arc<Expr>, operand_b: Arc<Expr> },
+    Or { operand_a: Arc<Expr>, operand_b: Arc<Expr> },
 }
 
 #[derive(Debug)]

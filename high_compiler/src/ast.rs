@@ -72,11 +72,28 @@ pub struct Pipeline {
 
 #[derive(Debug, Clone)]
 pub enum Operation {
+    // memory
     Deref,
+    // math
     Add { operand: Arc<Value> },
-    Eq { operand: Arc<Value> },
-    Not,
     Sub { operand: Arc<Value> },
+    Mul { operand: Arc<Value> },
+    Div { operand: Arc<Value> },
+    Mod { operand: Arc<Value> },
+    // inequality
+    Eq { operand: Arc<Value> },
+    Neq { operand: Arc<Value> },
+    Gt { operand: Arc<Value> },
+    Lt { operand: Arc<Value> },
+    Gte { operand: Arc<Value> },
+    Lte { operand: Arc<Value> },
+    // boolean
+    And { operand: Arc<Value> },
+    Or { operand: Arc<Value> },
+    Xor { operand: Arc<Value> },
+    Not,
+    // string
+    Join { operand: Arc<Value> },
 }
 
 #[derive(Debug, Clone)]
@@ -279,13 +296,25 @@ fn parse_pipeline(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow
             _ => bail!("Expected comword"),
         };
 
-        let operation = match opword {
-            Opword::Add => Operation::Add { operand: Arc::new(parse_value(tokens)?) },
-            Opword::Deref => Operation::Deref,
-            Opword::Eq => Operation::Eq { operand: Arc::new(parse_value(tokens)?) },
-            Opword::Not => Operation::Not,
-            Opword::Sub => Operation::Sub { operand: Arc::new(parse_value(tokens)?) },
-        };
+        macro_rules! opword_to_op {
+            ($opword:expr, [$($unary:ident),* $(,)?], [$($binary:ident),* $(,)?] $(,)?) => {
+                match $opword {
+                    $(
+                        Opword:: $unary => Operation:: $unary,
+                    )*
+                    $(
+                        Opword:: $binary =>
+                        Operation:: $binary { operand: Arc::new(parse_value(tokens)?) },
+                    )*
+                }
+            };
+        }
+
+        let operation = opword_to_op!(
+            opword,
+            [Deref, Not],
+            [Add, Sub, Mul, Div, Mod, Eq, Neq, Gt, Lt, Gte, Lte, And, Or, Xor, Join],
+        );
 
         operations.push(Arc::new(operation));
     }

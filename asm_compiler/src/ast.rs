@@ -12,16 +12,34 @@ pub enum Command {
 
 #[derive(Debug)]
 pub enum DataCommand {
+    // memory
     Set(BinaryArgs),
     Move(BinaryArgs),
     MoveDerefDest(BinaryArgs),
     MoveDerefSrc(BinaryArgs),
+    // io
+    In(UnaryArgs),
+    Out(UnaryArgs),
+    // math
     Add(TernaryArgs),
     Sub(TernaryArgs),
-    Out(UnaryArgs),
+    Mul(TernaryArgs),
+    Div(TernaryArgs),
+    Mod(TernaryArgs),
+    // inequality
     Eq(TernaryArgs),
+    Neq(TernaryArgs),
+    Gt(TernaryArgs),
+    Lt(TernaryArgs),
+    Gte(TernaryArgs),
+    Lte(TernaryArgs),
+    // boolean
+    And(TernaryArgs),
+    Or(TernaryArgs),
+    Xor(TernaryArgs),
     Not(BinaryArgs),
-    In(UnaryArgs),
+    // string
+    Join(TernaryArgs),
 }
 
 #[derive(Debug)]
@@ -138,44 +156,58 @@ pub fn parse<'a>(
             token::Token::Op(_) => {
                 let Some(token::Token::Op(op_token)) = tokens.next() else { bail!("Expected op") };
 
+                macro_rules! com {
+                    ($kind:ident $com:ident 0) => {
+                        com!(@@ $kind $com => [])
+                    };
+                    ($kind:ident $com:ident 1) => {
+                        com!(@ $kind $com => parse_unary_args)
+                    };
+                    ($kind:ident $com:ident 2) => {
+                        com!(@ $kind $com => parse_binary_args)
+                    };
+                    ($kind:ident $com:ident 3) => {
+                        com!(@ $kind $com => parse_ternary_args)
+                    };
+                    (@ $kind:ident $com:ident => $parse_args:ident) => {{
+                        let args = $parse_args(&mut tokens)?;
+                        com!(@@ $kind $com => [(args)])
+                    }};
+                    (@@ $kind:ident $com:ident => [$($args:tt)?]) => {{
+                        paste::paste! {
+                            let com = [< $kind Command >] :: $com $($args)?;
+                            let com = Arc::new(com);
+                            Command :: $kind (com)
+                        }
+                    }}
+                }
+
                 let command = match op_token {
-                    token::Op::Lit => {
-                        Command::Data(Arc::new(DataCommand::Set(parse_binary_args(&mut tokens)?)))
-                    },
-                    token::Op::Move => {
-                        Command::Data(Arc::new(DataCommand::Move(parse_binary_args(&mut tokens)?)))
-                    },
-                    token::Op::MoveDerefDest => Command::Data(Arc::new(
-                        DataCommand::MoveDerefDest(parse_binary_args(&mut tokens)?),
-                    )),
-                    token::Op::MoveDerefSrc => Command::Data(Arc::new(DataCommand::MoveDerefSrc(
-                        parse_binary_args(&mut tokens)?,
-                    ))),
-                    token::Op::Add => {
-                        Command::Data(Arc::new(DataCommand::Add(parse_ternary_args(&mut tokens)?)))
-                    },
-                    token::Op::Sub => {
-                        Command::Data(Arc::new(DataCommand::Sub(parse_ternary_args(&mut tokens)?)))
-                    },
-                    token::Op::Jump => Command::Control(Arc::new(ControlCommand::Jump(
-                        parse_unary_args(&mut tokens)?,
-                    ))),
-                    token::Op::Branch => Command::Control(Arc::new(ControlCommand::Branch(
-                        parse_binary_args(&mut tokens)?,
-                    ))),
-                    token::Op::Out => {
-                        Command::Data(Arc::new(DataCommand::Out(parse_unary_args(&mut tokens)?)))
-                    },
-                    token::Op::Eq => {
-                        Command::Data(Arc::new(DataCommand::Eq(parse_ternary_args(&mut tokens)?)))
-                    },
-                    token::Op::Not => {
-                        Command::Data(Arc::new(DataCommand::Not(parse_binary_args(&mut tokens)?)))
-                    },
-                    token::Op::Exit => Command::Control(Arc::new(ControlCommand::Exit)),
-                    token::Op::In => {
-                        Command::Data(Arc::new(DataCommand::In(parse_unary_args(&mut tokens)?)))
-                    },
+                    token::Op::Lit => com!(Data Set 2),
+                    token::Op::Move => com!(Data Move 2),
+                    token::Op::MoveDerefDest => com!(Data MoveDerefDest 2),
+                    token::Op::MoveDerefSrc => com!(Data MoveDerefSrc 2),
+                    token::Op::Add => com!(Data Add 3),
+                    token::Op::Sub => com!(Data Sub 3),
+                    token::Op::Jump => com!(Control Jump 1),
+                    token::Op::Branch => com!(Control Branch 2),
+                    token::Op::Out => com!(Data Out 1),
+                    token::Op::Eq => com!(Data Eq 3),
+                    token::Op::Not => com!(Data Not 2),
+                    token::Op::Exit => com!(Control Exit 0),
+                    token::Op::In => com!(Data In 1),
+                    token::Op::Mul => com!(Data Mul 3),
+                    token::Op::Div => com!(Data Div 3),
+                    token::Op::Mod => com!(Data Mod 3),
+                    token::Op::Neq => com!(Data Neq 3),
+                    token::Op::Gt => com!(Data Gt 3),
+                    token::Op::Lt => com!(Data Lt 3),
+                    token::Op::Gte => com!(Data Gte 3),
+                    token::Op::Lte => com!(Data Lte 3),
+                    token::Op::And => com!(Data And 3),
+                    token::Op::Or => com!(Data Or 3),
+                    token::Op::Xor => com!(Data Xor 3),
+                    token::Op::Join => com!(Data Join 3),
                 };
 
                 Some(command)

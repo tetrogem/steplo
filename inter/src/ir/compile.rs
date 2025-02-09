@@ -273,6 +273,38 @@ impl Op {
                     inputs: obj([("OPERAND", compile(operand))]),
                     fields: JsMap::new(),
                 },
+                OperatorOp::GreaterThan { operand_a, operand_b } => ExprMetadata {
+                    opcode: "operator_gt",
+                    inputs: obj([
+                        ("OPERAND1", compile(operand_a)),
+                        ("OPERAND2", compile(operand_b)),
+                    ]),
+                    fields: JsMap::new(),
+                },
+                OperatorOp::LessThan { operand_a, operand_b } => ExprMetadata {
+                    opcode: "operator_lt",
+                    inputs: obj([
+                        ("OPERAND1", compile(operand_a)),
+                        ("OPERAND2", compile(operand_b)),
+                    ]),
+                    fields: JsMap::new(),
+                },
+                OperatorOp::And { operand_a, operand_b } => ExprMetadata {
+                    opcode: "operator_and",
+                    inputs: obj([
+                        ("OPERAND1", compile(operand_a)),
+                        ("OPERAND2", compile(operand_b)),
+                    ]),
+                    fields: JsMap::new(),
+                },
+                OperatorOp::Or { operand_a, operand_b } => ExprMetadata {
+                    opcode: "operator_or",
+                    inputs: obj([
+                        ("OPERAND1", compile(operand_a)),
+                        ("OPERAND2", compile(operand_b)),
+                    ]),
+                    fields: JsMap::new(),
+                },
             },
         }
     }

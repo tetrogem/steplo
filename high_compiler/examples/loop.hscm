@@ -6,7 +6,7 @@ main |i| {
 func iterate(i_ref) |i| {
     i = i_ref | deref;
 
-    if "0" | eq i | not {
+    if "0" | neq i {
         deref i_ref = i | sub "1";
         greet();
         iterate(i_ref);
