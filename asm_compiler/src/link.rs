@@ -3,6 +3,12 @@ use std::{mem, sync::Arc};
 use crate::ast;
 
 #[derive(Debug)]
+pub struct Program {
+    pub registers: Arc<Vec<Arc<str>>>,
+    pub procedures: Arc<Vec<Arc<Procedure>>>,
+}
+
+#[derive(Debug)]
 pub struct Procedure {
     pub kind: ProcedureKind,
     pub body: Arc<Body>,
@@ -22,8 +28,8 @@ pub struct Body {
 
 #[derive(Debug)]
 pub enum Call {
-    Jump { proc_name_addr: Arc<str> },
-    Branch { proc_name_addr: Arc<str>, cond_addr: Arc<str> },
+    Jump { proc_name_addr: Arc<Value> },
+    Branch { proc_name_addr: Arc<Value>, cond_addr: Arc<Value> },
     Passthrough,
     Exit,
 }
@@ -62,55 +68,72 @@ pub enum DataCommand {
 
 #[derive(Debug)]
 pub struct UnaryArgs {
-    pub val: Arc<str>,
+    pub val: Arc<Value>,
 }
 
 impl From<&ast::UnaryArgs> for UnaryArgs {
     fn from(value: &ast::UnaryArgs) -> Self {
-        UnaryArgs { val: value_to_str(&value.val) }
+        UnaryArgs { val: link_value(&value.val) }
     }
 }
 
 #[derive(Debug)]
 pub struct BinaryArgs {
-    pub dest: Arc<str>,
-    pub val: Arc<str>,
+    pub dest: Arc<Value>,
+    pub val: Arc<Value>,
 }
 
 impl From<&ast::BinaryArgs> for BinaryArgs {
     fn from(value: &ast::BinaryArgs) -> Self {
-        BinaryArgs { dest: value_to_str(&value.dest), val: value_to_str(&value.val) }
+        BinaryArgs { dest: link_value(&value.dest), val: link_value(&value.val) }
     }
 }
 
 #[derive(Debug)]
 pub struct TernaryArgs {
-    pub dest: Arc<str>,
-    pub left: Arc<str>,
-    pub right: Arc<str>,
+    pub dest: Arc<Value>,
+    pub left: Arc<Value>,
+    pub right: Arc<Value>,
 }
 
 impl From<&ast::TernaryArgs> for TernaryArgs {
     fn from(value: &ast::TernaryArgs) -> Self {
         TernaryArgs {
-            dest: value_to_str(&value.dest),
-            left: value_to_str(&value.left),
-            right: value_to_str(&value.right),
+            dest: link_value(&value.dest),
+            left: link_value(&value.left),
+            right: link_value(&value.right),
         }
     }
 }
 
-fn value_to_str(value: &ast::Value) -> Arc<str> {
-    match value {
-        ast::Value::Literal(literal) => Arc::clone(&literal.val),
-        ast::Value::Label(label) => format!("sub_{}.{}", label.name, 0).into(),
-    }
+fn link_value(value: &ast::Value) -> Arc<Value> {
+    let value = match value {
+        ast::Value::Literal(literal) => Value::Literal { val: Arc::clone(&literal.val) },
+        ast::Value::Label(label) => {
+            Value::Literal { val: format!("sub_{}.{}", label.name, 0).into() }
+        },
+        ast::Value::Register(static_var) => Value::Register { name: Arc::clone(&static_var.name) },
+    };
+
+    Arc::new(value)
 }
 
-pub fn link(ast: &[Arc<ast::Procedure>]) -> Vec<Arc<Procedure>> {
+#[derive(Debug)]
+pub enum Value {
+    Literal { val: Arc<str> },
+    Register { name: Arc<str> },
+}
+
+pub fn link(ast: &ast::Program) -> Program {
+    let procs = link_procs(&ast.procedures);
+
+    Program { registers: Arc::clone(&ast.registers), procedures: Arc::new(procs) }
+}
+
+fn link_procs(ast_procs: &Vec<Arc<ast::Procedure>>) -> Vec<Arc<Procedure>> {
     let mut procs = Vec::<Arc<Procedure>>::new();
 
-    for ast_proc in ast {
+    for ast_proc in ast_procs {
         let linked_bodies = link_proc(ast_proc);
         for (i, body) in linked_bodies.into_iter().enumerate() {
             let proc_kind = match &ast_proc.kind {
@@ -183,7 +206,7 @@ fn link_proc(ast_proc: &Arc<ast::Procedure>) -> Vec<Body> {
 
                     let body = Body {
                         commands,
-                        next_call: Arc::new(Call::Jump { proc_name_addr: value_to_str(&args.val) }),
+                        next_call: Arc::new(Call::Jump { proc_name_addr: link_value(&args.val) }),
                     };
 
                     linked_bodies.push(body);
@@ -194,8 +217,8 @@ fn link_proc(ast_proc: &Arc<ast::Procedure>) -> Vec<Body> {
                     let body = Body {
                         commands,
                         next_call: Arc::new(Call::Branch {
-                            proc_name_addr: value_to_str(&args.dest),
-                            cond_addr: value_to_str(&args.val),
+                            proc_name_addr: link_value(&args.dest),
+                            cond_addr: link_value(&args.val),
                         }),
                     };
 

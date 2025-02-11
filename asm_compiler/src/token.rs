@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{iter::Peekable, sync::Arc};
 
 use anyhow::bail;
 
@@ -9,6 +9,7 @@ pub enum Token {
     Comment(Arc<str>),
     Hashtag,
     Eol,
+    Register(Arc<str>),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -59,47 +60,6 @@ pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
 
         while let Some(next) = chars.peek() {
             let token = match next {
-                _ if next.is_whitespace() => {
-                    chars.next(); // ignore whitespace
-                    None
-                },
-                _ if next.is_alphabetic() => {
-                    let mut word = String::new();
-                    while let Some(next) = chars.next_if(|c| c.is_alphabetic()) {
-                        word.push(next);
-                    }
-
-                    let op = match word.to_lowercase().as_str() {
-                        "lit" => Op::Lit,
-                        "add" => Op::Add,
-                        "sub" => Op::Sub,
-                        "mv" => Op::Move,
-                        "mvdd" => Op::MoveDerefDest,
-                        "mvds" => Op::MoveDerefSrc,
-                        "jmp" => Op::Jump,
-                        "brc" => Op::Branch,
-                        "out" => Op::Out,
-                        "eq" => Op::Eq,
-                        "not" => Op::Not,
-                        "exit" => Op::Exit,
-                        "in" => Op::In,
-                        "mul" => Op::Mul,
-                        "div" => Op::Div,
-                        "mod" => Op::Mod,
-                        "neq" => Op::Neq,
-                        "gt" => Op::Gt,
-                        "lt" => Op::Lt,
-                        "gte" => Op::Gte,
-                        "lte" => Op::Lte,
-                        "and" => Op::And,
-                        "or" => Op::Or,
-                        "xor" => Op::Xor,
-                        "join" => Op::Join,
-                        _ => bail!("Invalid operator: {}", word),
-                    };
-
-                    Some(Token::Op(op))
-                },
                 '"' => {
                     let Some('"') = chars.next() else { bail!("Expected opening quote") };
 
@@ -132,6 +92,47 @@ pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
                     let Some('#') = chars.next() else { bail!("Expected hashtag") };
                     Some(Token::Hashtag)
                 },
+                '$' => {
+                    let Some('$') = chars.next() else { bail!("Expected dollar sign") };
+                    let name = read_word(&mut chars).into();
+                    Some(Token::Register(name))
+                },
+                c if c.is_whitespace() => {
+                    chars.next(); // ignore whitespace
+                    None
+                },
+                c if c.is_alphabetic() => {
+                    let op = match read_word(&mut chars).to_lowercase().as_str() {
+                        "lit" => Op::Lit,
+                        "add" => Op::Add,
+                        "sub" => Op::Sub,
+                        "mv" => Op::Move,
+                        "mvdd" => Op::MoveDerefDest,
+                        "mvds" => Op::MoveDerefSrc,
+                        "jmp" => Op::Jump,
+                        "brc" => Op::Branch,
+                        "out" => Op::Out,
+                        "eq" => Op::Eq,
+                        "not" => Op::Not,
+                        "exit" => Op::Exit,
+                        "in" => Op::In,
+                        "mul" => Op::Mul,
+                        "div" => Op::Div,
+                        "mod" => Op::Mod,
+                        "neq" => Op::Neq,
+                        "gt" => Op::Gt,
+                        "lt" => Op::Lt,
+                        "gte" => Op::Gte,
+                        "lte" => Op::Lte,
+                        "and" => Op::And,
+                        "or" => Op::Or,
+                        "xor" => Op::Xor,
+                        "join" => Op::Join,
+                        word => bail!("Invalid operator: `{}`", word),
+                    };
+
+                    Some(Token::Op(op))
+                },
                 _ => bail!("Unexpected character: {next}"),
             };
 
@@ -144,4 +145,13 @@ pub fn tokenize(input: String) -> anyhow::Result<Vec<Arc<Token>>> {
     }
 
     Ok(tokens)
+}
+
+fn read_word(chars: &mut Peekable<impl Iterator<Item = char>>) -> String {
+    let mut word = String::new();
+    while let Some(next) = chars.next_if(|c| c.is_alphabetic()) {
+        word.push(next);
+    }
+
+    word
 }

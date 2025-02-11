@@ -1,8 +1,15 @@
-use std::{iter::Peekable, mem::replace, sync::Arc};
+use std::{collections::HashSet, iter::Peekable, mem::replace, sync::Arc};
 
 use anyhow::{bail, Context};
+use itertools::Itertools;
 
 use crate::token;
+
+#[derive(Debug)]
+pub struct Program {
+    pub registers: Arc<Vec<Arc<str>>>,
+    pub procedures: Arc<Vec<Arc<Procedure>>>,
+}
 
 #[derive(Debug)]
 pub enum Command {
@@ -71,6 +78,7 @@ pub struct TernaryArgs {
 pub enum Value {
     Literal(Arc<Literal>),
     Label(Arc<Label>),
+    Register(Arc<Register>),
 }
 
 #[derive(Debug)]
@@ -80,6 +88,11 @@ pub struct Literal {
 
 #[derive(Debug)]
 pub struct Label {
+    pub name: Arc<str>,
+}
+
+#[derive(Debug)]
+pub struct Register {
     pub name: Arc<str>,
 }
 
@@ -99,11 +112,19 @@ fn parse_value<'a>(
     tokens: &mut Peekable<impl Iterator<Item = &'a token::Token>>,
 ) -> anyhow::Result<Value> {
     let value = match tokens.peek() {
+        Some(token::Token::Register(_)) => Value::Register(Arc::new(parse_register(tokens)?)),
         Some(token::Token::Hashtag) => Value::Label(Arc::new(parse_label(tokens)?)),
         _ => Value::Literal(Arc::new(parse_literal(tokens)?)),
     };
 
     Ok(value)
+}
+
+fn parse_register<'a>(
+    tokens: &mut impl Iterator<Item = &'a token::Token>,
+) -> anyhow::Result<Register> {
+    let Some(token::Token::Register(name)) = tokens.next() else { bail!("Expected register") };
+    Ok(Register { name: Arc::clone(name) })
 }
 
 fn parse_literal<'a>(
@@ -143,7 +164,31 @@ fn parse_ternary_args<'a>(
     Ok(TernaryArgs { dest, left, right })
 }
 
-pub fn parse<'a>(
+pub fn parse(tokens: &[Arc<token::Token>]) -> anyhow::Result<Program> {
+    let registers = parse_registers(tokens.iter().map(AsRef::as_ref));
+    let procedures = parse_procs(tokens.iter().map(AsRef::as_ref))?;
+
+    let program = Program { registers: Arc::new(registers), procedures: Arc::new(procedures) };
+
+    Ok(program)
+}
+
+fn parse_registers<'a>(tokens: impl Iterator<Item = &'a token::Token>) -> Vec<Arc<str>> {
+    tokens
+        .filter_map(|token| {
+            if let token::Token::Register(name) = token {
+                Some(name)
+            } else {
+                None
+            }
+        })
+        .unique()
+        .sorted()
+        .map(Arc::clone)
+        .collect()
+}
+
+fn parse_procs<'a>(
     tokens: impl Iterator<Item = &'a token::Token>,
 ) -> anyhow::Result<Vec<Arc<Procedure>>> {
     let mut parsed_procs = Vec::new();
@@ -213,6 +258,7 @@ pub fn parse<'a>(
                 Some(command)
             },
             token::Token::Value(_) => bail!("Found unexpected value"),
+            token::Token::Register(_) => bail!("Found unexpected static name"),
             token::Token::Comment(_) => {
                 // comments do not generate code
                 tokens.next();

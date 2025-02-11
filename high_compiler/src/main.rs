@@ -41,9 +41,7 @@ fn main() -> anyhow::Result<()> {
     let asm_ast = time("Compiling high-level to asm...", || compile(linked))?;
     let asm_linked = time("Linking asm...", || asm_compiler::link::link(&asm_ast));
     // dbg!(&compiled);
-    let ez = time("Transpiling to EZ...", || {
-        asm_compiler::compile::compile(&asm_linked.iter().map(AsRef::as_ref).collect_vec())
-    })?;
+    let ez = time("Transpiling to EZ...", || asm_compiler::compile::compile(&asm_linked))?;
     let ir = time("Transpiling to IR...", || ez.compile());
     let js_val = time("Compiling to JSON...", || ir.compile());
     let json = time("Serializing...", || format!("{:#}", js_val));

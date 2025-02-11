@@ -16,30 +16,30 @@ struct PrivRegister(&'static str);
 struct PubRegister(&'static str);
 
 trait Register {
-    fn addr(&self) -> &'static str;
+    fn name(&self) -> &'static str;
 
-    fn addr_value(&self) -> Arc<asm_ast::Value> {
-        Arc::new(asm_ast::Value::Literal(Arc::new(asm_ast::Literal { val: self.addr().into() })))
+    fn value(&self) -> Arc<asm_ast::Value> {
+        Arc::new(asm_ast::Value::Register(Arc::new(asm_ast::Register { name: self.name().into() })))
     }
 }
 
 impl Register for PrivRegister {
-    fn addr(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         self.0
     }
 }
 
 impl Register for PubRegister {
-    fn addr(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         self.0
     }
 }
 
-const STACK_POINTER: PrivRegister = PrivRegister("1");
-const RESULT: PrivRegister = PrivRegister("2");
-const OPERAND: PrivRegister = PrivRegister("3");
-const TEMP: PubRegister = PubRegister("4");
-const EXPR: PubRegister = PubRegister("5");
+const STACK_POINTER: PrivRegister = PrivRegister("sp");
+const RESULT: PrivRegister = PrivRegister("result");
+const OPERAND: PrivRegister = PrivRegister("operand");
+const TEMP: PubRegister = PubRegister("temp");
+const EXPR: PubRegister = PubRegister("expr");
 
 macro_rules! chain {
     ($($iter:expr),* $(,)?) => {
@@ -70,17 +70,17 @@ fn label(value: &str) -> Arc<asm_ast::Value> {
 fn compute_stack_addr(dest: PubRegister, offset: usize) -> Vec<Arc<asm_ast::Command>> {
     Vec::from([
         data(asm_ast::DataCommand::Move(asm_ast::BinaryArgs {
-            dest: RESULT.addr_value(),
-            val: STACK_POINTER.addr_value(),
+            dest: RESULT.value(),
+            val: STACK_POINTER.value(),
         })),
         data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-            dest: OPERAND.addr_value(),
+            dest: OPERAND.value(),
             val: literal(offset),
         })),
         data(asm_ast::DataCommand::Sub(asm_ast::TernaryArgs {
-            dest: dest.addr_value(),
-            left: RESULT.addr_value(),
-            right: OPERAND.addr_value(),
+            dest: dest.value(),
+            left: RESULT.value(),
+            right: OPERAND.value(),
         })),
     ])
 }
@@ -88,17 +88,17 @@ fn compute_stack_addr(dest: PubRegister, offset: usize) -> Vec<Arc<asm_ast::Comm
 fn compute_param_addr(dest: PubRegister, offset: usize) -> Vec<Arc<asm_ast::Command>> {
     Vec::from([
         data(asm_ast::DataCommand::Move(asm_ast::BinaryArgs {
-            dest: RESULT.addr_value(),
-            val: STACK_POINTER.addr_value(),
+            dest: RESULT.value(),
+            val: STACK_POINTER.value(),
         })),
         data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-            dest: OPERAND.addr_value(),
+            dest: OPERAND.value(),
             val: literal(offset),
         })),
         data(asm_ast::DataCommand::Add(asm_ast::TernaryArgs {
-            dest: dest.addr_value(),
-            left: RESULT.addr_value(),
-            right: OPERAND.addr_value(),
+            dest: dest.value(),
+            left: RESULT.value(),
+            right: OPERAND.value(),
         })),
     ])
 }
@@ -107,14 +107,25 @@ fn get_stack_value(dest: PubRegister, offset: usize) -> Vec<Arc<asm_ast::Command
     [].into_iter()
         .chain(compute_stack_addr(dest, offset))
         .chain([data(asm_ast::DataCommand::MoveDerefSrc(asm_ast::BinaryArgs {
-            dest: dest.addr_value(),
-            val: dest.addr_value(),
+            dest: dest.value(),
+            val: dest.value(),
         }))])
         .collect_vec()
 }
 
-pub fn compile(linked: Vec<Arc<Proc>>) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
-    // compile items to asm
+pub fn compile(linked: Vec<Arc<Proc>>) -> anyhow::Result<asm_ast::Program> {
+    let procs = compile_procs(&linked)?;
+
+    let registers = [STACK_POINTER.0, RESULT.0, OPERAND.0, TEMP.0, EXPR.0]
+        .into_iter()
+        .map(Into::into)
+        .collect();
+
+    let program = asm_ast::Program { registers: Arc::new(registers), procedures: Arc::new(procs) };
+    Ok(program)
+}
+
+fn compile_procs(linked: &Vec<Arc<Proc>>) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
     let mut asm_procs = Vec::<Arc<asm_ast::Procedure>>::new();
 
     let asm_main_setup = asm_ast::Procedure {
@@ -122,15 +133,15 @@ pub fn compile(linked: Vec<Arc<Proc>>) -> anyhow::Result<Vec<Arc<asm_ast::Proced
         commands: Vec::from([
             // init stack pointer
             data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-                dest: STACK_POINTER.addr_value(), // stored in mem addr 1
-                val: EXPR.addr_value(),           // points to last addr in stack (2)
+                dest: STACK_POINTER.value(), // stored in register
+                val: literal("0"),           // stack begins empty
             })),
             // run high-level main method
             data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-                dest: RESULT.addr_value(),
+                dest: RESULT.value(),
                 val: label("main.0"),
             })),
-            control(asm_ast::ControlCommand::Jump(asm_ast::UnaryArgs { val: RESULT.addr_value() })),
+            control(asm_ast::ControlCommand::Jump(asm_ast::UnaryArgs { val: RESULT.value() })),
         ]),
     };
 
@@ -182,17 +193,17 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
         if is_head {
             asm_commands.extend([
                 data(asm_ast::DataCommand::Move(asm_ast::BinaryArgs {
-                    dest: RESULT.addr_value(),
-                    val: STACK_POINTER.addr_value(),
+                    dest: RESULT.value(),
+                    val: STACK_POINTER.value(),
                 })),
                 data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-                    dest: OPERAND.addr_value(),
+                    dest: OPERAND.value(),
                     val: literal(stack_vars.len()),
                 })),
                 data(asm_ast::DataCommand::Add(asm_ast::TernaryArgs {
-                    dest: STACK_POINTER.addr_value(),
-                    left: RESULT.addr_value(),
-                    right: OPERAND.addr_value(),
+                    dest: STACK_POINTER.value(),
+                    left: RESULT.value(),
+                    right: OPERAND.value(),
                 })),
             ]);
         }
@@ -216,13 +227,13 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     // deref var addr if its a ref assign
                     if *deref_var {
                         assign_asm_commands.push(data(asm_ast::DataCommand::MoveDerefSrc(
-                            asm_ast::BinaryArgs { dest: TEMP.addr_value(), val: TEMP.addr_value() },
+                            asm_ast::BinaryArgs { dest: TEMP.value(), val: TEMP.value() },
                         )));
                     }
 
                     // move value at addr in temp_right to addr in temp_left
                     assign_asm_commands.push(data(asm_ast::DataCommand::MoveDerefDest(
-                        asm_ast::BinaryArgs { dest: TEMP.addr_value(), val: EXPR.addr_value() },
+                        asm_ast::BinaryArgs { dest: TEMP.value(), val: EXPR.value() },
                     )));
 
                     assign_asm_commands
@@ -237,7 +248,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                         chain!(
                             get_stack_value(EXPR, var_offset),
                             [data(asm_ast::DataCommand::Out(asm_ast::UnaryArgs {
-                                val: EXPR.addr_value()
+                                val: EXPR.value()
                             }))],
                         )
                     },
@@ -250,12 +261,12 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
 
                         chain!(
                             [data(asm_ast::DataCommand::In(asm_ast::UnaryArgs {
-                                val: EXPR.addr_value(),
+                                val: EXPR.value(),
                             }))],
                             compute_stack_addr(TEMP, dest_var_offset),
                             [data(asm_ast::DataCommand::MoveDerefDest(asm_ast::BinaryArgs {
-                                dest: TEMP.addr_value(),
-                                val: EXPR.addr_value()
+                                dest: TEMP.value(),
+                                val: EXPR.value()
                             }))],
                         )
                     },
@@ -269,17 +280,17 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
             // cleanup stack vars
             asm_commands.extend([
                 data(asm_ast::DataCommand::Move(asm_ast::BinaryArgs {
-                    dest: RESULT.addr_value(),
-                    val: STACK_POINTER.addr_value(),
+                    dest: RESULT.value(),
+                    val: STACK_POINTER.value(),
                 })),
                 data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-                    dest: OPERAND.addr_value(),
+                    dest: OPERAND.value(),
                     val: literal(stack_vars.len()),
                 })),
                 data(asm_ast::DataCommand::Sub(asm_ast::TernaryArgs {
-                    dest: STACK_POINTER.addr_value(),
-                    left: RESULT.addr_value(),
-                    right: OPERAND.addr_value(),
+                    dest: STACK_POINTER.value(),
+                    left: RESULT.value(),
+                    right: OPERAND.value(),
                 })),
             ]);
         }
@@ -304,8 +315,8 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                         compute_param_addr(TEMP, param_offset + 2),
                         // move value in call var to func param
                         [data(asm_ast::DataCommand::MoveDerefDest(asm_ast::BinaryArgs {
-                            dest: TEMP.addr_value(),
-                            val: EXPR.addr_value(),
+                            dest: TEMP.value(),
+                            val: EXPR.value(),
                         })),]
                     );
 
@@ -323,24 +334,24 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     compute_param_addr(TEMP, 1),
                     // store return addr in RIGHT
                     [data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-                        dest: EXPR.addr_value(),
+                        dest: EXPR.value(),
                         val: label(&format!("{}.{}", asm_proc_name, return_sub_proc_index)),
                     }))],
                     // move value in RIGHT (return addr) to addr in LEFT (return addr var)
                     [data(asm_ast::DataCommand::MoveDerefDest(asm_ast::BinaryArgs {
-                        dest: TEMP.addr_value(),
-                        val: EXPR.addr_value()
+                        dest: TEMP.value(),
+                        val: EXPR.value()
                     }))],
                 );
 
                 let broadcast_asm_commands = Vec::from([
                     // broadcast function message
                     data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-                        dest: RESULT.addr_value(),
+                        dest: RESULT.value(),
                         val: label(&format!("func_{}.0", name)),
                     })),
                     control(asm_ast::ControlCommand::Jump(asm_ast::UnaryArgs {
-                        val: RESULT.addr_value(),
+                        val: RESULT.value(),
                     })),
                 ]);
 
@@ -354,11 +365,11 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                 Vec::from([
                     // broadcast function message
                     data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-                        dest: RESULT.addr_value(),
+                        dest: RESULT.value(),
                         val: label(&format!("{}.{}", asm_proc_name, sub_proc_index)),
                     })),
                     control(asm_ast::ControlCommand::Jump(asm_ast::UnaryArgs {
-                        val: RESULT.addr_value(),
+                        val: RESULT.value(),
                     })),
                 ])
             },
@@ -369,11 +380,11 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     // broadcast function message
                     [
                         data(asm_ast::DataCommand::MoveDerefSrc(asm_ast::BinaryArgs {
-                            dest: RESULT.addr_value(),
-                            val: EXPR.addr_value()
+                            dest: RESULT.value(),
+                            val: EXPR.value()
                         })),
                         control(asm_ast::ControlCommand::Jump(asm_ast::UnaryArgs {
-                            val: RESULT.addr_value()
+                            val: RESULT.value()
                         })),
                     ],
                 )
@@ -393,21 +404,21 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     // store `then` sub proc name in OPERAND and `pop` sub proc name in RESULT
                     [
                         data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-                            dest: OPERAND.addr_value(),
+                            dest: OPERAND.value(),
                             val: label(&format!("{}.{}", asm_proc_name, then_proc_index)),
                         })),
                         data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-                            dest: RESULT.addr_value(),
+                            dest: RESULT.value(),
                             val: label(&format!("{}.{}", asm_proc_name, pop_proc_index)),
                         })),
                     ],
                     [
                         control(asm_ast::ControlCommand::Branch(asm_ast::BinaryArgs {
-                            dest: OPERAND.addr_value(),
-                            val: EXPR.addr_value(),
+                            dest: OPERAND.value(),
+                            val: EXPR.value(),
                         })),
                         control(asm_ast::ControlCommand::Jump(asm_ast::UnaryArgs {
-                            val: RESULT.addr_value(),
+                            val: RESULT.value(),
                         }))
                     ]
                 )
@@ -426,21 +437,21 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     // store `then` sub proc name in OPERAND and `else` sub proc name in RESULT
                     [
                         data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-                            dest: OPERAND.addr_value(),
+                            dest: OPERAND.value(),
                             val: label(&format!("{}.{}", asm_proc_name, then_proc_index)),
                         })),
                         data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-                            dest: RESULT.addr_value(),
+                            dest: RESULT.value(),
                             val: label(&format!("{}.{}", asm_proc_name, else_proc_index)),
                         })),
                     ],
                     [
                         control(asm_ast::ControlCommand::Branch(asm_ast::BinaryArgs {
-                            dest: OPERAND.addr_value(),
-                            val: EXPR.addr_value(),
+                            dest: OPERAND.value(),
+                            val: EXPR.value(),
                         })),
                         control(asm_ast::ControlCommand::Jump(asm_ast::UnaryArgs {
-                            val: RESULT.addr_value(),
+                            val: RESULT.value(),
                         }))
                     ]
                 )
@@ -466,7 +477,7 @@ fn compile_value(
 ) -> anyhow::Result<Vec<Arc<asm_ast::Command>>> {
     let asm_commands = match value {
         Value::Literal(val) => Vec::from([data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-            dest: dest.addr_value(),
+            dest: dest.value(),
             val: literal(val),
         }))]),
         Value::Var(name) => {
@@ -497,9 +508,9 @@ fn compile_operation(
             chain!(
                 compile_value($operand, var_to_offset, TEMP)?,
                 [data(asm_ast::DataCommand::$com(asm_ast::TernaryArgs {
-                    dest: EXPR.addr_value(),
-                    left: EXPR.addr_value(),
-                    right: TEMP.addr_value(),
+                    dest: EXPR.value(),
+                    left: EXPR.value(),
+                    right: TEMP.value(),
                 }))],
             )
         };
@@ -510,8 +521,8 @@ fn compile_operation(
             chain!(
                 // deref RIGHT
                 [data(asm_ast::DataCommand::MoveDerefSrc(asm_ast::BinaryArgs {
-                    dest: EXPR.addr_value(),
-                    val: EXPR.addr_value(),
+                    dest: EXPR.value(),
+                    val: EXPR.value(),
                 }))]
             )
         },
@@ -531,8 +542,8 @@ fn compile_operation(
         Operation::Xor { operand } => binary_op!(Xor, operand),
         Operation::Not => {
             chain!([data(asm_ast::DataCommand::Not(asm_ast::BinaryArgs {
-                dest: EXPR.addr_value(),
-                val: EXPR.addr_value(),
+                dest: EXPR.value(),
+                val: EXPR.value(),
             }))],)
         },
         Operation::Join { operand } => binary_op!(Join, operand),

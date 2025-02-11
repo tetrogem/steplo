@@ -16,9 +16,16 @@ pub struct Monitor {
 
 #[derive(Debug)]
 pub struct Stage {
+    pub variables: Arc<Vec<Arc<Variable>>>,
     pub lists: Arc<Vec<Arc<List>>>,
     pub broadcasts: Arc<Vec<Arc<Broadcast>>>,
     pub stacks: Arc<Vec<Arc<Stack>>>,
+}
+
+#[derive(Debug)]
+pub struct Variable {
+    pub uuid: Uuid,
+    pub name: Arc<str>,
 }
 
 #[derive(Debug)]
@@ -64,6 +71,7 @@ pub enum DataOp {
     ReplaceItemOfList { list: Arc<List>, index: Arc<Expr>, item: Arc<Expr> },
     LengthOfList { list: Arc<List> },
     ItemOfList { list: Arc<List>, index: Arc<Expr> },
+    SetVariableTo { variable: Arc<Variable>, value: Arc<Expr> },
 }
 
 #[derive(Debug)]
@@ -102,6 +110,7 @@ pub enum OperatorOp {
 pub enum Expr {
     Literal(Arc<Literal>),
     Derived(Arc<Op>),
+    Variable(Arc<Variable>),
     Broadcast(Arc<Broadcast>),
     Stack(Arc<Stack>),
 }

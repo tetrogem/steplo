@@ -7,7 +7,7 @@ use crate::ir;
 
 use super::{
     Broadcast, ControlOp, DataOp, EventOp, Expr, List, Literal, Monitor, Op, OperatorOp, Program,
-    SensingOp, Stack, Stage,
+    SensingOp, Stack, Stage, Variable,
 };
 
 impl Program {
@@ -31,12 +31,19 @@ impl Stage {
             self.stacks.iter().flat_map(|stack| stack.compile(None).ir_all_blocks).collect_vec();
 
         ir::Stage {
+            variables: Arc::new(self.variables.iter().map(|x| Arc::new(x.compile())).collect_vec()),
             lists: Arc::new(self.lists.iter().map(|x| Arc::new(x.compile())).collect_vec()),
             broadcasts: Arc::new(
                 self.broadcasts.iter().map(|x| Arc::new(x.compile())).collect_vec(),
             ),
             blocks: Arc::new(ir_blocks),
         }
+    }
+}
+
+impl Variable {
+    pub fn compile(&self) -> ir::Variable {
+        ir::Variable { uuid: self.uuid, name: Arc::clone(&self.name) }
     }
 }
 
@@ -147,6 +154,10 @@ impl Op {
                             item: compile(item),
                         }
                     },
+                    DataOp::SetVariableTo { variable, value } => ir::DataOp::SetVariableTo {
+                        variable: Arc::new(variable.compile()),
+                        value: compile(value),
+                    },
                 };
 
                 ir::Op::Data(ir_op)
@@ -255,6 +266,7 @@ impl Expr {
 
         let ir_expr = match self {
             Expr::Literal(l) => ir::Expr::Literal(Arc::new(l.compile())),
+            Expr::Variable(v) => ir::Expr::Variable(Arc::new(v.compile())),
             Expr::Broadcast(b) => ir::Expr::Broadcast(Arc::new(b.compile())),
             Expr::Stack(s) => {
                 let stack_compiled = s.compile(Some(parent));

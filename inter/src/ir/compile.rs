@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use super::{
     Block, Broadcast, ControlOp, DataOp, EventOp, Expr, List, Literal, Monitor, Op, OperatorOp,
-    Program, SensingOp, Stage,
+    Program, SensingOp, Stage, Variable,
 };
 
 impl Program {
@@ -46,6 +46,12 @@ impl Monitor {
 
 impl Stage {
     pub fn compile(&self) -> JsVal {
+        let variable_uuid_to_def: JsMap<String, JsVal> = self
+            .variables
+            .iter()
+            .map(|variable| (variable.uuid.to_string(), json!([variable.name.to_string(), ""])))
+            .collect();
+
         let list_uuid_to_def: JsMap<String, JsVal> = self
             .lists
             .iter()
@@ -66,7 +72,7 @@ impl Stage {
         json!({
             "isStage": true,
             "name": "Stage",
-            "variables": {},
+            "variables": variable_uuid_to_def,
             "lists": list_uuid_to_def,
             "broadcasts": broadcast_uuid_to_def,
             "blocks": block_uuid_to_def,
@@ -175,6 +181,11 @@ impl Op {
                     opcode: "data_itemoflist",
                     inputs: obj([("INDEX", compile(index))]),
                     fields: obj([("LIST", list_ref(list))]),
+                },
+                DataOp::SetVariableTo { variable, value } => ExprMetadata {
+                    opcode: "data_setvariableto",
+                    inputs: obj([("VALUE", compile(value))]),
+                    fields: obj([("VARIABLE", variable_ref(variable))]),
                 },
             },
             Self::Control(op) => match op {
@@ -317,6 +328,9 @@ impl Expr {
             Self::Derived(d) => {
                 json!([3, d.uuid.to_string(), [7, ""]])
             },
+            Self::Variable(v) => {
+                json!([3, [12, v.name.to_string(), v.uuid.to_string()]])
+            },
             Self::Broadcast(b) => {
                 json!([1, [11, b.name.to_string(), b.uuid.to_string()]])
             },
@@ -351,6 +365,10 @@ struct ExprMetadata {
 
 fn obj<K: Display>(fields: impl IntoIterator<Item = (K, JsVal)>) -> JsMap<String, JsVal> {
     fields.into_iter().map(|(key, value)| (key.to_string(), value)).collect()
+}
+
+fn variable_ref(variable: &Variable) -> JsVal {
+    json!([variable.name.to_string(), variable.uuid.to_string()])
 }
 
 fn list_ref(list: &List) -> JsVal {
