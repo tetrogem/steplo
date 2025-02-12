@@ -40,6 +40,7 @@ const RESULT: PrivRegister = PrivRegister("result");
 const OPERAND: PrivRegister = PrivRegister("operand");
 const TEMP: PubRegister = PubRegister("temp");
 const EXPR: PubRegister = PubRegister("expr");
+const OFFSET: PubRegister = PubRegister("offset");
 
 fn data(command: asm_ast::DataCommand) -> Arc<asm_ast::Command> {
     Arc::new(asm_ast::Command::Data(Arc::new(command)))
@@ -57,22 +58,25 @@ fn label(value: &str) -> Arc<asm_ast::Value> {
     Arc::new(asm_ast::Value::Label(Arc::new(asm_ast::Label { name: value.into() })))
 }
 
-fn compute_stack_addr(dest: PubRegister, offset: usize) -> Vec<Arc<asm_ast::Command>> {
-    Vec::from([
-        data(asm_ast::DataCommand::Move(asm_ast::BinaryArgs {
-            dest: RESULT.value(),
-            val: STACK_POINTER.value(),
-        })),
-        data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-            dest: OPERAND.value(),
-            val: literal(offset),
-        })),
-        data(asm_ast::DataCommand::Sub(asm_ast::TernaryArgs {
-            dest: dest.value(),
-            left: RESULT.value(),
-            right: OPERAND.value(),
-        })),
-    ])
+fn compute_stack_addr(
+    dest: PubRegister,
+    offset_coms: Vec<Arc<asm_ast::Command>>,
+) -> Vec<Arc<asm_ast::Command>> {
+    chain!(
+        offset_coms,
+        [
+            data(asm_ast::DataCommand::Move(asm_ast::BinaryArgs {
+                dest: RESULT.value(),
+                val: STACK_POINTER.value(),
+            })),
+            data(asm_ast::DataCommand::Sub(asm_ast::TernaryArgs {
+                dest: dest.value(),
+                left: RESULT.value(),
+                right: EXPR.value(),
+            })),
+        ]
+    )
+    .collect()
 }
 
 fn compute_param_addr(dest: PubRegister, offset: usize) -> Vec<Arc<asm_ast::Command>> {
@@ -93,9 +97,12 @@ fn compute_param_addr(dest: PubRegister, offset: usize) -> Vec<Arc<asm_ast::Comm
     ])
 }
 
-fn get_stack_value(dest: PubRegister, offset: usize) -> Vec<Arc<asm_ast::Command>> {
+fn get_stack_value(
+    dest: PubRegister,
+    offset_coms: Vec<Arc<asm_ast::Command>>,
+) -> Vec<Arc<asm_ast::Command>> {
     [].into_iter()
-        .chain(compute_stack_addr(dest, offset))
+        .chain(compute_stack_addr(dest, offset_coms))
         .chain([data(asm_ast::DataCommand::MoveDerefSrc(asm_ast::BinaryArgs {
             dest: dest.value(),
             val: dest.value(),
@@ -106,7 +113,7 @@ fn get_stack_value(dest: PubRegister, offset: usize) -> Vec<Arc<asm_ast::Command
 pub fn compile(linked: Vec<Arc<Proc>>) -> anyhow::Result<asm_ast::Program> {
     let procs = compile_procs(&linked)?;
 
-    let registers = [STACK_POINTER.0, RESULT.0, OPERAND.0, TEMP.0, EXPR.0]
+    let registers = [STACK_POINTER.0, RESULT.0, OPERAND.0, TEMP.0, EXPR.0, OFFSET.0]
         .into_iter()
         .map(Into::into)
         .collect();
@@ -211,27 +218,49 @@ impl Frame {
         self.size
     }
 
-    pub fn get_offset(&self, slot: Slot) -> anyhow::Result<usize> {
+    pub fn get_offset(&self, slot: Slot) -> anyhow::Result<Vec<Arc<asm_ast::Command>>> {
         let name = &slot.name();
         let Some(base) = self.name_to_offset.get(name) else {
             bail!("Could not find offset for slot: '{:?}'", name)
         };
 
-        let index = self.compile_index(&slot.index())?;
+        let index_coms = self.compile_index(&slot.index())?;
 
-        Ok(base - index)
+        let asm_commands = chain!(
+            index_coms,
+            [
+                data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
+                    dest: TEMP.value(),
+                    val: literal(base)
+                })),
+                data(asm_ast::DataCommand::Sub(asm_ast::TernaryArgs {
+                    dest: EXPR.value(),
+                    left: TEMP.value(),
+                    right: EXPR.value()
+                }))
+            ]
+        )
+        .collect();
+
+        Ok(asm_commands)
     }
 
-    fn compile_index(&self, index: &Index) -> anyhow::Result<usize> {
-        let index = match index {
-            Index::Int(int) => *int,
-            Index::Ident(ident) => todo!(),
+    fn compile_index(&self, index: &Index) -> anyhow::Result<Vec<Arc<asm_ast::Command>>> {
+        let asm_commands = match index {
+            Index::Int(int) => Vec::from([data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
+                dest: EXPR.value(),
+                val: literal(int),
+            }))]),
+            Index::Ident(ident) => compile_value(&Value::Ident(Arc::clone(ident)), self, EXPR)?,
         };
 
-        Ok(index)
+        Ok(asm_commands)
     }
 
-    pub fn get_ident_offset(&self, ident: &Arc<Ident>) -> anyhow::Result<usize> {
+    pub fn get_ident_offset(
+        &self,
+        ident: &Arc<Ident>,
+    ) -> anyhow::Result<Vec<Arc<asm_ast::Command>>> {
         self.get_offset(Slot::Ident(Arc::clone(ident)))
     }
 }
@@ -306,24 +335,24 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                 Statement::Assign(assign) => {
                     let Assign { deref_ident, ident, pipeline } = assign.as_ref();
 
-                    let var_offset = frame.get_ident_offset(&ident)?;
-
-                    // value to assign to var should end up in temp_right
-                    let mut assign_asm_commands = compile_pipeline(pipeline, &frame)?;
+                    let var_offset = frame.get_ident_offset(ident)?;
 
                     // set var addr to assign in temp_left
-                    assign_asm_commands.extend(compute_stack_addr(TEMP, var_offset));
+                    let mut assign_asm_commands = compute_stack_addr(OFFSET, var_offset);
+
+                    // value to assign to var should end up in temp_right
+                    assign_asm_commands.extend(compile_pipeline(pipeline, &frame)?);
 
                     // deref var addr if its a ref assign
                     if *deref_ident {
                         assign_asm_commands.push(data(asm_ast::DataCommand::MoveDerefSrc(
-                            asm_ast::BinaryArgs { dest: TEMP.value(), val: TEMP.value() },
+                            asm_ast::BinaryArgs { dest: OFFSET.value(), val: OFFSET.value() },
                         )));
                     }
 
                     // move value at addr in temp_right to addr in temp_left
                     assign_asm_commands.push(data(asm_ast::DataCommand::MoveDerefDest(
-                        asm_ast::BinaryArgs { dest: TEMP.value(), val: EXPR.value() },
+                        asm_ast::BinaryArgs { dest: OFFSET.value(), val: EXPR.value() },
                     )));
 
                     assign_asm_commands
@@ -344,12 +373,12 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                         let dest_var_offset = frame.get_ident_offset(dest_ident)?;
 
                         chain!(
+                            compute_stack_addr(OFFSET, dest_var_offset),
                             [data(asm_ast::DataCommand::In(asm_ast::UnaryArgs {
                                 val: EXPR.value(),
                             }))],
-                            compute_stack_addr(TEMP, dest_var_offset),
                             [data(asm_ast::DataCommand::MoveDerefDest(asm_ast::BinaryArgs {
-                                dest: TEMP.value(),
+                                dest: OFFSET.value(),
                                 val: EXPR.value()
                             }))],
                         )
@@ -394,13 +423,13 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     let pipeline_asm_commands = compile_pipeline(pipeline, &frame)?;
 
                     let asm_commands: Vec<Arc<asm_ast::Command>> = chain!(
-                        // chain commands to put param value in RIGHT
+                        // store addr for func param in OFFSET
+                        compute_param_addr(OFFSET, param_offset + 2),
+                        // chain commands to put param value in EXPR
                         pipeline_asm_commands,
-                        // store addr for func param in LEFT
-                        compute_param_addr(TEMP, param_offset + 2),
                         // move value in call var to func param
                         [data(asm_ast::DataCommand::MoveDerefDest(asm_ast::BinaryArgs {
-                            dest: TEMP.value(),
+                            dest: OFFSET.value(),
                             val: EXPR.value(),
                         })),]
                     )

@@ -262,8 +262,15 @@ fn parse_ident(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::R
         Some(Token::LeftBracket) => {
             let Some(Token::LeftBracket) = tokens.next() else { bail!("Expected left bracket") };
 
-            let index = match tokens.next() {
-                Some(Token::Literal(val)) => Index::Int(val.parse()?),
+            tokens.reset_peek();
+            let index = match tokens.peek() {
+                Some(Token::Literal(_)) => {
+                    let Some(Token::Literal(val)) = tokens.next() else {
+                        bail!("Expected literal")
+                    };
+
+                    Index::Int(val.parse()?)
+                },
                 _ => Index::Ident(Arc::new(parse_ident(tokens)?)),
             };
 
