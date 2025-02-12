@@ -1,7 +1,10 @@
 use anyhow::bail;
 use asm_compiler::ast as asm_ast;
 use itertools::{chain, Itertools};
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock},
+};
 use uuid::Uuid;
 
 use crate::{
@@ -197,11 +200,18 @@ impl Slot {
         }
     }
 
-    pub fn index(&self) -> Arc<Index> {
+    pub fn index(&self) -> Arc<Pipeline> {
+        static ZERO: LazyLock<Arc<Pipeline>> = LazyLock::new(|| {
+            Arc::new(Pipeline {
+                initial_val: Arc::new(Value::Literal(0.to_string().into())),
+                operations: Arc::new(Vec::new()),
+            })
+        });
+
         match self {
-            Self::ReturnAddr => Arc::new(Index::Int(0)),
+            Self::ReturnAddr => Arc::clone(&ZERO),
             Self::Ident(ident) => match ident.as_ref() {
-                Ident::Var { .. } => Arc::new(Index::Int(0)),
+                Ident::Var { .. } => Arc::clone(&ZERO),
                 Ident::Array { index, .. } => Arc::clone(index),
             },
         }
@@ -224,7 +234,7 @@ impl Frame {
             bail!("Could not find offset for slot: '{:?}'", name)
         };
 
-        let index_coms = self.compile_index(&slot.index())?;
+        let index_coms = compile_pipeline(&slot.index(), self)?;
 
         let asm_commands = chain!(
             index_coms,
@@ -241,18 +251,6 @@ impl Frame {
             ]
         )
         .collect();
-
-        Ok(asm_commands)
-    }
-
-    fn compile_index(&self, index: &Index) -> anyhow::Result<Vec<Arc<asm_ast::Command>>> {
-        let asm_commands = match index {
-            Index::Int(int) => Vec::from([data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
-                dest: EXPR.value(),
-                val: literal(int),
-            }))]),
-            Index::Ident(ident) => compile_value(&Value::Ident(Arc::clone(ident)), self, EXPR)?,
-        };
 
         Ok(asm_commands)
     }
@@ -295,6 +293,14 @@ fn compile_frame(proc: &Proc) -> anyhow::Result<Frame> {
 }
 
 fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
+    if let ProcKind::Func { params, .. } = &proc.kind {
+        for param in params.iter() {
+            if SlotDeclaration::Ident(Arc::clone(param)).size() != 1 {
+                bail!("All func params must be of size 1");
+            }
+        }
+    }
+
     let frame = compile_frame(proc)?;
 
     // init information about sub proc indexes

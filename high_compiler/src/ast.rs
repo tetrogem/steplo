@@ -41,7 +41,7 @@ impl IdentDeclaration {
 #[derive(Debug, Clone)]
 pub enum Ident {
     Var { name: Arc<str> },
-    Array { name: Arc<str>, index: Arc<Index> },
+    Array { name: Arc<str>, index: Arc<Pipeline> },
 }
 
 impl Ident {
@@ -261,19 +261,7 @@ fn parse_ident(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::R
     let ident = match tokens.peek() {
         Some(Token::LeftBracket) => {
             let Some(Token::LeftBracket) = tokens.next() else { bail!("Expected left bracket") };
-
-            tokens.reset_peek();
-            let index = match tokens.peek() {
-                Some(Token::Literal(_)) => {
-                    let Some(Token::Literal(val)) = tokens.next() else {
-                        bail!("Expected literal")
-                    };
-
-                    Index::Int(val.parse()?)
-                },
-                _ => Index::Ident(Arc::new(parse_ident(tokens)?)),
-            };
-
+            let index = parse_pipeline(tokens)?;
             let Some(Token::RightBracket) = tokens.next() else { bail!("Expected right bracket") };
 
             Ident::Array { name, index: Arc::new(index) }
