@@ -1,11 +1,11 @@
 use anyhow::bail;
 use asm_compiler::ast as asm_ast;
-use itertools::Itertools;
+use itertools::{chain, Itertools};
 use std::{collections::HashMap, sync::Arc};
 use uuid::Uuid;
 
 use crate::{
-    ast::{Assign, NativeOperation, Operation, Pipeline, Value},
+    ast::{Assign, Ident, IdentDeclaration, Index, NativeOperation, Operation, Pipeline, Value},
     link::{Call, Proc, ProcKind, Statement},
 };
 
@@ -40,16 +40,6 @@ const RESULT: PrivRegister = PrivRegister("result");
 const OPERAND: PrivRegister = PrivRegister("operand");
 const TEMP: PubRegister = PubRegister("temp");
 const EXPR: PubRegister = PubRegister("expr");
-
-macro_rules! chain {
-    ($($iter:expr),* $(,)?) => {
-        [].into_iter()
-            $(
-                .chain($iter)
-            )*
-            .collect()
-    };
-}
 
 fn data(command: asm_ast::DataCommand) -> Arc<asm_ast::Command> {
     Arc::new(asm_ast::Command::Data(Arc::new(command)))
@@ -156,25 +146,127 @@ fn compile_procs(linked: &Vec<Arc<Proc>>) -> anyhow::Result<Vec<Arc<asm_ast::Pro
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum Var {
+enum SlotName {
     ReturnAddr,
-    User(Arc<str>),
+    Ident(Arc<str>),
 }
 
-fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
-    let stack_vars: Vec<Var> = match &proc.kind {
-        ProcKind::Main => proc.vars.iter().map(|var| Var::User(Arc::clone(var))).collect(),
+#[derive(Clone, Debug)]
+enum SlotDeclaration {
+    ReturnAddr,
+    Ident(Arc<IdentDeclaration>),
+}
+
+impl SlotDeclaration {
+    pub fn name(&self) -> SlotName {
+        match self {
+            Self::ReturnAddr => SlotName::ReturnAddr,
+            Self::Ident(ident) => SlotName::Ident(Arc::clone(ident.name())),
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        match self {
+            Self::ReturnAddr => 1,
+            Self::Ident(ident) => match ident.as_ref() {
+                IdentDeclaration::Value { .. } => 1,
+                IdentDeclaration::Array { length, .. } => *length,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+enum Slot {
+    ReturnAddr,
+    Ident(Arc<Ident>),
+}
+
+impl Slot {
+    pub fn name(&self) -> SlotName {
+        match self {
+            Self::ReturnAddr => SlotName::ReturnAddr,
+            Self::Ident(ident) => SlotName::Ident(Arc::clone(ident.name())),
+        }
+    }
+
+    pub fn index(&self) -> Arc<Index> {
+        match self {
+            Self::ReturnAddr => Arc::new(Index::Int(0)),
+            Self::Ident(ident) => match ident.as_ref() {
+                Ident::Var { .. } => Arc::new(Index::Int(0)),
+                Ident::Array { index, .. } => Arc::clone(index),
+            },
+        }
+    }
+}
+
+struct Frame {
+    name_to_offset: HashMap<SlotName, usize>,
+    size: usize,
+}
+
+impl Frame {
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn get_offset(&self, slot: Slot) -> anyhow::Result<usize> {
+        let name = &slot.name();
+        let Some(base) = self.name_to_offset.get(name) else {
+            bail!("Could not find offset for slot: '{:?}'", name)
+        };
+
+        let index = self.compile_index(&slot.index())?;
+
+        Ok(base - index)
+    }
+
+    fn compile_index(&self, index: &Index) -> anyhow::Result<usize> {
+        let index = match index {
+            Index::Int(int) => *int,
+            Index::Ident(ident) => todo!(),
+        };
+
+        Ok(index)
+    }
+
+    pub fn get_ident_offset(&self, ident: &Arc<Ident>) -> anyhow::Result<usize> {
+        self.get_offset(Slot::Ident(Arc::clone(ident)))
+    }
+}
+
+fn compile_frame(proc: &Proc) -> anyhow::Result<Frame> {
+    let slot_declarations: Vec<SlotDeclaration> = match &proc.kind {
+        ProcKind::Main => {
+            proc.idents.iter().map(|ident| SlotDeclaration::Ident(Arc::clone(ident))).collect()
+        },
         ProcKind::Func { params, .. } => chain!(
-            [Var::ReturnAddr],
-            params.iter().chain(proc.vars.iter()).map(|var| Var::User(Arc::clone(var))),
-        ),
+            [SlotDeclaration::ReturnAddr],
+            params
+                .iter()
+                .chain(proc.idents.iter())
+                .map(|ident| SlotDeclaration::Ident(Arc::clone(ident))),
+        )
+        .collect(),
     };
 
     // init information about stack vars / their offsets
-    let mut var_to_offset = HashMap::<Var, usize>::new();
-    for (offset, var) in stack_vars.iter().rev().enumerate() {
-        var_to_offset.insert(var.clone(), offset);
+    let mut name_to_offset = HashMap::new();
+    let mut offset = 0;
+    for slot in slot_declarations.iter().rev() {
+        // data goes from lower -> higher mem addrs
+        offset += slot.size();
+        name_to_offset.insert(slot.name(), offset - 1);
     }
+
+    let frame = Frame { name_to_offset, size: offset };
+
+    Ok(frame)
+}
+
+fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
+    let frame = compile_frame(proc)?;
 
     // init information about sub proc indexes
     let mut sub_proc_uuid_to_index = HashMap::<Uuid, usize>::new();
@@ -198,7 +290,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                 })),
                 data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
                     dest: OPERAND.value(),
-                    val: literal(stack_vars.len()),
+                    val: literal(frame.size()),
                 })),
                 data(asm_ast::DataCommand::Add(asm_ast::TernaryArgs {
                     dest: STACK_POINTER.value(),
@@ -212,20 +304,18 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
         for statement in sub_proc.statements.iter().map(AsRef::as_ref) {
             let asm_statement_commands = match statement {
                 Statement::Assign(assign) => {
-                    let Assign { deref_var, var, pipeline } = assign.as_ref();
+                    let Assign { deref_ident, ident, pipeline } = assign.as_ref();
 
-                    let Some(&var_offset) = var_to_offset.get(&Var::User(Arc::clone(var))) else {
-                        bail!("Failed to find var offset")
-                    };
+                    let var_offset = frame.get_ident_offset(&ident)?;
 
                     // value to assign to var should end up in temp_right
-                    let mut assign_asm_commands = compile_pipeline(pipeline, &var_to_offset)?;
+                    let mut assign_asm_commands = compile_pipeline(pipeline, &frame)?;
 
                     // set var addr to assign in temp_left
                     assign_asm_commands.extend(compute_stack_addr(TEMP, var_offset));
 
                     // deref var addr if its a ref assign
-                    if *deref_var {
+                    if *deref_ident {
                         assign_asm_commands.push(data(asm_ast::DataCommand::MoveDerefSrc(
                             asm_ast::BinaryArgs { dest: TEMP.value(), val: TEMP.value() },
                         )));
@@ -239,11 +329,8 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     assign_asm_commands
                 },
                 Statement::Native(command) => match command.as_ref() {
-                    NativeOperation::Out { var } => {
-                        let Some(&var_offset) = var_to_offset.get(&Var::User(Arc::clone(var)))
-                        else {
-                            bail!("Failed to find var offset")
-                        };
+                    NativeOperation::Out { ident } => {
+                        let var_offset = frame.get_ident_offset(ident)?;
 
                         chain!(
                             get_stack_value(EXPR, var_offset),
@@ -251,13 +338,10 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                                 val: EXPR.value()
                             }))],
                         )
+                        .collect()
                     },
-                    NativeOperation::In { dest_var } => {
-                        let Some(&dest_var_offset) =
-                            var_to_offset.get(&Var::User(Arc::clone(dest_var)))
-                        else {
-                            bail!("Failed to find dest var offset")
-                        };
+                    NativeOperation::In { dest_ident } => {
+                        let dest_var_offset = frame.get_ident_offset(dest_ident)?;
 
                         chain!(
                             [data(asm_ast::DataCommand::In(asm_ast::UnaryArgs {
@@ -269,6 +353,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                                 val: EXPR.value()
                             }))],
                         )
+                        .collect()
                     },
                 },
             };
@@ -285,7 +370,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                 })),
                 data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
                     dest: OPERAND.value(),
-                    val: literal(stack_vars.len()),
+                    val: literal(frame.size()),
                 })),
                 data(asm_ast::DataCommand::Sub(asm_ast::TernaryArgs {
                     dest: STACK_POINTER.value(),
@@ -300,13 +385,13 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
             ProcKind::Func { name, .. } => format!("func_{}", name),
         };
 
-        let asm_call_commands = match sub_proc.next_call.as_ref() {
+        let asm_call_commands: Vec<Arc<asm_ast::Command>> = match sub_proc.next_call.as_ref() {
             Call::Func { name, param_pipelines, return_sub_proc } => {
                 // set param values on func's stack
                 let mut param_asm_commands = Vec::new();
 
                 for (param_offset, pipeline) in param_pipelines.iter().enumerate() {
-                    let pipeline_asm_commands = compile_pipeline(pipeline, &var_to_offset)?;
+                    let pipeline_asm_commands = compile_pipeline(pipeline, &frame)?;
 
                     let asm_commands: Vec<Arc<asm_ast::Command>> = chain!(
                         // chain commands to put param value in RIGHT
@@ -318,7 +403,8 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                             dest: TEMP.value(),
                             val: EXPR.value(),
                         })),]
-                    );
+                    )
+                    .collect();
 
                     param_asm_commands.extend(asm_commands);
                 }
@@ -342,7 +428,8 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                         dest: TEMP.value(),
                         val: EXPR.value()
                     }))],
-                );
+                )
+                .collect();
 
                 let broadcast_asm_commands = Vec::from([
                     // broadcast function message
@@ -355,7 +442,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                     })),
                 ]);
 
-                chain!(param_asm_commands, return_asm_commands, broadcast_asm_commands)
+                chain!(param_asm_commands, return_asm_commands, broadcast_asm_commands).collect()
             },
             Call::SubProc(sub_proc) => {
                 let Some(sub_proc_index) = sub_proc_uuid_to_index.get(sub_proc) else {
@@ -388,6 +475,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                         })),
                     ],
                 )
+                .collect()
             },
             Call::Terminate => Vec::from([control(asm_ast::ControlCommand::Exit)]),
             Call::IfBranch { cond_pipeline, then_sub_proc, pop_sub_proc } => {
@@ -400,7 +488,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                 };
 
                 chain!(
-                    compile_pipeline(cond_pipeline, &var_to_offset)?,
+                    compile_pipeline(cond_pipeline, &frame)?,
                     // store `then` sub proc name in OPERAND and `pop` sub proc name in RESULT
                     [
                         data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
@@ -422,6 +510,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                         }))
                     ]
                 )
+                .collect()
             },
             Call::IfElseBranch { cond_pipeline, then_sub_proc, else_sub_proc } => {
                 let Some(then_proc_index) = sub_proc_uuid_to_index.get(then_sub_proc) else {
@@ -433,7 +522,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                 };
 
                 chain!(
-                    compile_pipeline(cond_pipeline, &var_to_offset)?,
+                    compile_pipeline(cond_pipeline, &frame)?,
                     // store `then` sub proc name in OPERAND and `else` sub proc name in RESULT
                     [
                         data(asm_ast::DataCommand::Set(asm_ast::BinaryArgs {
@@ -455,6 +544,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
                         }))
                     ]
                 )
+                .collect()
             },
         };
 
@@ -472,7 +562,7 @@ fn compile_proc(proc: &Proc) -> anyhow::Result<Vec<Arc<asm_ast::Procedure>>> {
 
 fn compile_value(
     value: &Value,
-    var_to_offset: &HashMap<Var, usize>,
+    frame: &Frame,
     dest: PubRegister,
 ) -> anyhow::Result<Vec<Arc<asm_ast::Command>>> {
     let asm_commands = match value {
@@ -480,19 +570,13 @@ fn compile_value(
             dest: dest.value(),
             val: literal(val),
         }))]),
-        Value::Var(name) => {
-            let Some(offset) = var_to_offset.get(&Var::User(Arc::clone(name))) else {
-                bail!("Failed to find var offset")
-            };
-
-            get_stack_value(dest, *offset)
+        Value::Ident(ident) => {
+            let offset = frame.get_ident_offset(ident)?;
+            get_stack_value(dest, offset)
         },
-        Value::Ref(name) => {
-            let Some(offset) = var_to_offset.get(&Var::User(Arc::clone(name))) else {
-                bail!("Failed to find var offset")
-            };
-
-            compute_stack_addr(dest, *offset)
+        Value::Ref(ident) => {
+            let offset = frame.get_ident_offset(ident)?;
+            compute_stack_addr(dest, offset)
         },
     };
 
@@ -501,22 +585,23 @@ fn compile_value(
 
 fn compile_operation(
     operation: &Operation,
-    var_to_offset: &HashMap<Var, usize>,
+    frame: &Frame,
 ) -> anyhow::Result<Vec<Arc<asm_ast::Command>>> {
     macro_rules! binary_op {
         ($com:ident, $operand:expr $(,)?) => {
             chain!(
-                compile_value($operand, var_to_offset, TEMP)?,
+                compile_value($operand, frame, TEMP)?,
                 [data(asm_ast::DataCommand::$com(asm_ast::TernaryArgs {
                     dest: EXPR.value(),
                     left: EXPR.value(),
                     right: TEMP.value(),
                 }))],
             )
+            .collect()
         };
     }
 
-    let asm_commands = match operation {
+    let asm_commands: Vec<Arc<asm_ast::Command>> = match operation {
         Operation::Deref => {
             chain!(
                 // deref RIGHT
@@ -525,6 +610,7 @@ fn compile_operation(
                     val: EXPR.value(),
                 }))]
             )
+            .collect()
         },
         Operation::Add { operand } => binary_op!(Add, operand),
         Operation::Sub { operand } => binary_op!(Sub, operand),
@@ -540,12 +626,11 @@ fn compile_operation(
         Operation::And { operand } => binary_op!(And, operand),
         Operation::Or { operand } => binary_op!(Or, operand),
         Operation::Xor { operand } => binary_op!(Xor, operand),
-        Operation::Not => {
-            chain!([data(asm_ast::DataCommand::Not(asm_ast::BinaryArgs {
-                dest: EXPR.value(),
-                val: EXPR.value(),
-            }))],)
-        },
+        Operation::Not => chain!([data(asm_ast::DataCommand::Not(asm_ast::BinaryArgs {
+            dest: EXPR.value(),
+            val: EXPR.value(),
+        }))])
+        .collect(),
         Operation::Join { operand } => binary_op!(Join, operand),
     };
 
@@ -554,14 +639,14 @@ fn compile_operation(
 
 fn compile_pipeline(
     pipeline: &Pipeline,
-    var_to_offset: &HashMap<Var, usize>,
+    frame: &Frame,
 ) -> anyhow::Result<Vec<Arc<asm_ast::Command>>> {
     let mut asm_commands = Vec::new();
 
-    asm_commands.extend(compile_value(&pipeline.initial_val, var_to_offset, EXPR)?);
+    asm_commands.extend(compile_value(&pipeline.initial_val, frame, EXPR)?);
 
     for operation in pipeline.operations.iter().map(AsRef::as_ref) {
-        asm_commands.extend(compile_operation(operation, var_to_offset)?);
+        asm_commands.extend(compile_operation(operation, frame)?);
     }
 
     Ok(asm_commands)

@@ -1,0 +1,13 @@
+main |foo, bar[5]| {
+    foo = "Variable";
+    out(foo);
+
+    bar[0] = 10;
+    out(bar[0]);
+
+    bar[3] = "Hello";
+    bar[2] = "World!";
+    bar[4] = bar[2];
+    out(bar[3]);
+    out(bar[4]);
+}

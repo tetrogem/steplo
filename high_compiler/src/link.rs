@@ -8,14 +8,14 @@ use crate::ast;
 #[derive(Debug, Clone)]
 pub struct Proc {
     pub kind: ProcKind,
-    pub vars: Arc<Vec<Arc<str>>>,
+    pub idents: Arc<Vec<Arc<ast::IdentDeclaration>>>,
     pub sub_procs: Arc<Vec<Arc<SubProc>>>,
 }
 
 #[derive(Debug, Clone)]
 pub enum ProcKind {
     Main,
-    Func { name: Arc<str>, params: Arc<Vec<Arc<str>>> },
+    Func { name: Arc<str>, params: Arc<Vec<Arc<ast::IdentDeclaration>>> },
 }
 
 #[derive(Debug, Clone)]
@@ -42,14 +42,22 @@ pub enum Statement {
 }
 
 pub fn link(mut ast: Vec<Arc<ast::TopItem>>) -> anyhow::Result<Vec<Arc<Proc>>> {
+    fn declare_var(name: &str) -> Arc<ast::IdentDeclaration> {
+        Arc::new(ast::IdentDeclaration::Value { name: name.into() })
+    }
+
+    fn var(name: &str) -> Arc<ast::Ident> {
+        Arc::new(ast::Ident::Var { name: name.into() })
+    }
+
     // add built-in native functions
     let out_func = ast::Func {
         name: "out".into(),
-        params: Arc::new(Vec::from(["val".into()])),
+        params: Arc::new(Vec::from([declare_var("val")])),
         proc: Arc::new(ast::Proc {
-            vars: Arc::new(Vec::new()),
+            idents: Arc::new(Vec::new()),
             body: Arc::new(Vec::from([Arc::new(ast::BodyItem::Statement(Arc::new(
-                ast::Statement::Native(Arc::new(ast::NativeOperation::Out { var: "val".into() })),
+                ast::Statement::Native(Arc::new(ast::NativeOperation::Out { ident: var("val") })),
             )))])),
         }),
     };
@@ -58,19 +66,19 @@ pub fn link(mut ast: Vec<Arc<ast::TopItem>>) -> anyhow::Result<Vec<Arc<Proc>>> {
 
     let in_func = ast::Func {
         name: "in".into(),
-        params: Arc::new(Vec::from(["dest_ref".into()])),
+        params: Arc::new(Vec::from([declare_var("dest_ref")])),
         proc: Arc::new(ast::Proc {
-            vars: Arc::new(Vec::from(["answer".into()])),
+            idents: Arc::new(Vec::from([declare_var("answer")])),
             body: Arc::new(Vec::from([
                 Arc::new(ast::BodyItem::Statement(Arc::new(ast::Statement::Native(Arc::new(
-                    ast::NativeOperation::In { dest_var: "answer".into() },
+                    ast::NativeOperation::In { dest_ident: var("answer") },
                 ))))),
                 Arc::new(ast::BodyItem::Statement(Arc::new(ast::Statement::Assign(Arc::new(
                     ast::Assign {
-                        deref_var: true,
-                        var: "dest_ref".into(),
+                        deref_ident: true,
+                        ident: var("dest_ref"),
                         pipeline: Arc::new(ast::Pipeline {
-                            initial_val: Arc::new(ast::Value::Var("answer".into())),
+                            initial_val: Arc::new(ast::Value::Ident(var("answer"))),
                             operations: Arc::new(Vec::new()),
                         }),
                     },
@@ -105,7 +113,7 @@ pub fn link(mut ast: Vec<Arc<ast::TopItem>>) -> anyhow::Result<Vec<Arc<Proc>>> {
 
         let proc = Proc {
             kind: proc_kind,
-            vars: Arc::clone(&ast_proc.vars),
+            idents: Arc::clone(&ast_proc.idents),
             sub_procs: Arc::new(sub_procs),
         };
 

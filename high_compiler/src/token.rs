@@ -22,6 +22,8 @@ pub enum Token {
     Else,
     While,
     Ref,
+    LeftBracket,
+    RightBracket,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,6 +157,8 @@ pub fn tokenize(code: &str) -> anyhow::Result<Vec<Token>> {
             ')' => consume_char(&mut chars, Some(Token::RightParen)),
             '{' => consume_char(&mut chars, Some(Token::LeftBrace)),
             '}' => consume_char(&mut chars, Some(Token::RightBrace)),
+            '[' => consume_char(&mut chars, Some(Token::LeftBracket)),
+            ']' => consume_char(&mut chars, Some(Token::RightBracket)),
             '|' => consume_char(&mut chars, Some(Token::Pipe)),
             ',' => consume_char(&mut chars, Some(Token::Comma)),
             '"' => Some(consume_literal(&mut chars)?),
