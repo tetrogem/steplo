@@ -54,12 +54,6 @@ impl Ident {
 }
 
 #[derive(Debug, Clone)]
-pub enum Index {
-    Int(usize),
-    Ident(Arc<Ident>),
-}
-
-#[derive(Debug, Clone)]
 pub struct Proc {
     pub idents: Arc<Vec<Arc<IdentDeclaration>>>,
     pub body: Arc<Vec<Arc<BodyItem>>>,

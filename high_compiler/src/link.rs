@@ -51,43 +51,43 @@ pub fn link(mut ast: Vec<Arc<ast::TopItem>>) -> anyhow::Result<Vec<Arc<Proc>>> {
     }
 
     // add built-in native functions
-    let out_func = ast::Func {
-        name: "out".into(),
-        params: Arc::new(Vec::from([declare_var("val")])),
-        proc: Arc::new(ast::Proc {
-            idents: Arc::new(Vec::new()),
-            body: Arc::new(Vec::from([Arc::new(ast::BodyItem::Statement(Arc::new(
-                ast::Statement::Native(Arc::new(ast::NativeOperation::Out { ident: var("val") })),
-            )))])),
-        }),
-    };
+    // let out_func = ast::Func {
+    //     name: "out".into(),
+    //     params: Arc::new(Vec::from([declare_var("val")])),
+    //     proc: Arc::new(ast::Proc {
+    //         idents: Arc::new(Vec::new()),
+    //         body: Arc::new(Vec::from([Arc::new(ast::BodyItem::Statement(Arc::new(
+    //             ast::Statement::Native(Arc::new(ast::NativeOperation::Out { ident: var("val") })),
+    //         )))])),
+    //     }),
+    // };
 
-    ast.push(Arc::new(ast::TopItem::Func(Arc::new(out_func))));
+    // ast.push(Arc::new(ast::TopItem::Func(Arc::new(out_func))));
 
-    let in_func = ast::Func {
-        name: "in".into(),
-        params: Arc::new(Vec::from([declare_var("dest_ref")])),
-        proc: Arc::new(ast::Proc {
-            idents: Arc::new(Vec::from([declare_var("answer")])),
-            body: Arc::new(Vec::from([
-                Arc::new(ast::BodyItem::Statement(Arc::new(ast::Statement::Native(Arc::new(
-                    ast::NativeOperation::In { dest_ident: var("answer") },
-                ))))),
-                Arc::new(ast::BodyItem::Statement(Arc::new(ast::Statement::Assign(Arc::new(
-                    ast::Assign {
-                        deref_ident: true,
-                        ident: var("dest_ref"),
-                        pipeline: Arc::new(ast::Pipeline {
-                            initial_val: Arc::new(ast::Value::Ident(var("answer"))),
-                            operations: Arc::new(Vec::new()),
-                        }),
-                    },
-                ))))),
-            ])),
-        }),
-    };
+    // let in_func = ast::Func {
+    //     name: "in".into(),
+    //     params: Arc::new(Vec::from([declare_var("dest_ref")])),
+    //     proc: Arc::new(ast::Proc {
+    //         idents: Arc::new(Vec::from([declare_var("answer")])),
+    //         body: Arc::new(Vec::from([
+    //             Arc::new(ast::BodyItem::Statement(Arc::new(ast::Statement::Native(Arc::new(
+    //                 ast::NativeOperation::In { dest_ident: var("answer") },
+    //             ))))),
+    //             Arc::new(ast::BodyItem::Statement(Arc::new(ast::Statement::Assign(Arc::new(
+    //                 ast::Assign {
+    //                     deref_ident: true,
+    //                     ident: var("dest_ref"),
+    //                     pipeline: Arc::new(ast::Pipeline {
+    //                         initial_val: Arc::new(ast::Value::Ident(var("answer"))),
+    //                         operations: Arc::new(Vec::new()),
+    //                     }),
+    //                 },
+    //             ))))),
+    //         ])),
+    //     }),
+    // };
 
-    ast.push(Arc::new(ast::TopItem::Func(Arc::new(in_func))));
+    // ast.push(Arc::new(ast::TopItem::Func(Arc::new(in_func))));
 
     // parse user top items
     let mut procs = Vec::<Arc<Proc>>::new();

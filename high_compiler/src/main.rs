@@ -1,9 +1,8 @@
 use std::{env, fs::File, io::Read, path::Path};
 
-use anyhow::anyhow;
 use ast::parse;
 use compile::compile;
-use itertools::Itertools;
+use link::link;
 use shared::{time, write_json};
 use token::tokenize;
 
@@ -36,9 +35,12 @@ fn main() -> anyhow::Result<()> {
     // dbg!(&tokens);
     let ast = time("Parsing...", || parse(tokens))?;
     // dbg!(&ast);
-    let linked = time("Linking...", || link::link(ast))?;
+    let linked = time("Linking...", || link(ast))?;
     // dbg!(&linked);
-    let asm_ast = time("Compiling high-level to asm...", || compile(linked))?;
+    let mem_opt_ast = time("Compiling high-level to designation IR...", || compile(linked))?;
+    let mem_opt_designated =
+        time("Designating registers...", || mem_opt::designate::designate_registers(&mem_opt_ast));
+    let asm_ast = time("Compiling to asm...", || mem_opt::compile::compile(mem_opt_designated));
     let asm_linked = time("Linking asm...", || asm_compiler::link::link(&asm_ast));
     // dbg!(&compiled);
     let ez = time("Transpiling to EZ...", || asm_compiler::compile::compile(&asm_linked))?;

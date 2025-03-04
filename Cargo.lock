@@ -301,6 +301,7 @@ dependencies = [
  "anyhow",
  "asm_compiler",
  "itertools 0.14.0",
+ "mem_opt",
  "shared",
  "uuid",
 ]
@@ -401,6 +402,17 @@ checksum = "297e814c836ae64db86b36cf2a557ba54368d03f6afcd7d947c266692f71115e"
 dependencies = [
  "byteorder",
  "crc",
+]
+
+[[package]]
+name = "mem_opt"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "asm_compiler",
+ "itertools 0.14.0",
+ "shared",
+ "uuid",
 ]
 
 [[package]]
@@ -655,9 +667,9 @@ checksum = "e91b56cd4cadaeb79bbf1a5645f6b4f8dc5bde8834ad5894a8db35fda9efa1fe"
 
 [[package]]
 name = "uuid"
-version = "1.13.1"
+version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ced87ca4be083373936a67f8de945faa23b6b42384bd5b64434850802c6dccd0"
+checksum = "e0f540e3240398cce6128b64ba83fdbdd86129c16a3aa1a3a252efd66eb3d587"
 dependencies = [
  "getrandom 0.3.1",
 ]
