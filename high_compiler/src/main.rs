@@ -1,4 +1,9 @@
-use std::{env, fs::File, io::Read, path::Path};
+use std::{
+    env,
+    fs::{self, File},
+    io::Read,
+    path::Path,
+};
 
 use ast::parse;
 use compile::compile;
@@ -41,6 +46,18 @@ fn main() -> anyhow::Result<()> {
     let mem_opt_designated =
         time("Designating registers...", || mem_opt::designate::designate_registers(&mem_opt_ast));
     let asm_ast = time("Compiling to asm...", || mem_opt::compile::compile(mem_opt_designated))?;
+
+    time("Writing intermediate asm file...", || {
+        let asm_export = asm_compiler::export::export(&asm_ast);
+        let name = in_path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .expect("input file should have stem");
+
+        let path = Path::new(&out_path).join(format!("{}.ascm", name));
+        fs::write(path, asm_export).expect("asm export should succeed");
+    });
+
     let asm_linked = time("Linking asm...", || asm_compiler::link::link(&asm_ast));
     // dbg!(&compiled);
     let ez = time("Transpiling to EZ...", || asm_compiler::compile::compile(&asm_linked))?;
