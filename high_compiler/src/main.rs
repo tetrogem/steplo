@@ -40,7 +40,7 @@ fn main() -> anyhow::Result<()> {
     let mem_opt_ast = time("Compiling high-level to designation IR...", || compile(linked))?;
     let mem_opt_designated =
         time("Designating registers...", || mem_opt::designate::designate_registers(&mem_opt_ast));
-    let asm_ast = time("Compiling to asm...", || mem_opt::compile::compile(mem_opt_designated));
+    let asm_ast = time("Compiling to asm...", || mem_opt::compile::compile(mem_opt_designated))?;
     let asm_linked = time("Linking asm...", || asm_compiler::link::link(&asm_ast));
     // dbg!(&compiled);
     let ez = time("Transpiling to EZ...", || asm_compiler::compile::compile(&asm_linked))?;

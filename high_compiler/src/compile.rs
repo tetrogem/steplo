@@ -6,50 +6,145 @@ use anyhow::bail;
 use itertools::chain;
 use itertools::Itertools;
 use mem_opt::ast as opt;
+use uuid::Uuid;
 
 struct StackFrame {
-    ident_name_to_offset: HashMap<Arc<str>, usize>,
+    ident_name_to_info: HashMap<Arc<str>, Arc<StackVarInfo>>,
+}
+
+struct StackVarInfo {
+    offset: usize,
+    size: usize,
 }
 
 impl StackFrame {
     fn new(idents: &[Arc<hast::IdentDeclaration>]) -> Self {
-        let mut ident_name_to_offset = HashMap::new();
+        let mut ident_name_to_info = HashMap::new();
         let mut total_offset = 0;
 
-        for ident in idents {
-            ident_name_to_offset.insert(ident.name().clone(), total_offset);
-
+        for ident in idents.iter().rev() {
             let size = match ident.as_ref() {
                 hast::IdentDeclaration::Value { .. } => 1,
                 hast::IdentDeclaration::Array { length, .. } => *length,
             };
 
-            total_offset += size;
+            let info = StackVarInfo { size, offset: total_offset };
+
+            total_offset += info.size;
+            ident_name_to_info.insert(ident.name().clone(), Arc::new(info));
         }
 
-        Self { ident_name_to_offset }
+        Self { ident_name_to_info }
     }
 
-    fn get_offset(&self, name: &str) -> anyhow::Result<usize> {
-        let Some(offset) = self.ident_name_to_offset.get(name) else {
+    fn get_info(&self, name: &str) -> anyhow::Result<&Arc<StackVarInfo>> {
+        let Some(info) = self.ident_name_to_info.get(name) else {
             bail!("ident name {} is not in current stack frame", name);
         };
 
-        Ok(*offset)
+        Ok(info)
+    }
+
+    fn size(&self) -> usize {
+        let return_addr_size = 1;
+        let vars_size = self.ident_name_to_info.values().map(|i| i.size).sum::<usize>();
+        return_addr_size + vars_size
+    }
+}
+
+struct FuncManager {
+    name_to_head_uuid: HashMap<Arc<str>, Uuid>,
+}
+
+impl FuncManager {
+    fn try_new(procs: &[Arc<link::Proc>]) -> anyhow::Result<Self> {
+        let name_to_head_uuid = procs
+            .iter()
+            .filter_map(|proc| match &proc.kind {
+                link::ProcKind::Main => None,
+                link::ProcKind::Func { name, .. } => Some((name, &proc.sub_procs)),
+            })
+            .map(|(name, sps)| {
+                let Some(first_sp) = sps.first() else {
+                    bail!("procedure `{}` has no sub-procedures", name);
+                };
+
+                Ok((name.clone(), first_sp.uuid))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+
+        Ok(Self { name_to_head_uuid })
+    }
+
+    fn get_head_uuid(&self, name: &str) -> anyhow::Result<Uuid> {
+        let Some(uuid) = self.name_to_head_uuid.get(name) else {
+            bail!("no head UUID registered for function `{}`", name)
+        };
+
+        Ok(*uuid)
     }
 }
 
 pub fn compile(linked: Vec<Arc<link::Proc>>) -> anyhow::Result<Vec<Arc<opt::Proc<opt::UMemLoc>>>> {
-    let opt_procs = linked.into_iter().map(|p| compile_proc(&p)).collect::<Result<Vec<_>, _>>()?;
+    let user_main_sp_uuid = find_user_main_sp_uuid(&linked)?;
+    let func_manager = FuncManager::try_new(&linked)?;
+    let opt_procs = linked
+        .into_iter()
+        .map(|p| compile_proc(&func_manager, &p))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let opt_procs = chain!([create_runner_proc(user_main_sp_uuid)], opt_procs).collect();
     Ok(opt_procs)
 }
 
-fn compile_proc(proc: &link::Proc) -> anyhow::Result<Arc<opt::Proc<opt::UMemLoc>>> {
+fn find_user_main_sp_uuid(procs: &[Arc<link::Proc>]) -> anyhow::Result<Uuid> {
+    let Some(main_proc) = procs.iter().find(|proc| matches!(proc.kind, link::ProcKind::Main))
+    else {
+        bail!("could not find user main procedure");
+    };
+
+    let Some(first_sp) = main_proc.sub_procs.first() else {
+        bail!("user main procedure has no sub-procedures");
+    };
+
+    Ok(first_sp.uuid)
+}
+
+fn create_runner_proc(user_main_sp_uuid: Uuid) -> Arc<opt::Proc<opt::UMemLoc>> {
+    let jump_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+
+    Arc::new(opt::Proc {
+        kind: Arc::new(opt::ProcKind::Main),
+        sub_procs: Arc::new(Vec::from([Arc::new(opt::SubProc {
+            uuid: Uuid::new_v4(),
+            commands: Arc::new(Vec::from([
+                // initialize stack pointer to point to -1
+                // (main func stack frame doesn't need return address)
+                Arc::new(opt::Command::Set {
+                    dest: Arc::new(opt::UMemLoc::StackPointer),
+                    value: Arc::new(opt::Value::Literal((-1).to_string().into())),
+                }),
+                // jump to user main
+                Arc::new(opt::Command::Set {
+                    dest: jump_loc.clone(),
+                    value: Arc::new(opt::Value::Label(user_main_sp_uuid)),
+                }),
+                Arc::new(opt::Command::Jump { src: jump_loc }),
+            ])),
+        })])),
+    })
+}
+
+fn compile_proc(
+    func_manager: &FuncManager,
+    proc: &link::Proc,
+) -> anyhow::Result<Arc<opt::Proc<opt::UMemLoc>>> {
     let (kind, stack_params) = match &proc.kind {
-        link::ProcKind::Main => (opt::ProcKind::Main, Vec::new()),
-        link::ProcKind::Func { name, params } => {
-            (opt::ProcKind::Func { name: name.clone() }, params.iter().cloned().collect())
-        },
+        link::ProcKind::Main => (opt::ProcKind::Func { name: "main".into() }, Vec::new()),
+        link::ProcKind::Func { name, params } => (
+            opt::ProcKind::Func { name: format!("func.{}", name).into() },
+            params.iter().cloned().collect(),
+        ),
     };
 
     let stack_vars = proc.idents.iter().cloned();
@@ -59,7 +154,8 @@ fn compile_proc(proc: &link::Proc) -> anyhow::Result<Arc<opt::Proc<opt::UMemLoc>
     let sub_procs = proc
         .sub_procs
         .iter()
-        .map(|sp| compile_sub_proc(&stack_frame, sp))
+        .enumerate()
+        .map(|(i, sp)| compile_sub_proc(&stack_frame, func_manager, sp, i == 0))
         .collect::<Result<Vec<_>, _>>()?;
 
     let proc = opt::Proc { kind: Arc::new(kind), sub_procs: Arc::new(sub_procs) };
@@ -69,9 +165,30 @@ fn compile_proc(proc: &link::Proc) -> anyhow::Result<Arc<opt::Proc<opt::UMemLoc>
 
 fn compile_sub_proc(
     stack_frame: &StackFrame,
+    func_manager: &FuncManager,
     sp: &link::SubProc,
+    proc_head: bool,
 ) -> anyhow::Result<Arc<opt::SubProc<opt::UMemLoc>>> {
-    let statement_assignments: Vec<_> = sp
+    // initialize stack vars
+    let stack_frame_commands = if proc_head {
+        let stack_frame_size_loc = Arc::new(opt::TempVar::new());
+
+        Vec::from([
+            Arc::new(opt::Command::Set {
+                dest: Arc::new(opt::UMemLoc::Temp(stack_frame_size_loc.clone())),
+                value: Arc::new(opt::Value::Literal(stack_frame.size().to_string().into())),
+            }),
+            Arc::new(opt::Command::Add {
+                dest: Arc::new(opt::UMemLoc::StackPointer),
+                left: Arc::new(opt::UMemLoc::StackPointer),
+                right: Arc::new(opt::UMemLoc::Temp(stack_frame_size_loc)),
+            }),
+        ])
+    } else {
+        Vec::new()
+    };
+
+    let statement_commands: Vec<_> = sp
         .statements
         .iter()
         .map(|s| compile_statement(stack_frame, s))
@@ -80,24 +197,20 @@ fn compile_sub_proc(
         .flatten()
         .collect();
 
-    let compiled_call = compile_call(stack_frame, &sp.next_call)?;
-    let assignments = chain!(statement_assignments, compiled_call.assignments).collect();
+    let call_commands = compile_call(stack_frame, func_manager, &sp.next_call)?;
 
-    let sp = opt::SubProc {
-        uuid: sp.uuid,
-        assignments: Arc::new(assignments),
-        next_call: Arc::new(compiled_call.call),
-    };
+    let commands = chain!(stack_frame_commands, statement_commands, call_commands).collect();
+
+    let sp = opt::SubProc { uuid: sp.uuid, commands: Arc::new(commands) };
 
     Ok(Arc::new(sp))
 }
 
-struct CompiledCall {
-    call: opt::Call<opt::UMemLoc>,
-    assignments: Vec<Arc<opt::Assignment<opt::UMemLoc>>>,
-}
-
-fn compile_call(stack_frame: &StackFrame, call: &link::Call) -> anyhow::Result<CompiledCall> {
+fn compile_call(
+    stack_frame: &StackFrame,
+    func_manager: &FuncManager,
+    call: &link::Call,
+) -> anyhow::Result<Vec<Arc<opt::Command<opt::UMemLoc>>>> {
     let compiled = match call {
         link::Call::Func { name, param_pipelines, return_sub_proc } => {
             let mut param_assignments = Vec::new();
@@ -106,46 +219,162 @@ fn compile_call(stack_frame: &StackFrame, call: &link::Call) -> anyhow::Result<C
             for pipeline in param_pipelines.as_ref() {
                 let compiled_pipeline = compile_pipeline(stack_frame, pipeline)?;
                 param_mem_locs.push(compiled_pipeline.mem_loc);
-                param_assignments.extend(compiled_pipeline.assignments);
+                param_assignments.extend(compiled_pipeline.commands);
             }
 
-            let call = opt::Call::Func {
-                name: name.clone(),
-                params: Arc::new(param_mem_locs),
-                return_sub_proc: *return_sub_proc,
+            let return_setup_commands = {
+                let return_offset_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+                let return_addr_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+                let return_label_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+
+                [
+                    Arc::new(opt::Command::Set {
+                        dest: return_offset_loc.clone(),
+                        value: Arc::new(opt::Value::Literal(1.to_string().into())),
+                    }),
+                    Arc::new(opt::Command::Add {
+                        dest: return_addr_loc.clone(),
+                        left: Arc::new(opt::UMemLoc::StackPointer),
+                        right: return_offset_loc.clone(),
+                    }),
+                    Arc::new(opt::Command::Set {
+                        dest: return_label_loc.clone(),
+                        value: Arc::new(opt::Value::Label(*return_sub_proc)),
+                    }),
+                    Arc::new(opt::Command::CopyDerefDest {
+                        dest: return_addr_loc,
+                        src: return_label_loc,
+                    }),
+                ]
             };
 
-            CompiledCall { assignments: param_assignments, call }
+            let param_setup_commands =
+                param_mem_locs.into_iter().enumerate().flat_map(|(i, param_value_loc)| {
+                    let param_offset_loc =
+                        Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+                    let param_addr_loc =
+                        Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+
+                    Vec::from([
+                        Arc::new(opt::Command::Set {
+                            dest: param_offset_loc.clone(),
+                            value: Arc::new(opt::Value::Literal((i + 2).to_string().into())),
+                        }),
+                        Arc::new(opt::Command::Add {
+                            dest: param_addr_loc.clone(),
+                            left: Arc::new(opt::UMemLoc::StackPointer),
+                            right: param_offset_loc.clone(),
+                        }),
+                        Arc::new(opt::Command::CopyDerefDest {
+                            dest: param_addr_loc,
+                            src: param_value_loc,
+                        }),
+                    ])
+                });
+
+            let jump_commands = {
+                let func_head_uuid = func_manager.get_head_uuid(name)?;
+                let jump_label_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+
+                [
+                    Arc::new(opt::Command::Set {
+                        dest: jump_label_loc.clone(),
+                        value: Arc::new(opt::Value::Label(func_head_uuid)),
+                    }),
+                    Arc::new(opt::Command::Jump { src: jump_label_loc }),
+                ]
+            };
+
+            chain!(param_assignments, return_setup_commands, param_setup_commands, jump_commands)
+                .collect()
         },
         link::Call::SubProc(uuid) => {
-            CompiledCall { assignments: Vec::new(), call: opt::Call::SubProc(*uuid) }
+            let return_label_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+
+            Vec::from([
+                Arc::new(opt::Command::Set {
+                    dest: return_label_loc.clone(),
+                    value: Arc::new(opt::Value::Label(*uuid)),
+                }),
+                Arc::new(opt::Command::Jump { src: return_label_loc }),
+            ])
         },
         link::Call::IfBranch { cond_pipeline, then_sub_proc, pop_sub_proc } => {
             let compiled_cond = compile_pipeline(stack_frame, cond_pipeline)?;
 
-            let call = opt::Call::IfBranch {
-                cond: compiled_cond.mem_loc,
-                then_sub_proc: *then_sub_proc,
-                pop_sub_proc: *pop_sub_proc,
-            };
+            // let call = opt::Call::IfBranch {
+            //     cond: compiled_cond.mem_loc,
+            //     then_sub_proc: *then_sub_proc,
+            //     pop_sub_proc: *pop_sub_proc,
+            // };
 
-            CompiledCall { assignments: compiled_cond.assignments, call }
+            // CompiledCall { assignments: compiled_cond.commands, call }
+
+            // Vec::from([
+            //     Arc::new(opt::Command::Set {
+            //         dest: return_label_loc.clone(),
+            //         value: Arc::new(opt::Value::Label(*uuid)),
+            //     }),
+            //     Arc::new(opt::Command::Jump { src: return_label_loc }),
+            // ])
+
+            todo!()
         },
         link::Call::IfElseBranch { cond_pipeline, then_sub_proc, else_sub_proc } => {
             let compiled_cond = compile_pipeline(stack_frame, cond_pipeline)?;
 
-            let call = opt::Call::IfElseBranch {
-                cond: compiled_cond.mem_loc,
-                then_sub_proc: *then_sub_proc,
-                else_sub_proc: *else_sub_proc,
+            // let call = opt::Call::IfElseBranch {
+            //     cond: compiled_cond.mem_loc,
+            //     then_sub_proc: *then_sub_proc,
+            //     else_sub_proc: *else_sub_proc,
+            // };
+
+            // CompiledCall { assignments: compiled_cond.commands, call }
+
+            todo!()
+        },
+        link::Call::Return => {
+            // free stack vars
+            let stack_frame_commands = {
+                let stack_frame_size_loc = Arc::new(opt::TempVar::new());
+
+                [
+                    Arc::new(opt::Command::Set {
+                        dest: Arc::new(opt::UMemLoc::Temp(stack_frame_size_loc.clone())),
+                        value: Arc::new(opt::Value::Literal(stack_frame.size().to_string().into())),
+                    }),
+                    Arc::new(opt::Command::Sub {
+                        dest: Arc::new(opt::UMemLoc::StackPointer),
+                        left: Arc::new(opt::UMemLoc::StackPointer),
+                        right: Arc::new(opt::UMemLoc::Temp(stack_frame_size_loc)),
+                    }),
+                ]
             };
 
-            CompiledCall { assignments: compiled_cond.assignments, call }
+            // get return label and jump there
+            let jump_return_commands = {
+                let label_offset_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+                let label_addr_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+                let label_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+
+                [
+                    Arc::new(opt::Command::Set {
+                        dest: label_offset_loc.clone(),
+                        value: Arc::new(opt::Value::Literal(1.to_string().into())),
+                    }),
+                    Arc::new(opt::Command::Add {
+                        dest: label_addr_loc.clone(),
+                        left: Arc::new(opt::UMemLoc::StackPointer),
+                        right: label_offset_loc,
+                    }),
+                    Arc::new(opt::Command::Deref { dest: label_loc.clone(), src: label_addr_loc }),
+                    Arc::new(opt::Command::Jump { src: label_loc }),
+                ]
+            };
+
+            chain!(stack_frame_commands, jump_return_commands).collect()
         },
-        link::Call::Return => CompiledCall { call: opt::Call::Return, assignments: Vec::new() },
-        link::Call::Terminate => {
-            CompiledCall { call: opt::Call::Terminate, assignments: Vec::new() }
-        },
+        link::Call::Terminate => Vec::from([Arc::new(opt::Command::Exit)]),
     };
 
     Ok(compiled)
@@ -154,7 +383,7 @@ fn compile_call(stack_frame: &StackFrame, call: &link::Call) -> anyhow::Result<C
 fn compile_statement(
     stack_frame: &StackFrame,
     statement: &link::Statement,
-) -> anyhow::Result<Vec<Arc<opt::Assignment<opt::UMemLoc>>>> {
+) -> anyhow::Result<Vec<Arc<opt::Command<opt::UMemLoc>>>> {
     let assignments = match statement {
         link::Statement::Assign(assign) => {
             let compiled_ident_addr = compile_ident_to_addr(stack_frame, &assign.ident)?;
@@ -162,29 +391,57 @@ fn compile_statement(
             let compiled_pipeline = compile_pipeline(stack_frame, &assign.pipeline)?;
 
             let mut assignments =
-                chain!(compiled_pipeline.assignments, compiled_ident_addr.assignments,)
-                    .collect_vec();
+                chain!(compiled_pipeline.commands, compiled_ident_addr.commands,).collect_vec();
 
             if assign.deref_ident {
                 // deref var
-                assignments.push(Arc::new(opt::Assignment {
-                    dest: compiled_pipeline.mem_loc.clone(),
-                    expr: Arc::new(opt::Expr::CopyDerefDest {
-                        src: compiled_pipeline.mem_loc.clone(),
-                    }),
+                assignments.push(Arc::new(opt::Command::Deref {
+                    dest: compiled_ident_addr.mem_loc.clone(),
+                    src: compiled_ident_addr.mem_loc.clone(),
                 }));
             }
 
             // assign to var
-            assignments.push(Arc::new(opt::Assignment {
+            assignments.push(Arc::new(opt::Command::CopyDerefDest {
                 dest: compiled_ident_addr.mem_loc,
-                expr: Arc::new(opt::Expr::CopyDerefDest { src: compiled_pipeline.mem_loc.clone() }),
+                src: compiled_pipeline.mem_loc,
             }));
 
             assignments
         },
-        link::Statement::Native(native) => {
-            todo!();
+        link::Statement::Native(native) => match native.as_ref() {
+            hast::NativeOperation::Out { ident } => {
+                let compiled_ident_addr = compile_ident_to_addr(stack_frame, ident)?;
+                let ident_value_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+
+                chain!(
+                    compiled_ident_addr.commands,
+                    [
+                        Arc::new(opt::Command::Deref {
+                            dest: ident_value_loc.clone(),
+                            src: compiled_ident_addr.mem_loc
+                        }),
+                        Arc::new(opt::Command::Out { src: ident_value_loc })
+                    ]
+                )
+                .collect()
+            },
+            hast::NativeOperation::In { dest_ident } => {
+                let compiled_ident_addr = compile_ident_to_addr(stack_frame, dest_ident)?;
+                let answer_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+
+                chain!(
+                    compiled_ident_addr.commands,
+                    [
+                        Arc::new(opt::Command::In { dest: answer_loc.clone() }),
+                        Arc::new(opt::Command::CopyDerefDest {
+                            dest: compiled_ident_addr.mem_loc,
+                            src: answer_loc
+                        }),
+                    ]
+                )
+                .collect()
+            },
         },
     };
 
@@ -200,7 +457,7 @@ fn compile_pipeline(
     let initial_val = compile_value(stack_frame, &pipeline.initial_val)?;
 
     let mut val = initial_val.mem_loc;
-    assignments.extend(initial_val.assignments);
+    assignments.extend(initial_val.commands);
 
     for operation in pipeline.operations.as_ref() {
         match operation.as_ref() {
@@ -208,12 +465,13 @@ fn compile_pipeline(
             hast::Operation::Add { operand } => {
                 let compiled_value = compile_value(stack_frame, operand)?;
                 let value_mem_loc = compiled_value.mem_loc;
-                assignments.extend(compiled_value.assignments);
+                assignments.extend(compiled_value.commands);
 
                 let output_mem_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
-                assignments.push(Arc::new(opt::Assignment {
+                assignments.push(Arc::new(opt::Command::Add {
                     dest: output_mem_loc.clone(),
-                    expr: Arc::new(opt::Expr::Add { left: val.clone(), right: value_mem_loc }),
+                    left: val.clone(),
+                    right: value_mem_loc,
                 }));
 
                 val = output_mem_loc;
@@ -236,7 +494,7 @@ fn compile_pipeline(
         }
     }
 
-    let compiled = CompiledExpr { mem_loc: val, assignments };
+    let compiled = CompiledExpr { mem_loc: val, commands: assignments };
     Ok(compiled)
 }
 
@@ -244,14 +502,12 @@ fn compile_value(stack_frame: &StackFrame, value: &hast::Value) -> anyhow::Resul
     let compiled = match value {
         hast::Value::Literal(literal) => {
             let temp = Arc::new(opt::TempVar::new());
-            let assignments = Vec::from([Arc::new(opt::Assignment {
+            let assignments = Vec::from([Arc::new(opt::Command::Set {
                 dest: Arc::new(opt::UMemLoc::Temp(temp.clone())),
-                expr: Arc::new(opt::Expr::Set {
-                    literal: Arc::new(opt::Literal { value: literal.clone() }),
-                }),
+                value: Arc::new(opt::Value::Literal(literal.clone())),
             })]);
 
-            CompiledExpr { mem_loc: Arc::new(opt::UMemLoc::Temp(temp)), assignments }
+            CompiledExpr { mem_loc: Arc::new(opt::UMemLoc::Temp(temp)), commands: assignments }
         },
         hast::Value::Ident(ident) => {
             let compiled_ident_addr = compile_ident_to_addr(stack_frame, ident)?;
@@ -259,15 +515,15 @@ fn compile_value(stack_frame: &StackFrame, value: &hast::Value) -> anyhow::Resul
             let ident_value_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
 
             let assignments = chain!(
-                compiled_ident_addr.assignments,
-                [Arc::new(opt::Assignment {
+                compiled_ident_addr.commands,
+                [Arc::new(opt::Command::Deref {
                     dest: ident_value_loc.clone(),
-                    expr: Arc::new(opt::Expr::Deref { src: compiled_ident_addr.mem_loc })
+                    src: compiled_ident_addr.mem_loc,
                 })]
             )
             .collect();
 
-            CompiledExpr { mem_loc: ident_value_loc, assignments }
+            CompiledExpr { mem_loc: ident_value_loc, commands: assignments }
         },
         hast::Value::Ref(ident) => compile_ident_to_addr(stack_frame, ident)?,
     };
@@ -281,27 +537,23 @@ fn compile_ident_to_addr(
 ) -> anyhow::Result<CompiledExpr> {
     let compiled = match ident {
         hast::Ident::Var { name } => {
-            let stack_offset = stack_frame.get_offset(name)?;
+            let var_info = stack_frame.get_info(name)?;
             let stack_offset_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new()))); // offset of var within the current stack frame
             let stack_addr_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
 
             let assignments = Vec::from([
-                Arc::new(opt::Assignment {
+                Arc::new(opt::Command::Set {
                     dest: stack_offset_loc.clone(),
-                    expr: Arc::new(opt::Expr::Set {
-                        literal: Arc::new(opt::Literal { value: stack_offset.to_string().into() }),
-                    }),
+                    value: Arc::new(opt::Value::Literal(var_info.offset.to_string().into())),
                 }),
-                Arc::new(opt::Assignment {
+                Arc::new(opt::Command::Sub {
                     dest: stack_addr_loc.clone(),
-                    expr: Arc::new(opt::Expr::Add {
-                        left: Arc::new(opt::UMemLoc::StackPointer),
-                        right: stack_offset_loc,
-                    }),
+                    left: Arc::new(opt::UMemLoc::StackPointer),
+                    right: stack_offset_loc,
                 }),
             ]);
 
-            CompiledExpr { mem_loc: stack_addr_loc, assignments }
+            CompiledExpr { mem_loc: stack_addr_loc, commands: assignments }
         },
         hast::Ident::Array { name, index } => {
             // let compiled_index = compile_pipeline(index);
@@ -324,5 +576,5 @@ fn compile_ident_to_addr(
 #[derive(Debug)]
 struct CompiledExpr {
     mem_loc: Arc<opt::UMemLoc>,
-    assignments: Vec<Arc<opt::Assignment<opt::UMemLoc>>>,
+    commands: Vec<Arc<opt::Command<opt::UMemLoc>>>,
 }

@@ -17,49 +17,27 @@ pub enum ProcKind {
 #[derive(Debug)]
 pub struct SubProc<MemLoc> {
     pub uuid: Uuid,
-    pub assignments: Arc<Vec<Arc<Assignment<MemLoc>>>>,
-    pub next_call: Arc<Call<MemLoc>>,
+    pub commands: Arc<Vec<Arc<Command<MemLoc>>>>,
 }
 
 #[derive(Debug)]
-pub struct StackVar {
-    uuid: Uuid,
-}
-
-impl StackVar {
-    pub fn new() -> Self {
-        Self { uuid: Uuid::new_v4() }
-    }
+pub enum Value {
+    Literal(Arc<str>),
+    Label(Uuid),
 }
 
 #[derive(Debug)]
-pub enum Call<MemLoc> {
-    Func { name: Arc<str>, params: Arc<Vec<Arc<MemLoc>>>, return_sub_proc: Uuid },
-    SubProc(Uuid),
-    IfBranch { cond: Arc<MemLoc>, then_sub_proc: Uuid, pop_sub_proc: Uuid },
-    IfElseBranch { cond: Arc<MemLoc>, then_sub_proc: Uuid, else_sub_proc: Uuid },
-    Return,
-    Terminate,
-}
-
-#[derive(Debug)]
-pub struct Literal {
-    pub value: Arc<str>,
-}
-
-#[derive(Debug)]
-pub struct Assignment<MemLoc> {
-    pub dest: Arc<MemLoc>,
-    pub expr: Arc<Expr<MemLoc>>,
-}
-
-#[derive(Debug)]
-pub enum Expr<MemLoc> {
-    Set { literal: Arc<Literal> },
-    Copy { src: Arc<MemLoc> },
-    CopyDerefDest { src: Arc<MemLoc> },
-    Deref { src: Arc<MemLoc> },
-    Add { left: Arc<MemLoc>, right: Arc<MemLoc> },
+pub enum Command<MemLoc> {
+    Set { dest: Arc<MemLoc>, value: Arc<Value> },
+    Copy { dest: Arc<MemLoc>, src: Arc<MemLoc> },
+    CopyDerefDest { dest: Arc<MemLoc>, src: Arc<MemLoc> },
+    Deref { dest: Arc<MemLoc>, src: Arc<MemLoc> },
+    Add { dest: Arc<MemLoc>, left: Arc<MemLoc>, right: Arc<MemLoc> },
+    Sub { dest: Arc<MemLoc>, left: Arc<MemLoc>, right: Arc<MemLoc> },
+    Jump { src: Arc<MemLoc> },
+    Out { src: Arc<MemLoc> },
+    In { dest: Arc<MemLoc> },
+    Exit,
 }
 
 #[derive(Debug)]

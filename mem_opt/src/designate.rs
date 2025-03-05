@@ -116,39 +116,11 @@ pub fn designate_registers(
             let mut temp_m =
                 TempManager { temp_to_register: Default::default(), register_manager: &mut reg_m };
 
-            let mut assignment_with_temp_frees = Vec::new();
+            let mut command_with_temp_frees = Vec::new();
             let mut freed_temps = BTreeSet::<Arc<ast::TempVar>>::new();
 
-            // temps used in call don't need to be freed because the sub proc is exiting anyway
-            // (and so their register could never be used again anyway)
-            // only need to handle freeing temps used in statements
-            // so, we will add them to freed_temps so the statement scanner below will never
-            // choose to free them
-            match sp.next_call.as_ref() {
-                ast::Call::Func { name: _, params, return_sub_proc: _ } => {
-                    for param in params.as_ref() {
-                        if let ast::UMemLoc::Temp(temp) = param.as_ref() {
-                            freed_temps.insert(temp.clone());
-                        }
-                    }
-                },
-                ast::Call::SubProc(_) => {},
-                ast::Call::IfBranch { cond, then_sub_proc: _, pop_sub_proc: _ } => {
-                    if let ast::UMemLoc::Temp(temp) = cond.as_ref() {
-                        freed_temps.insert(temp.clone());
-                    }
-                },
-                ast::Call::IfElseBranch { cond, then_sub_proc: _, else_sub_proc: _ } => {
-                    if let ast::UMemLoc::Temp(temp) = cond.as_ref() {
-                        freed_temps.insert(temp.clone());
-                    }
-                },
-                ast::Call::Return => {},
-                ast::Call::Terminate => {},
-            };
-
             // find when temps are last used (iterate over statements in reverse)
-            for assignment in sp.assignments.as_ref().iter().rev() {
+            for command in sp.commands.as_ref().iter().rev() {
                 let add = |umems: &[&Arc<ast::UMemLoc>]| {
                     let mut temps = Vec::new();
                     for umem in umems {
@@ -160,15 +132,20 @@ pub fn designate_registers(
                     temps
                 };
 
-                let mem_locs: &[&Arc<ast::UMemLoc>] = match assignment.expr.as_ref() {
-                    ast::Expr::Set { literal: _ } => &[],
-                    ast::Expr::Copy { src } => &[src],
-                    ast::Expr::CopyDerefDest { src } => &[src],
-                    ast::Expr::Deref { src } => &[src],
-                    ast::Expr::Add { left, right } => &[left, right],
+                let mem_locs: &[&Arc<ast::UMemLoc>] = match command.as_ref() {
+                    ast::Command::Set { dest, value: _ } => &[dest],
+                    ast::Command::Copy { dest, src } => &[dest, src],
+                    ast::Command::CopyDerefDest { dest, src } => &[dest, src],
+                    ast::Command::Deref { dest, src } => &[dest, src],
+                    ast::Command::Add { dest, left, right } => &[dest, left, right],
+                    ast::Command::Sub { dest, left, right } => &[dest, left, right],
+                    ast::Command::Jump { src } => &[src],
+                    ast::Command::Out { src } => &[src],
+                    ast::Command::In { dest } => &[dest],
+                    ast::Command::Exit => &[],
                 };
 
-                let mem_locs = chain!([&assignment.dest], mem_locs.iter().copied()).collect_vec();
+                let mem_locs = mem_locs.iter().copied().collect_vec();
                 let temps = add(&mem_locs);
 
                 // since we're iterating in reverse, we will encounter each temp when its used last
@@ -181,28 +158,43 @@ pub fn designate_registers(
                     }
                 }
 
-                assignment_with_temp_frees.push((assignment, temps_freed))
+                command_with_temp_frees.push((command, temps_freed))
             }
 
             // convert statements umem -> rmem
-            let mut assignments = Vec::new();
-            for (assignment, temp_frees) in assignment_with_temp_frees.into_iter().rev() {
-                let expr = match assignment.expr.as_ref() {
-                    ast::Expr::Set { literal: value } => ast::Expr::Set { literal: value.clone() },
-                    ast::Expr::Copy { src } => ast::Expr::Copy { src: temp_m.rmem(src) },
-                    ast::Expr::CopyDerefDest { src } => {
-                        ast::Expr::CopyDerefDest { src: temp_m.rmem(src) }
+            let mut commands = Vec::new();
+            for (command, temp_frees) in command_with_temp_frees.into_iter().rev() {
+                let command = match command.as_ref() {
+                    ast::Command::Set { dest, value } => {
+                        ast::Command::Set { dest: temp_m.rmem(dest), value: value.clone() }
                     },
-                    ast::Expr::Deref { src } => ast::Expr::Deref { src: temp_m.rmem(src) },
-                    ast::Expr::Add { left, right } => {
-                        ast::Expr::Add { left: temp_m.rmem(left), right: temp_m.rmem(right) }
+                    ast::Command::Copy { dest, src } => {
+                        ast::Command::Copy { dest: temp_m.rmem(dest), src: temp_m.rmem(src) }
                     },
+                    ast::Command::CopyDerefDest { dest, src } => ast::Command::CopyDerefDest {
+                        dest: temp_m.rmem(dest),
+                        src: temp_m.rmem(src),
+                    },
+                    ast::Command::Deref { dest, src } => {
+                        ast::Command::Deref { dest: temp_m.rmem(dest), src: temp_m.rmem(src) }
+                    },
+                    ast::Command::Add { dest, left, right } => ast::Command::Add {
+                        dest: temp_m.rmem(dest),
+                        left: temp_m.rmem(left),
+                        right: temp_m.rmem(right),
+                    },
+                    ast::Command::Sub { dest, left, right } => ast::Command::Sub {
+                        dest: temp_m.rmem(dest),
+                        left: temp_m.rmem(left),
+                        right: temp_m.rmem(right),
+                    },
+                    ast::Command::Jump { src } => ast::Command::Jump { src: temp_m.rmem(src) },
+                    ast::Command::Out { src } => ast::Command::Out { src: temp_m.rmem(src) },
+                    ast::Command::In { dest } => ast::Command::In { dest: temp_m.rmem(dest) },
+                    ast::Command::Exit => ast::Command::Exit,
                 };
 
-                let assignment =
-                    ast::Assignment { dest: temp_m.rmem(&assignment.dest), expr: Arc::new(expr) };
-
-                assignments.push(Arc::new(assignment));
+                commands.push(Arc::new(command));
 
                 // free the registers of temps which will never be used again
                 for temp in temp_frees {
@@ -210,35 +202,7 @@ pub fn designate_registers(
                 }
             }
 
-            // convert next_call umem -> rmem
-            let next_call = match sp.next_call.as_ref() {
-                ast::Call::Func { name, params, return_sub_proc } => ast::Call::Func {
-                    name: name.clone(),
-                    params: Arc::new(params.iter().map(|param| temp_m.rmem(param)).collect_vec()),
-                    return_sub_proc: *return_sub_proc,
-                },
-                ast::Call::SubProc(uuid) => ast::Call::SubProc(*uuid),
-                ast::Call::IfBranch { cond, then_sub_proc, pop_sub_proc } => ast::Call::IfBranch {
-                    cond: temp_m.rmem(cond),
-                    then_sub_proc: *then_sub_proc,
-                    pop_sub_proc: *pop_sub_proc,
-                },
-                ast::Call::IfElseBranch { cond, then_sub_proc, else_sub_proc } => {
-                    ast::Call::IfElseBranch {
-                        cond: temp_m.rmem(cond),
-                        then_sub_proc: *then_sub_proc,
-                        else_sub_proc: *else_sub_proc,
-                    }
-                },
-                ast::Call::Return => ast::Call::Return,
-                ast::Call::Terminate => ast::Call::Terminate,
-            };
-
-            let sp = ast::SubProc {
-                uuid: sp.uuid,
-                next_call: Arc::new(next_call),
-                assignments: Arc::new(assignments),
-            };
+            let sp = ast::SubProc { uuid: sp.uuid, commands: Arc::new(commands) };
 
             sps.push(Arc::new(sp));
             reg_m.free_all();

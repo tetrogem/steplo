@@ -3,8 +3,9 @@ use std::{
     sync::Arc,
 };
 
+use anyhow::bail;
 use asm_compiler::ast as asm;
-use itertools::chain;
+use itertools::{chain, Itertools};
 use uuid::Uuid;
 
 use crate::{
@@ -81,14 +82,17 @@ impl RegisterManager {
     }
 }
 
-pub fn compile(procs: Vec<Arc<ast::Proc<RMemLoc>>>) -> Arc<asm::Program> {
+pub fn compile(procs: Vec<Arc<ast::Proc<RMemLoc>>>) -> anyhow::Result<Arc<asm::Program>> {
     let asm_proc_manager = AsmProcManager::new(&procs);
     let mut register_manager = RegisterManager::new();
 
     let procedures = procs
         .iter()
-        .flat_map(|p| compile_proc(&asm_proc_manager, &mut register_manager, p))
-        .collect();
+        .map(|p| compile_proc(&asm_proc_manager, &mut register_manager, p))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect_vec();
 
     let program = asm::Program {
         procedures: Arc::new(procedures),
@@ -97,14 +101,14 @@ pub fn compile(procs: Vec<Arc<ast::Proc<RMemLoc>>>) -> Arc<asm::Program> {
         ),
     };
 
-    Arc::new(program)
+    Ok(Arc::new(program))
 }
 
 fn compile_proc(
     asm_proc_manager: &AsmProcManager,
     register_manager: &mut RegisterManager,
     proc: &ast::Proc<RMemLoc>,
-) -> Vec<Arc<asm::Procedure>> {
+) -> anyhow::Result<Vec<Arc<asm::Procedure>>> {
     proc.sub_procs
         .iter()
         .map(|sp| compile_sub_proc(asm_proc_manager, register_manager, sp))
@@ -115,52 +119,82 @@ fn compile_sub_proc(
     asm_proc_manager: &AsmProcManager,
     register_manager: &mut RegisterManager,
     sp: &ast::SubProc<RMemLoc>,
-) -> Arc<asm::Procedure> {
+) -> anyhow::Result<Arc<asm::Procedure>> {
     let kind = asm_proc_manager.get_asm_kind(&sp.uuid);
 
-    let commands =
-        sp.assignments.iter().flat_map(|a| compile_assignment(register_manager, a)).collect();
+    let commands = sp
+        .commands
+        .iter()
+        .map(|a| compile_command(asm_proc_manager, register_manager, a))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect();
 
     let procedure = asm::Procedure { kind, commands };
 
-    Arc::new(procedure)
+    Ok(Arc::new(procedure))
 }
 
-fn compile_assignment(
+fn compile_command(
+    asm_proc_manager: &AsmProcManager,
     register_manager: &mut RegisterManager,
-    assignment: &ast::Assignment<RMemLoc>,
-) -> Vec<Arc<asm::Command>> {
-    let dest_asm = compile_mem_loc(register_manager, &assignment.dest);
-
-    let expr_commands = match assignment.expr.as_ref() {
-        ast::Expr::Set { literal } => Vec::from([asm::DataCommand::Set(asm::BinaryArgs {
-            dest: dest_asm,
-            val: Arc::new(asm::Value::Literal(Arc::new(asm::Literal {
-                val: literal.value.clone(),
-            }))),
-        })]),
-        ast::Expr::Copy { src } => Vec::from([asm::DataCommand::Move(asm::BinaryArgs {
-            dest: dest_asm,
-            val: compile_mem_loc(register_manager, src),
-        })]),
-        ast::Expr::CopyDerefDest { src } => {
-            Vec::from([asm::DataCommand::MoveDerefDest(asm::BinaryArgs {
-                dest: dest_asm,
-                val: compile_mem_loc(register_manager, src),
-            })])
+    command: &ast::Command<RMemLoc>,
+) -> anyhow::Result<Vec<Arc<asm::Command>>> {
+    let commands = match command {
+        ast::Command::Set { dest, value } => {
+            Vec::from([data(asm::DataCommand::Set(asm::BinaryArgs {
+                dest: compile_mem_loc(register_manager, dest),
+                val: compile_value(asm_proc_manager, value)?,
+            }))])
         },
-        ast::Expr::Deref { src } => Vec::from([asm::DataCommand::MoveDerefSrc(asm::BinaryArgs {
-            dest: dest_asm,
+        ast::Command::Copy { dest, src } => {
+            Vec::from([data(asm::DataCommand::Move(asm::BinaryArgs {
+                dest: compile_mem_loc(register_manager, dest),
+                val: compile_mem_loc(register_manager, src),
+            }))])
+        },
+        ast::Command::CopyDerefDest { dest, src } => {
+            Vec::from([data(asm::DataCommand::MoveDerefDest(asm::BinaryArgs {
+                dest: compile_mem_loc(register_manager, dest),
+                val: compile_mem_loc(register_manager, src),
+            }))])
+        },
+        ast::Command::Deref { dest, src } => {
+            Vec::from([data(asm::DataCommand::MoveDerefSrc(asm::BinaryArgs {
+                dest: compile_mem_loc(register_manager, dest),
+                val: compile_mem_loc(register_manager, src),
+            }))])
+        },
+        ast::Command::Add { dest, left, right } => {
+            Vec::from([data(asm::DataCommand::Add(asm::TernaryArgs {
+                dest: compile_mem_loc(register_manager, dest),
+                left: compile_mem_loc(register_manager, left),
+                right: compile_mem_loc(register_manager, right),
+            }))])
+        },
+        ast::Command::Sub { dest, left, right } => {
+            Vec::from([data(asm::DataCommand::Sub(asm::TernaryArgs {
+                dest: compile_mem_loc(register_manager, dest),
+                left: compile_mem_loc(register_manager, left),
+                right: compile_mem_loc(register_manager, right),
+            }))])
+        },
+        ast::Command::Jump { src } => {
+            Vec::from([control(asm::ControlCommand::Jump(asm::UnaryArgs {
+                val: compile_mem_loc(register_manager, src),
+            }))])
+        },
+        ast::Command::Out { src } => Vec::from([data(asm::DataCommand::Out(asm::UnaryArgs {
             val: compile_mem_loc(register_manager, src),
-        })]),
-        ast::Expr::Add { left, right } => Vec::from([asm::DataCommand::Add(asm::TernaryArgs {
-            dest: dest_asm,
-            left: compile_mem_loc(register_manager, left),
-            right: compile_mem_loc(register_manager, right),
-        })]),
+        }))]),
+        ast::Command::In { dest } => Vec::from([data(asm::DataCommand::In(asm::UnaryArgs {
+            val: compile_mem_loc(register_manager, dest),
+        }))]),
+        ast::Command::Exit => Vec::from([control(asm::ControlCommand::Exit)]),
     };
 
-    chain!(expr_commands).map(|c| Arc::new(asm::Command::Data(Arc::new(c)))).collect()
+    Ok(commands)
 }
 
 fn compile_mem_loc(register_manager: &mut RegisterManager, mem_loc: &RMemLoc) -> Arc<asm::Value> {
@@ -172,4 +206,35 @@ fn compile_mem_loc(register_manager: &mut RegisterManager, mem_loc: &RMemLoc) ->
     };
 
     Arc::new(value)
+}
+
+fn compile_value(
+    asm_proc_manager: &AsmProcManager,
+    value: &ast::Value,
+) -> anyhow::Result<Arc<asm::Value>> {
+    let value = match value {
+        ast::Value::Literal(literal) => {
+            asm::Value::Literal(Arc::new(asm::Literal { val: literal.clone() }))
+        },
+        ast::Value::Label(sp_uuid) => {
+            let asm_proc_kind = asm_proc_manager.get_asm_kind(sp_uuid);
+
+            let name = match asm_proc_kind {
+                asm::ProcedureKind::Main => bail!("attempted to create label value for main"),
+                asm::ProcedureKind::Sub { name } => name.clone(),
+            };
+
+            asm::Value::Label(Arc::new(asm::Label { name }))
+        },
+    };
+
+    Ok(Arc::new(value))
+}
+
+fn data(command: asm::DataCommand) -> Arc<asm::Command> {
+    Arc::new(asm::Command::Data(Arc::new(command)))
+}
+
+fn control(command: asm::ControlCommand) -> Arc<asm::Command> {
+    Arc::new(asm::Command::Control(Arc::new(command)))
 }
