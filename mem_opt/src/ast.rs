@@ -38,6 +38,7 @@ pub enum Command<MemLoc> {
     Out { src: Arc<MemLoc> },
     In { dest: Arc<MemLoc> },
     Exit,
+    Branch { cond: Arc<MemLoc>, label: Arc<MemLoc> },
 }
 
 #[derive(Debug)]

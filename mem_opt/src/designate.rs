@@ -143,6 +143,7 @@ pub fn designate_registers(
                     ast::Command::Out { src } => &[src],
                     ast::Command::In { dest } => &[dest],
                     ast::Command::Exit => &[],
+                    ast::Command::Branch { cond, label } => &[cond, label],
                 };
 
                 let mem_locs = mem_locs.iter().copied().collect_vec();
@@ -192,6 +193,9 @@ pub fn designate_registers(
                     ast::Command::Out { src } => ast::Command::Out { src: temp_m.rmem(src) },
                     ast::Command::In { dest } => ast::Command::In { dest: temp_m.rmem(dest) },
                     ast::Command::Exit => ast::Command::Exit,
+                    ast::Command::Branch { cond, label } => {
+                        ast::Command::Branch { cond: temp_m.rmem(cond), label: temp_m.rmem(label) }
+                    },
                 };
 
                 commands.push(Arc::new(command));

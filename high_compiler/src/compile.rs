@@ -299,39 +299,29 @@ fn compile_call(
                 Arc::new(opt::Command::Jump { src: return_label_loc }),
             ])
         },
-        link::Call::IfBranch { cond_pipeline, then_sub_proc, pop_sub_proc } => {
-            let compiled_cond = compile_pipeline(stack_frame, cond_pipeline)?;
-
-            // let call = opt::Call::IfBranch {
-            //     cond: compiled_cond.mem_loc,
-            //     then_sub_proc: *then_sub_proc,
-            //     pop_sub_proc: *pop_sub_proc,
-            // };
-
-            // CompiledCall { assignments: compiled_cond.commands, call }
-
-            // Vec::from([
-            //     Arc::new(opt::Command::Set {
-            //         dest: return_label_loc.clone(),
-            //         value: Arc::new(opt::Value::Label(*uuid)),
-            //     }),
-            //     Arc::new(opt::Command::Jump { src: return_label_loc }),
-            // ])
-
-            todo!()
-        },
         link::Call::IfElseBranch { cond_pipeline, then_sub_proc, else_sub_proc } => {
             let compiled_cond = compile_pipeline(stack_frame, cond_pipeline)?;
 
-            // let call = opt::Call::IfElseBranch {
-            //     cond: compiled_cond.mem_loc,
-            //     then_sub_proc: *then_sub_proc,
-            //     else_sub_proc: *else_sub_proc,
-            // };
+            let then_label_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+            let else_label_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
 
-            // CompiledCall { assignments: compiled_cond.commands, call }
+            let branch_commands = Vec::from([
+                Arc::new(opt::Command::Set {
+                    dest: then_label_loc.clone(),
+                    value: Arc::new(opt::Value::Label(*then_sub_proc)),
+                }),
+                Arc::new(opt::Command::Branch {
+                    cond: compiled_cond.mem_loc,
+                    label: then_label_loc,
+                }),
+                Arc::new(opt::Command::Set {
+                    dest: else_label_loc.clone(),
+                    value: Arc::new(opt::Value::Label(*else_sub_proc)),
+                }),
+                Arc::new(opt::Command::Jump { src: else_label_loc }),
+            ]);
 
-            todo!()
+            chain!(compiled_cond.commands, branch_commands).collect()
         },
         link::Call::Return => {
             // free stack vars

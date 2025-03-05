@@ -29,7 +29,6 @@ pub struct SubProc {
 pub enum Call {
     Func { name: Arc<str>, param_pipelines: Arc<Vec<Arc<ast::Pipeline>>>, return_sub_proc: Uuid },
     SubProc(Uuid),
-    IfBranch { cond_pipeline: Arc<ast::Pipeline>, then_sub_proc: Uuid, pop_sub_proc: Uuid },
     IfElseBranch { cond_pipeline: Arc<ast::Pipeline>, then_sub_proc: Uuid, else_sub_proc: Uuid },
     Return,
     Terminate,
@@ -162,10 +161,10 @@ fn create_sub_proc<'a>(
                 );
 
                 let call = match else_body {
-                    None => Call::IfBranch {
+                    None => Call::IfElseBranch {
                         cond_pipeline: Arc::clone(cond_pipeline),
                         then_sub_proc: then_sp.uuid,
-                        pop_sub_proc: pop_sp.uuid,
+                        else_sub_proc: pop_sp.uuid,
                     },
                     Some(else_body) => {
                         let else_sp = next_sp!(

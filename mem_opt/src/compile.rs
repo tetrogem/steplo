@@ -29,9 +29,9 @@ impl AsmProcManager {
                             continue;
                         }
 
-                        format!("main.{}", i)
+                        format!("_{}", i)
                     },
-                    ast::ProcKind::Func { name, .. } => format!("func.{}.{}", name, i),
+                    ast::ProcKind::Func { name, .. } => format!("{}.{}", name, i),
                 };
 
                 let prev = sp_uuid_to_asm_name.insert(sp.uuid, asm_name.into());
@@ -192,6 +192,12 @@ fn compile_command(
             val: compile_mem_loc(register_manager, dest),
         }))]),
         ast::Command::Exit => Vec::from([control(asm::ControlCommand::Exit)]),
+        ast::Command::Branch { cond, label } => {
+            Vec::from([control(asm::ControlCommand::Branch(asm::BinaryArgs {
+                dest: compile_mem_loc(register_manager, label),
+                val: compile_mem_loc(register_manager, cond),
+            }))])
+        },
     };
 
     Ok(commands)
