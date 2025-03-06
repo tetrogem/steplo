@@ -28,9 +28,9 @@ impl StackFrame {
                 hast::IdentDeclaration::Array { length, .. } => *length,
             };
 
-            let info = StackVarInfo { size, offset: total_offset };
+            total_offset += size;
+            let info = StackVarInfo { size, offset: total_offset - 1 };
 
-            total_offset += info.size;
             ident_name_to_info.insert(ident.name().clone(), Arc::new(info));
         }
 
@@ -111,7 +111,7 @@ fn find_user_main_sp_uuid(procs: &[Arc<link::Proc>]) -> anyhow::Result<Uuid> {
 }
 
 fn create_runner_proc(user_main_sp_uuid: Uuid) -> Arc<opt::Proc<opt::UMemLoc>> {
-    let jump_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+    let jump_loc = temp();
 
     Arc::new(opt::Proc {
         kind: Arc::new(opt::ProcKind::Main),
@@ -223,9 +223,9 @@ fn compile_call(
             }
 
             let return_setup_commands = {
-                let return_offset_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
-                let return_addr_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
-                let return_label_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+                let return_offset_loc = temp();
+                let return_addr_loc = temp();
+                let return_label_loc = temp();
 
                 [
                     Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
@@ -250,10 +250,8 @@ fn compile_call(
 
             let param_setup_commands =
                 param_mem_locs.into_iter().enumerate().flat_map(|(i, param_value_loc)| {
-                    let param_offset_loc =
-                        Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
-                    let param_addr_loc =
-                        Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+                    let param_offset_loc = temp();
+                    let param_addr_loc = temp();
 
                     Vec::from([
                         Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
@@ -274,7 +272,7 @@ fn compile_call(
 
             let jump_commands = {
                 let func_head_uuid = func_manager.get_head_uuid(name)?;
-                let jump_label_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+                let jump_label_loc = temp();
 
                 [
                     Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
@@ -289,7 +287,7 @@ fn compile_call(
                 .collect()
         },
         link::Call::SubProc(uuid) => {
-            let return_label_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+            let return_label_loc = temp();
 
             Vec::from([
                 Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
@@ -302,8 +300,8 @@ fn compile_call(
         link::Call::IfElseBranch { cond_pipeline, then_sub_proc, else_sub_proc } => {
             let compiled_cond = compile_pipeline(stack_frame, cond_pipeline)?;
 
-            let then_label_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
-            let else_label_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+            let then_label_loc = temp();
+            let else_label_loc = temp();
 
             let branch_commands = Vec::from([
                 Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
@@ -343,9 +341,9 @@ fn compile_call(
 
             // get return label and jump there
             let jump_return_commands = {
-                let label_offset_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
-                let label_addr_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
-                let label_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+                let label_offset_loc = temp();
+                let label_addr_loc = temp();
+                let label_loc = temp();
 
                 [
                     Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
@@ -405,7 +403,7 @@ fn compile_statement(
         link::Statement::Native(native) => match native.as_ref() {
             hast::NativeOperation::Out { ident } => {
                 let compiled_ident_addr = compile_ident_to_addr(stack_frame, ident)?;
-                let ident_value_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+                let ident_value_loc = temp();
 
                 chain!(
                     compiled_ident_addr.commands,
@@ -423,7 +421,7 @@ fn compile_statement(
             },
             hast::NativeOperation::In { dest_ident } => {
                 let compiled_ident_addr = compile_ident_to_addr(stack_frame, dest_ident)?;
-                let answer_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+                let answer_loc = temp();
 
                 chain!(
                     compiled_ident_addr.commands,
@@ -567,7 +565,7 @@ struct CompiledOperation {
 fn compile_unary_operation(
     compiler: impl FnOnce(Arc<opt::UMemLoc>) -> Vec<Arc<opt::Command<opt::UMemLoc>>>,
 ) -> anyhow::Result<CompiledOperation> {
-    let output_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+    let output_loc = temp();
     let commands = compiler(output_loc.clone());
 
     Ok(CompiledOperation { output_loc, commands })
@@ -581,7 +579,7 @@ fn compile_binary_operation(
     let compiled_value = compile_value(stack_frame, operand)?;
     let value_loc = compiled_value.mem_loc;
 
-    let output_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+    let output_loc = temp();
 
     let operation_commands = compiler(value_loc, output_loc.clone());
 
@@ -604,7 +602,7 @@ fn compile_value(stack_frame: &StackFrame, value: &hast::Value) -> anyhow::Resul
         hast::Value::Ident(ident) => {
             let compiled_ident_addr = compile_ident_to_addr(stack_frame, ident)?;
 
-            let ident_value_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
+            let ident_value_loc = temp();
 
             let assignments = chain!(
                 compiled_ident_addr.commands,
@@ -628,41 +626,54 @@ fn compile_ident_to_addr(
     ident: &hast::Ident,
 ) -> anyhow::Result<CompiledExpr> {
     let compiled = match ident {
-        hast::Ident::Var { name } => {
-            let var_info = stack_frame.get_info(name)?;
-            let stack_offset_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new()))); // offset of var within the current stack frame
-            let stack_addr_loc = Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())));
-
-            let assignments = Vec::from([
-                Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
-                    dest: stack_offset_loc.clone(),
-                    value: Arc::new(opt::Value::Literal(var_info.offset.to_string().into())),
-                }))),
-                Arc::new(opt::Command::Sub(Arc::new(opt::BinaryArgs {
-                    dest: stack_addr_loc.clone(),
-                    left: Arc::new(opt::UMemLoc::StackPointer),
-                    right: stack_offset_loc,
-                }))),
-            ]);
-
-            CompiledExpr { mem_loc: stack_addr_loc, commands: assignments }
-        },
+        hast::Ident::Var { name } => compile_ident_name_to_start_addr(stack_frame, name)?,
         hast::Ident::Array { name, index } => {
-            // let compiled_index = compile_pipeline(index);
+            let compiled_index = compile_pipeline(stack_frame, index)?;
+            let compiled_ident_name = compile_ident_name_to_start_addr(stack_frame, name)?;
+            let indexed_addr_loc = temp();
 
-            // CompiledExpr {
-            //     mem_loc: Arc::new(opt::UMemLoc::Stack {
-            //         var: todo!(),
-            //         offset: Some(compiled_index.mem_loc),
-            //     }),
-            //     assignments: compiled_index.assignments,
-            // }
+            let index_commands = [Arc::new(opt::Command::Add(Arc::new(opt::BinaryArgs {
+                dest: indexed_addr_loc.clone(),
+                left: compiled_ident_name.mem_loc,
+                right: compiled_index.mem_loc,
+            })))];
 
-            todo!()
+            let commands =
+                chain!(compiled_index.commands, compiled_ident_name.commands, index_commands)
+                    .collect();
+
+            CompiledExpr { mem_loc: indexed_addr_loc, commands }
         },
     };
 
     Ok(compiled)
+}
+
+fn compile_ident_name_to_start_addr(
+    stack_frame: &StackFrame,
+    ident_name: &str,
+) -> anyhow::Result<CompiledExpr> {
+    let var_info = stack_frame.get_info(ident_name)?;
+    let stack_offset_loc = temp(); // offset of var within the current stack frame
+    let stack_addr_loc = temp();
+
+    let commands = Vec::from([
+        Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
+            dest: stack_offset_loc.clone(),
+            value: Arc::new(opt::Value::Literal(var_info.offset.to_string().into())),
+        }))),
+        Arc::new(opt::Command::Sub(Arc::new(opt::BinaryArgs {
+            dest: stack_addr_loc.clone(),
+            left: Arc::new(opt::UMemLoc::StackPointer),
+            right: stack_offset_loc,
+        }))),
+    ]);
+
+    Ok(CompiledExpr { mem_loc: stack_addr_loc, commands })
+}
+
+fn temp() -> Arc<opt::UMemLoc> {
+    Arc::new(opt::UMemLoc::Temp(Arc::new(opt::TempVar::new())))
 }
 
 #[derive(Debug)]
