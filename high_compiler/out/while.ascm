@@ -1,0 +1,143 @@
+lit $sp "-1"
+lit $t0 #"main.0"
+jmp $t0
+
+#"main.0"
+lit $t0 "3"
+add $sp $sp $t0
+lit $t0 "Enter how many iterations to do:"
+lit $t1 "1"
+add $t2 $sp $t1
+lit $t1 #"main.1"
+mvdd $t2 $t1
+lit $t1 "2"
+add $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"func.out.0"
+jmp $t0
+
+#"main.1"
+lit $t0 "1"
+sub $t1 $sp $t0
+lit $t0 "1"
+add $t2 $sp $t0
+lit $t0 #"main.2"
+mvdd $t2 $t0
+lit $t0 "2"
+add $t2 $sp $t0
+mvdd $t2 $t1
+lit $t0 #"func.in.0"
+jmp $t0
+
+#"main.2"
+lit $t0 "Start!"
+lit $t1 "1"
+add $t2 $sp $t1
+lit $t1 #"main.3"
+mvdd $t2 $t1
+lit $t1 "2"
+add $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"func.out.0"
+jmp $t0
+
+#"main.3"
+lit $t0 "1"
+lit $t1 "0"
+sub $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"main.8"
+jmp $t0
+
+#"main.4"
+lit $t0 "End!"
+lit $t1 "1"
+add $t2 $sp $t1
+lit $t1 #"main.5"
+mvdd $t2 $t1
+lit $t1 "2"
+add $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"func.out.0"
+jmp $t0
+
+#"main.5"
+exit
+
+#"main.6"
+lit $t0 "1"
+sub $t1 $sp $t0
+mvds $t0 $t1
+lit $t1 "1"
+add $t2 $sp $t1
+lit $t1 #"main.7"
+mvdd $t2 $t1
+lit $t1 "2"
+add $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"func.out.0"
+jmp $t0
+
+#"main.7"
+lit $t0 "1"
+sub $t1 $sp $t0
+mvds $t0 $t1
+lit $t1 "1"
+sub $t2 $t0 $t1
+lit $t0 "1"
+sub $t1 $sp $t0
+mvdd $t1 $t2
+lit $t0 "1"
+sub $t1 $sp $t0
+mvds $t0 $t1
+lit $t1 "0"
+neq $t2 $t0 $t1
+lit $t0 "0"
+sub $t1 $sp $t0
+mvdd $t1 $t2
+lit $t0 #"main.8"
+jmp $t0
+
+#"main.8"
+lit $t0 "0"
+sub $t1 $sp $t0
+mvds $t0 $t1
+lit $t1 #"main.6"
+brc $t1 $t0
+lit $t0 #"main.4"
+jmp $t0
+
+#"func.out.0"
+lit $t0 "2"
+add $sp $sp $t0
+lit $t0 "0"
+sub $t1 $sp $t0
+mvds $t0 $t1
+out $t0
+lit $t0 "2"
+sub $sp $sp $t0
+lit $t0 "1"
+add $t1 $sp $t0
+mvds $t0 $t1
+jmp $t0
+
+#"func.in.0"
+lit $t0 "3"
+add $sp $sp $t0
+lit $t0 "0"
+sub $t1 $sp $t0
+in $t0
+mvdd $t1 $t0
+lit $t0 "0"
+sub $t1 $sp $t0
+mvds $t0 $t1
+lit $t1 "1"
+sub $t2 $sp $t1
+mvds $t2 $t2
+mvdd $t2 $t0
+lit $t0 "3"
+sub $sp $sp $t0
+lit $t0 "1"
+add $t1 $sp $t0
+mvds $t0 $t1
+jmp $t0

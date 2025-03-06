@@ -1,0 +1,202 @@
+lit $sp "-1"
+lit $t0 #"main.0"
+jmp $t0
+
+#"main.0"
+lit $t0 "4"
+add $sp $sp $t0
+lit $t0 "5"
+lit $t1 "2"
+sub $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 "5"
+lit $t1 "1"
+sub $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 "12"
+lit $t1 "0"
+sub $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 "2"
+sub $t1 $sp $t0
+mvds $t0 $t1
+lit $t1 "1"
+sub $t2 $sp $t1
+mvds $t1 $t2
+eq $t2 $t0 $t1
+lit $t0 #"main.3"
+brc $t0 $t2
+lit $t0 #"main.10"
+jmp $t0
+
+#"main.1"
+lit $t0 "Done!"
+lit $t1 "1"
+add $t2 $sp $t1
+lit $t1 #"main.2"
+mvdd $t2 $t1
+lit $t1 "2"
+add $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"func.out.0"
+jmp $t0
+
+#"main.2"
+exit
+
+#"main.3"
+lit $t0 "A is equal to B..."
+lit $t1 "1"
+add $t2 $sp $t1
+lit $t1 #"main.4"
+mvdd $t2 $t1
+lit $t1 "2"
+add $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"func.out.0"
+jmp $t0
+
+#"main.4"
+lit $t0 "2"
+sub $t1 $sp $t0
+mvds $t0 $t1
+lit $t1 "0"
+sub $t2 $sp $t1
+mvds $t1 $t2
+eq $t2 $t0 $t1
+lit $t0 #"main.6"
+brc $t0 $t2
+lit $t0 #"main.8"
+jmp $t0
+
+#"main.5"
+lit $t0 #"main.1"
+jmp $t0
+
+#"main.6"
+lit $t0 "...and equal to C!"
+lit $t1 "1"
+add $t2 $sp $t1
+lit $t1 #"main.7"
+mvdd $t2 $t1
+lit $t1 "2"
+add $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"func.out.0"
+jmp $t0
+
+#"main.7"
+lit $t0 #"main.5"
+jmp $t0
+
+#"main.8"
+lit $t0 "...but not equal to C..."
+lit $t1 "1"
+add $t2 $sp $t1
+lit $t1 #"main.9"
+mvdd $t2 $t1
+lit $t1 "2"
+add $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"func.out.0"
+jmp $t0
+
+#"main.9"
+lit $t0 #"main.5"
+jmp $t0
+
+#"main.10"
+lit $t0 "A is not equal to B..."
+lit $t1 "1"
+add $t2 $sp $t1
+lit $t1 #"main.11"
+mvdd $t2 $t1
+lit $t1 "2"
+add $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"func.out.0"
+jmp $t0
+
+#"main.11"
+lit $t0 "2"
+sub $t1 $sp $t0
+mvds $t0 $t1
+lit $t1 "0"
+sub $t2 $sp $t1
+mvds $t1 $t2
+eq $t2 $t0 $t1
+lit $t0 #"main.13"
+brc $t0 $t2
+lit $t0 #"main.15"
+jmp $t0
+
+#"main.12"
+lit $t0 #"main.1"
+jmp $t0
+
+#"main.13"
+lit $t0 "...but it is equal to C!"
+lit $t1 "1"
+add $t2 $sp $t1
+lit $t1 #"main.14"
+mvdd $t2 $t1
+lit $t1 "2"
+add $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"func.out.0"
+jmp $t0
+
+#"main.14"
+lit $t0 #"main.12"
+jmp $t0
+
+#"main.15"
+lit $t0 "...or C..."
+lit $t1 "1"
+add $t2 $sp $t1
+lit $t1 #"main.16"
+mvdd $t2 $t1
+lit $t1 "2"
+add $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"func.out.0"
+jmp $t0
+
+#"main.16"
+lit $t0 #"main.12"
+jmp $t0
+
+#"func.out.0"
+lit $t0 "2"
+add $sp $sp $t0
+lit $t0 "0"
+sub $t1 $sp $t0
+mvds $t0 $t1
+out $t0
+lit $t0 "2"
+sub $sp $sp $t0
+lit $t0 "1"
+add $t1 $sp $t0
+mvds $t0 $t1
+jmp $t0
+
+#"func.in.0"
+lit $t0 "3"
+add $sp $sp $t0
+lit $t0 "0"
+sub $t1 $sp $t0
+in $t0
+mvdd $t1 $t0
+lit $t0 "0"
+sub $t1 $sp $t0
+mvds $t0 $t1
+lit $t1 "1"
+sub $t2 $sp $t1
+mvds $t2 $t2
+mvdd $t2 $t0
+lit $t0 "3"
+sub $sp $sp $t0
+lit $t0 "1"
+add $t1 $sp $t0
+mvds $t0 $t1
+jmp $t0

@@ -1,7 +1,7 @@
 main || {
     out("Starting...");
 
-    if "1" {
+    if 1 {
         foo();
     }
 

@@ -3,18 +3,18 @@ lit $t0 #"main.0"
 jmp $t0
 
 #"main.0"
-lit $t0 "2"
-add $sp $sp $t0
-lit $t0 "1"
-lit $t1 "2"
-add $t2 $t0 $t1
 lit $t0 "3"
-add $t1 $t2 $t0
-lit $t0 "4"
-add $t2 $t1 $t0
-lit $t0 "0"
+add $sp $sp $t0
+lit $t0 "12345"
+lit $t1 "1"
+sub $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 "1"
 sub $t1 $sp $t0
-mvdd $t1 $t2
+mvds $t0 $t1
+lit $t1 "0"
+sub $t2 $sp $t1
+mvdd $t2 $t0
 exit
 
 #"func.out.0"

@@ -27,18 +27,60 @@ pub enum Value {
 }
 
 #[derive(Debug)]
+pub struct SetArgs<MemLoc> {
+    pub dest: Arc<MemLoc>,
+    pub value: Arc<Value>,
+}
+
+#[derive(Debug)]
+pub struct UnaryArgs<MemLoc> {
+    pub dest: Arc<MemLoc>,
+    pub src: Arc<MemLoc>,
+}
+
+#[derive(Debug)]
+pub struct BinaryArgs<MemLoc> {
+    pub dest: Arc<MemLoc>,
+    pub left: Arc<MemLoc>,
+    pub right: Arc<MemLoc>,
+}
+
+#[derive(Debug)]
+pub struct VoidArgs<MemLoc> {
+    pub src: Arc<MemLoc>,
+}
+
+#[derive(Debug)]
+pub struct InputArgs<MemLoc> {
+    pub dest: Arc<MemLoc>,
+}
+
+#[derive(Debug)]
+pub struct CondArgs<MemLoc> {
+    pub cond: Arc<MemLoc>,
+    pub src: Arc<MemLoc>,
+}
+
+#[derive(Debug)]
 pub enum Command<MemLoc> {
-    Set { dest: Arc<MemLoc>, value: Arc<Value> },
-    Copy { dest: Arc<MemLoc>, src: Arc<MemLoc> },
-    CopyDerefDest { dest: Arc<MemLoc>, src: Arc<MemLoc> },
-    Deref { dest: Arc<MemLoc>, src: Arc<MemLoc> },
-    Add { dest: Arc<MemLoc>, left: Arc<MemLoc>, right: Arc<MemLoc> },
-    Sub { dest: Arc<MemLoc>, left: Arc<MemLoc>, right: Arc<MemLoc> },
-    Jump { src: Arc<MemLoc> },
-    Out { src: Arc<MemLoc> },
-    In { dest: Arc<MemLoc> },
+    Set(Arc<SetArgs<MemLoc>>),
+    Copy(Arc<UnaryArgs<MemLoc>>),
+    CopyDerefDest(Arc<UnaryArgs<MemLoc>>),
+    Deref(Arc<UnaryArgs<MemLoc>>),
+    Add(Arc<BinaryArgs<MemLoc>>),
+    Sub(Arc<BinaryArgs<MemLoc>>),
+    Mul(Arc<BinaryArgs<MemLoc>>),
+    Div(Arc<BinaryArgs<MemLoc>>),
+    Mod(Arc<BinaryArgs<MemLoc>>),
+    Jump(Arc<VoidArgs<MemLoc>>),
+    Out(Arc<VoidArgs<MemLoc>>),
+    In(Arc<InputArgs<MemLoc>>),
     Exit,
-    Branch { cond: Arc<MemLoc>, label: Arc<MemLoc> },
+    Branch(Arc<CondArgs<MemLoc>>),
+    Eq(Arc<BinaryArgs<MemLoc>>),
+    Lte(Arc<BinaryArgs<MemLoc>>),
+    Neq(Arc<BinaryArgs<MemLoc>>),
+    Not(Arc<UnaryArgs<MemLoc>>),
 }
 
 #[derive(Debug)]

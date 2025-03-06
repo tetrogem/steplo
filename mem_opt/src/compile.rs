@@ -142,65 +142,156 @@ fn compile_command(
     command: &ast::Command<RMemLoc>,
 ) -> anyhow::Result<Vec<Arc<asm::Command>>> {
     let commands = match command {
-        ast::Command::Set { dest, value } => {
-            Vec::from([data(asm::DataCommand::Set(asm::BinaryArgs {
-                dest: compile_mem_loc(register_manager, dest),
-                val: compile_value(asm_proc_manager, value)?,
-            }))])
-        },
-        ast::Command::Copy { dest, src } => {
-            Vec::from([data(asm::DataCommand::Move(asm::BinaryArgs {
-                dest: compile_mem_loc(register_manager, dest),
-                val: compile_mem_loc(register_manager, src),
-            }))])
-        },
-        ast::Command::CopyDerefDest { dest, src } => {
-            Vec::from([data(asm::DataCommand::MoveDerefDest(asm::BinaryArgs {
-                dest: compile_mem_loc(register_manager, dest),
-                val: compile_mem_loc(register_manager, src),
-            }))])
-        },
-        ast::Command::Deref { dest, src } => {
-            Vec::from([data(asm::DataCommand::MoveDerefSrc(asm::BinaryArgs {
-                dest: compile_mem_loc(register_manager, dest),
-                val: compile_mem_loc(register_manager, src),
-            }))])
-        },
-        ast::Command::Add { dest, left, right } => {
-            Vec::from([data(asm::DataCommand::Add(asm::TernaryArgs {
-                dest: compile_mem_loc(register_manager, dest),
-                left: compile_mem_loc(register_manager, left),
-                right: compile_mem_loc(register_manager, right),
-            }))])
-        },
-        ast::Command::Sub { dest, left, right } => {
-            Vec::from([data(asm::DataCommand::Sub(asm::TernaryArgs {
-                dest: compile_mem_loc(register_manager, dest),
-                left: compile_mem_loc(register_manager, left),
-                right: compile_mem_loc(register_manager, right),
-            }))])
-        },
-        ast::Command::Jump { src } => {
-            Vec::from([control(asm::ControlCommand::Jump(asm::UnaryArgs {
-                val: compile_mem_loc(register_manager, src),
-            }))])
-        },
-        ast::Command::Out { src } => Vec::from([data(asm::DataCommand::Out(asm::UnaryArgs {
-            val: compile_mem_loc(register_manager, src),
-        }))]),
-        ast::Command::In { dest } => Vec::from([data(asm::DataCommand::In(asm::UnaryArgs {
-            val: compile_mem_loc(register_manager, dest),
-        }))]),
+        ast::Command::Set(args) => Vec::from([data(asm::DataCommand::Set(
+            args.compile(asm_proc_manager, register_manager)?,
+        ))]),
+        ast::Command::Copy(args) => Vec::from([data(asm::DataCommand::Move(
+            args.compile(asm_proc_manager, register_manager)?,
+        ))]),
+        ast::Command::CopyDerefDest(args) => Vec::from([data(asm::DataCommand::MoveDerefDest(
+            args.compile(asm_proc_manager, register_manager)?,
+        ))]),
+        ast::Command::Deref(args) => Vec::from([data(asm::DataCommand::MoveDerefSrc(
+            args.compile(asm_proc_manager, register_manager)?,
+        ))]),
+        ast::Command::Add(args) => Vec::from([data(asm::DataCommand::Add(
+            args.compile(asm_proc_manager, register_manager)?,
+        ))]),
+        ast::Command::Sub(args) => Vec::from([data(asm::DataCommand::Sub(
+            args.compile(asm_proc_manager, register_manager)?,
+        ))]),
+        ast::Command::Jump(args) => Vec::from([control(asm::ControlCommand::Jump(
+            args.compile(asm_proc_manager, register_manager)?,
+        ))]),
+        ast::Command::Out(args) => Vec::from([data(asm::DataCommand::Out(
+            args.compile(asm_proc_manager, register_manager)?,
+        ))]),
+        ast::Command::In(args) => Vec::from([data(asm::DataCommand::In(
+            args.compile(asm_proc_manager, register_manager)?,
+        ))]),
         ast::Command::Exit => Vec::from([control(asm::ControlCommand::Exit)]),
-        ast::Command::Branch { cond, label } => {
-            Vec::from([control(asm::ControlCommand::Branch(asm::BinaryArgs {
-                dest: compile_mem_loc(register_manager, label),
-                val: compile_mem_loc(register_manager, cond),
-            }))])
-        },
+        ast::Command::Branch(args) => Vec::from([control(asm::ControlCommand::Branch(
+            args.compile(asm_proc_manager, register_manager)?,
+        ))]),
+        ast::Command::Mul(args) => Vec::from([data(asm::DataCommand::Mul(
+            args.compile(asm_proc_manager, register_manager)?,
+        ))]),
+        ast::Command::Div(args) => Vec::from([data(asm::DataCommand::Div(
+            args.compile(asm_proc_manager, register_manager)?,
+        ))]),
+        ast::Command::Mod(args) => Vec::from([data(asm::DataCommand::Mod(
+            args.compile(asm_proc_manager, register_manager)?,
+        ))]),
+        ast::Command::Eq(args) => Vec::from([data(asm::DataCommand::Eq(
+            args.compile(asm_proc_manager, register_manager)?,
+        ))]),
+        ast::Command::Lte(args) => Vec::from([data(asm::DataCommand::Lte(
+            args.compile(asm_proc_manager, register_manager)?,
+        ))]),
+        ast::Command::Neq(args) => Vec::from([data(asm::DataCommand::Neq(
+            args.compile(asm_proc_manager, register_manager)?,
+        ))]),
+        ast::Command::Not(args) => Vec::from([data(asm::DataCommand::Not(
+            args.compile(asm_proc_manager, register_manager)?,
+        ))]),
     };
 
     Ok(commands)
+}
+
+trait CompileArgs {
+    type Compiled;
+
+    fn compile(
+        &self,
+        asm_proc_manager: &AsmProcManager,
+        register_manager: &mut RegisterManager,
+    ) -> anyhow::Result<Self::Compiled>;
+}
+
+impl CompileArgs for ast::SetArgs<RMemLoc> {
+    type Compiled = asm::BinaryArgs;
+
+    fn compile(
+        &self,
+        asm_proc_manager: &AsmProcManager,
+        register_manager: &mut RegisterManager,
+    ) -> anyhow::Result<Self::Compiled> {
+        Ok(asm::BinaryArgs {
+            dest: compile_mem_loc(register_manager, &self.dest),
+            val: compile_value(asm_proc_manager, &self.value)?,
+        })
+    }
+}
+
+impl CompileArgs for ast::UnaryArgs<RMemLoc> {
+    type Compiled = asm::BinaryArgs;
+
+    fn compile(
+        &self,
+        _asm_proc_manager: &AsmProcManager,
+        register_manager: &mut RegisterManager,
+    ) -> anyhow::Result<Self::Compiled> {
+        Ok(asm::BinaryArgs {
+            dest: compile_mem_loc(register_manager, &self.dest),
+            val: compile_mem_loc(register_manager, &self.src),
+        })
+    }
+}
+
+impl CompileArgs for ast::BinaryArgs<RMemLoc> {
+    type Compiled = asm::TernaryArgs;
+
+    fn compile(
+        &self,
+        _asm_proc_manager: &AsmProcManager,
+        register_manager: &mut RegisterManager,
+    ) -> anyhow::Result<Self::Compiled> {
+        Ok(asm::TernaryArgs {
+            dest: compile_mem_loc(register_manager, &self.dest),
+            left: compile_mem_loc(register_manager, &self.left),
+            right: compile_mem_loc(register_manager, &self.right),
+        })
+    }
+}
+
+impl CompileArgs for ast::VoidArgs<RMemLoc> {
+    type Compiled = asm::UnaryArgs;
+
+    fn compile(
+        &self,
+        _asm_proc_manager: &AsmProcManager,
+        register_manager: &mut RegisterManager,
+    ) -> anyhow::Result<Self::Compiled> {
+        Ok(asm::UnaryArgs { val: compile_mem_loc(register_manager, &self.src) })
+    }
+}
+
+impl CompileArgs for ast::InputArgs<RMemLoc> {
+    type Compiled = asm::UnaryArgs;
+
+    fn compile(
+        &self,
+        _asm_proc_manager: &AsmProcManager,
+        register_manager: &mut RegisterManager,
+    ) -> anyhow::Result<Self::Compiled> {
+        Ok(asm::UnaryArgs { val: compile_mem_loc(register_manager, &self.dest) })
+    }
+}
+
+impl CompileArgs for ast::CondArgs<RMemLoc> {
+    type Compiled = asm::BinaryArgs;
+
+    fn compile(
+        &self,
+        _asm_proc_manager: &AsmProcManager,
+        register_manager: &mut RegisterManager,
+    ) -> anyhow::Result<Self::Compiled> {
+        Ok(asm::BinaryArgs {
+            dest: compile_mem_loc(register_manager, &self.src),
+            val: compile_mem_loc(register_manager, &self.cond),
+        })
+    }
 }
 
 fn compile_mem_loc(register_manager: &mut RegisterManager, mem_loc: &RMemLoc) -> Arc<asm::Value> {

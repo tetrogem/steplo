@@ -17,41 +17,41 @@ fn main() -> anyhow::Result<()> {
             Arc::new(ast::SubProc {
                 uuid: Uuid::new_v4(),
                 commands: Arc::new(Vec::from([
-                    Arc::new(ast::Command::Add {
+                    Arc::new(ast::Command::Add(Arc::new(ast::BinaryArgs {
                         dest: Arc::new(ast::UMemLoc::Temp(t1.clone())),
                         left: Arc::new(ast::UMemLoc::StackPointer),
                         right: Arc::new(ast::UMemLoc::StackPointer),
-                    }),
-                    Arc::new(ast::Command::Add {
+                    }))),
+                    Arc::new(ast::Command::Add(Arc::new(ast::BinaryArgs {
                         dest: Arc::new(ast::UMemLoc::Temp(t2.clone())),
                         left: Arc::new(ast::UMemLoc::StackPointer),
                         right: Arc::new(ast::UMemLoc::StackPointer),
-                    }),
-                    Arc::new(ast::Command::Add {
+                    }))),
+                    Arc::new(ast::Command::Add(Arc::new(ast::BinaryArgs {
                         dest: Arc::new(ast::UMemLoc::StackPointer),
                         left: Arc::new(ast::UMemLoc::Temp(t1.clone())),
                         right: Arc::new(ast::UMemLoc::StackPointer),
-                    }),
+                    }))),
                 ])),
             }),
             Arc::new(ast::SubProc {
                 uuid: Uuid::new_v4(),
                 commands: Arc::new(Vec::from([
-                    Arc::new(ast::Command::Add {
+                    Arc::new(ast::Command::Add(Arc::new(ast::BinaryArgs {
                         dest: Arc::new(ast::UMemLoc::Temp(t3.clone())),
                         left: Arc::new(ast::UMemLoc::StackPointer),
                         right: Arc::new(ast::UMemLoc::StackPointer),
-                    }),
-                    Arc::new(ast::Command::Add {
+                    }))),
+                    Arc::new(ast::Command::Add(Arc::new(ast::BinaryArgs {
                         dest: Arc::new(ast::UMemLoc::Temp(t2.clone())),
                         left: Arc::new(ast::UMemLoc::StackPointer),
                         right: Arc::new(ast::UMemLoc::StackPointer),
-                    }),
-                    Arc::new(ast::Command::Add {
+                    }))),
+                    Arc::new(ast::Command::Add(Arc::new(ast::BinaryArgs {
                         dest: Arc::new(ast::UMemLoc::Temp(t1.clone())),
                         left: Arc::new(ast::UMemLoc::Temp(t3.clone())),
                         right: Arc::new(ast::UMemLoc::Temp(t2.clone())),
-                    }),
+                    }))),
                 ])),
             }),
         ])),

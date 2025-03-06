@@ -121,7 +121,7 @@ pub fn designate_registers(
 
             // find when temps are last used (iterate over statements in reverse)
             for command in sp.commands.as_ref().iter().rev() {
-                let add = |umems: &[&Arc<ast::UMemLoc>]| {
+                let add = |umems: &[Arc<ast::UMemLoc>]| {
                     let mut temps = Vec::new();
                     for umem in umems {
                         if let ast::UMemLoc::Temp(temp) = umem.as_ref() {
@@ -132,21 +132,27 @@ pub fn designate_registers(
                     temps
                 };
 
-                let mem_locs: &[&Arc<ast::UMemLoc>] = match command.as_ref() {
-                    ast::Command::Set { dest, value: _ } => &[dest],
-                    ast::Command::Copy { dest, src } => &[dest, src],
-                    ast::Command::CopyDerefDest { dest, src } => &[dest, src],
-                    ast::Command::Deref { dest, src } => &[dest, src],
-                    ast::Command::Add { dest, left, right } => &[dest, left, right],
-                    ast::Command::Sub { dest, left, right } => &[dest, left, right],
-                    ast::Command::Jump { src } => &[src],
-                    ast::Command::Out { src } => &[src],
-                    ast::Command::In { dest } => &[dest],
-                    ast::Command::Exit => &[],
-                    ast::Command::Branch { cond, label } => &[cond, label],
+                let mem_locs = match command.as_ref() {
+                    ast::Command::Set(args) => args.to_mem_locs(),
+                    ast::Command::Copy(args) => args.to_mem_locs(),
+                    ast::Command::CopyDerefDest(args) => args.to_mem_locs(),
+                    ast::Command::Deref(args) => args.to_mem_locs(),
+                    ast::Command::Add(args) => args.to_mem_locs(),
+                    ast::Command::Sub(args) => args.to_mem_locs(),
+                    ast::Command::Mul(args) => args.to_mem_locs(),
+                    ast::Command::Div(args) => args.to_mem_locs(),
+                    ast::Command::Mod(args) => args.to_mem_locs(),
+                    ast::Command::Jump(args) => args.to_mem_locs(),
+                    ast::Command::Out(args) => args.to_mem_locs(),
+                    ast::Command::In(args) => args.to_mem_locs(),
+                    ast::Command::Exit => Vec::new(),
+                    ast::Command::Branch(args) => args.to_mem_locs(),
+                    ast::Command::Eq(args) => args.to_mem_locs(),
+                    ast::Command::Lte(args) => args.to_mem_locs(),
+                    ast::Command::Neq(args) => args.to_mem_locs(),
+                    ast::Command::Not(args) => args.to_mem_locs(),
                 };
 
-                let mem_locs = mem_locs.iter().copied().collect_vec();
                 let temps = add(&mem_locs);
 
                 // since we're iterating in reverse, we will encounter each temp when its used last
@@ -165,37 +171,28 @@ pub fn designate_registers(
             // convert statements umem -> rmem
             let mut commands = Vec::new();
             for (command, temp_frees) in command_with_temp_frees.into_iter().rev() {
+                let temp_m = &mut temp_m;
                 let command = match command.as_ref() {
-                    ast::Command::Set { dest, value } => {
-                        ast::Command::Set { dest: temp_m.rmem(dest), value: value.clone() }
+                    ast::Command::Set(args) => ast::Command::Set(args.rmem(temp_m)),
+                    ast::Command::Copy(args) => ast::Command::Copy(args.rmem(temp_m)),
+                    ast::Command::CopyDerefDest(args) => {
+                        ast::Command::CopyDerefDest(args.rmem(temp_m))
                     },
-                    ast::Command::Copy { dest, src } => {
-                        ast::Command::Copy { dest: temp_m.rmem(dest), src: temp_m.rmem(src) }
-                    },
-                    ast::Command::CopyDerefDest { dest, src } => ast::Command::CopyDerefDest {
-                        dest: temp_m.rmem(dest),
-                        src: temp_m.rmem(src),
-                    },
-                    ast::Command::Deref { dest, src } => {
-                        ast::Command::Deref { dest: temp_m.rmem(dest), src: temp_m.rmem(src) }
-                    },
-                    ast::Command::Add { dest, left, right } => ast::Command::Add {
-                        dest: temp_m.rmem(dest),
-                        left: temp_m.rmem(left),
-                        right: temp_m.rmem(right),
-                    },
-                    ast::Command::Sub { dest, left, right } => ast::Command::Sub {
-                        dest: temp_m.rmem(dest),
-                        left: temp_m.rmem(left),
-                        right: temp_m.rmem(right),
-                    },
-                    ast::Command::Jump { src } => ast::Command::Jump { src: temp_m.rmem(src) },
-                    ast::Command::Out { src } => ast::Command::Out { src: temp_m.rmem(src) },
-                    ast::Command::In { dest } => ast::Command::In { dest: temp_m.rmem(dest) },
+                    ast::Command::Deref(args) => ast::Command::Deref(args.rmem(temp_m)),
+                    ast::Command::Add(args) => ast::Command::Add(args.rmem(temp_m)),
+                    ast::Command::Sub(args) => ast::Command::Sub(args.rmem(temp_m)),
+                    ast::Command::Mul(args) => ast::Command::Mul(args.rmem(temp_m)),
+                    ast::Command::Div(args) => ast::Command::Div(args.rmem(temp_m)),
+                    ast::Command::Mod(args) => ast::Command::Mod(args.rmem(temp_m)),
+                    ast::Command::Jump(args) => ast::Command::Jump(args.rmem(temp_m)),
+                    ast::Command::Out(args) => ast::Command::Out(args.rmem(temp_m)),
+                    ast::Command::In(args) => ast::Command::In(args.rmem(temp_m)),
                     ast::Command::Exit => ast::Command::Exit,
-                    ast::Command::Branch { cond, label } => {
-                        ast::Command::Branch { cond: temp_m.rmem(cond), label: temp_m.rmem(label) }
-                    },
+                    ast::Command::Branch(args) => ast::Command::Branch(args.rmem(temp_m)),
+                    ast::Command::Eq(args) => ast::Command::Eq(args.rmem(temp_m)),
+                    ast::Command::Lte(args) => ast::Command::Lte(args.rmem(temp_m)),
+                    ast::Command::Neq(args) => ast::Command::Neq(args.rmem(temp_m)),
+                    ast::Command::Not(args) => ast::Command::Not(args.rmem(temp_m)),
                 };
 
                 commands.push(Arc::new(command));
@@ -218,4 +215,87 @@ pub fn designate_registers(
     }
 
     procs
+}
+
+trait ArgsExt {
+    type RMem;
+
+    fn to_mem_locs(&self) -> Vec<Arc<ast::UMemLoc>>;
+    fn rmem(&self, temp_m: &mut TempManager) -> Arc<Self::RMem>;
+}
+
+impl ArgsExt for ast::SetArgs<ast::UMemLoc> {
+    type RMem = ast::SetArgs<RMemLoc>;
+
+    fn to_mem_locs(&self) -> Vec<Arc<ast::UMemLoc>> {
+        Vec::from([self.dest.clone()])
+    }
+
+    fn rmem(&self, temp_m: &mut TempManager) -> Arc<Self::RMem> {
+        Arc::new(ast::SetArgs { dest: temp_m.rmem(&self.dest), value: self.value.clone() })
+    }
+}
+
+impl ArgsExt for ast::UnaryArgs<ast::UMemLoc> {
+    type RMem = ast::UnaryArgs<RMemLoc>;
+
+    fn to_mem_locs(&self) -> Vec<Arc<ast::UMemLoc>> {
+        Vec::from([self.dest.clone(), self.src.clone()])
+    }
+
+    fn rmem(&self, temp_m: &mut TempManager) -> Arc<Self::RMem> {
+        Arc::new(ast::UnaryArgs { dest: temp_m.rmem(&self.dest), src: temp_m.rmem(&self.src) })
+    }
+}
+
+impl ArgsExt for ast::BinaryArgs<ast::UMemLoc> {
+    type RMem = ast::BinaryArgs<RMemLoc>;
+
+    fn to_mem_locs(&self) -> Vec<Arc<ast::UMemLoc>> {
+        Vec::from([self.dest.clone(), self.left.clone(), self.right.clone()])
+    }
+
+    fn rmem(&self, temp_m: &mut TempManager) -> Arc<Self::RMem> {
+        Arc::new(ast::BinaryArgs {
+            dest: temp_m.rmem(&self.dest),
+            left: temp_m.rmem(&self.left),
+            right: temp_m.rmem(&self.right),
+        })
+    }
+}
+
+impl ArgsExt for ast::VoidArgs<ast::UMemLoc> {
+    type RMem = ast::VoidArgs<RMemLoc>;
+
+    fn to_mem_locs(&self) -> Vec<Arc<ast::UMemLoc>> {
+        Vec::from([self.src.clone()])
+    }
+
+    fn rmem(&self, temp_m: &mut TempManager) -> Arc<Self::RMem> {
+        Arc::new(ast::VoidArgs { src: temp_m.rmem(&self.src) })
+    }
+}
+
+impl ArgsExt for ast::InputArgs<ast::UMemLoc> {
+    type RMem = ast::InputArgs<RMemLoc>;
+
+    fn to_mem_locs(&self) -> Vec<Arc<ast::UMemLoc>> {
+        Vec::from([self.dest.clone()])
+    }
+
+    fn rmem(&self, temp_m: &mut TempManager) -> Arc<Self::RMem> {
+        Arc::new(ast::InputArgs { dest: temp_m.rmem(&self.dest) })
+    }
+}
+
+impl ArgsExt for ast::CondArgs<ast::UMemLoc> {
+    type RMem = ast::CondArgs<RMemLoc>;
+
+    fn to_mem_locs(&self) -> Vec<Arc<ast::UMemLoc>> {
+        Vec::from([self.cond.clone(), self.src.clone()])
+    }
+
+    fn rmem(&self, temp_m: &mut TempManager) -> Arc<Self::RMem> {
+        Arc::new(ast::CondArgs { cond: temp_m.rmem(&self.cond), src: temp_m.rmem(&self.src) })
+    }
 }

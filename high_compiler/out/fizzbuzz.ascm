@@ -1,0 +1,226 @@
+lit $sp "-1"
+lit $t0 #"main.0"
+jmp $t0
+
+#"main.0"
+lit $t0 "3"
+add $sp $sp $t0
+lit $t0 "Enter how many iterations to perform:"
+lit $t1 "1"
+add $t2 $sp $t1
+lit $t1 #"main.1"
+mvdd $t2 $t1
+lit $t1 "2"
+add $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"func.out.0"
+jmp $t0
+
+#"main.1"
+lit $t0 "0"
+sub $t1 $sp $t0
+lit $t0 "1"
+add $t2 $sp $t0
+lit $t0 #"main.2"
+mvdd $t2 $t0
+lit $t0 "2"
+add $t2 $sp $t0
+mvdd $t2 $t1
+lit $t0 #"func.in.0"
+jmp $t0
+
+#"main.2"
+lit $t0 "1"
+lit $t1 "1"
+sub $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"main.19"
+jmp $t0
+
+#"main.3"
+lit $t0 "Done!"
+lit $t1 "1"
+add $t2 $sp $t1
+lit $t1 #"main.4"
+mvdd $t2 $t1
+lit $t1 "2"
+add $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"func.out.0"
+jmp $t0
+
+#"main.4"
+exit
+
+#"main.5"
+lit $t0 "1"
+sub $t1 $sp $t0
+mvds $t0 $t1
+lit $t1 "15"
+mod $t2 $t0 $t1
+lit $t0 "0"
+eq $t1 $t2 $t0
+lit $t0 #"main.7"
+brc $t0 $t1
+lit $t0 #"main.9"
+jmp $t0
+
+#"main.6"
+lit $t0 "1"
+sub $t1 $sp $t0
+mvds $t0 $t1
+lit $t1 "1"
+add $t2 $t0 $t1
+lit $t0 "1"
+sub $t1 $sp $t0
+mvdd $t1 $t2
+lit $t0 #"main.19"
+jmp $t0
+
+#"main.7"
+lit $t0 "FizzBuzz"
+lit $t1 "1"
+add $t2 $sp $t1
+lit $t1 #"main.8"
+mvdd $t2 $t1
+lit $t1 "2"
+add $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"func.out.0"
+jmp $t0
+
+#"main.8"
+lit $t0 #"main.6"
+jmp $t0
+
+#"main.9"
+lit $t0 "1"
+sub $t1 $sp $t0
+mvds $t0 $t1
+lit $t1 "3"
+mod $t2 $t0 $t1
+lit $t0 "0"
+eq $t1 $t2 $t0
+lit $t0 #"main.11"
+brc $t0 $t1
+lit $t0 #"main.13"
+jmp $t0
+
+#"main.10"
+lit $t0 #"main.6"
+jmp $t0
+
+#"main.11"
+lit $t0 "Fizz"
+lit $t1 "1"
+add $t2 $sp $t1
+lit $t1 #"main.12"
+mvdd $t2 $t1
+lit $t1 "2"
+add $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"func.out.0"
+jmp $t0
+
+#"main.12"
+lit $t0 #"main.10"
+jmp $t0
+
+#"main.13"
+lit $t0 "1"
+sub $t1 $sp $t0
+mvds $t0 $t1
+lit $t1 "5"
+mod $t2 $t0 $t1
+lit $t0 "0"
+eq $t1 $t2 $t0
+lit $t0 #"main.15"
+brc $t0 $t1
+lit $t0 #"main.17"
+jmp $t0
+
+#"main.14"
+lit $t0 #"main.10"
+jmp $t0
+
+#"main.15"
+lit $t0 "Buzz"
+lit $t1 "1"
+add $t2 $sp $t1
+lit $t1 #"main.16"
+mvdd $t2 $t1
+lit $t1 "2"
+add $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"func.out.0"
+jmp $t0
+
+#"main.16"
+lit $t0 #"main.14"
+jmp $t0
+
+#"main.17"
+lit $t0 "1"
+sub $t1 $sp $t0
+mvds $t0 $t1
+lit $t1 "1"
+add $t2 $sp $t1
+lit $t1 #"main.18"
+mvdd $t2 $t1
+lit $t1 "2"
+add $t2 $sp $t1
+mvdd $t2 $t0
+lit $t0 #"func.out.0"
+jmp $t0
+
+#"main.18"
+lit $t0 #"main.14"
+jmp $t0
+
+#"main.19"
+lit $t0 "1"
+sub $t1 $sp $t0
+mvds $t0 $t1
+lit $t1 "0"
+sub $t2 $sp $t1
+mvds $t1 $t2
+lte $t2 $t0 $t1
+lit $t0 #"main.5"
+brc $t0 $t2
+lit $t0 #"main.3"
+jmp $t0
+
+#"func.out.0"
+lit $t0 "2"
+add $sp $sp $t0
+lit $t0 "0"
+sub $t1 $sp $t0
+mvds $t0 $t1
+out $t0
+lit $t0 "2"
+sub $sp $sp $t0
+lit $t0 "1"
+add $t1 $sp $t0
+mvds $t0 $t1
+jmp $t0
+
+#"func.in.0"
+lit $t0 "3"
+add $sp $sp $t0
+lit $t0 "0"
+sub $t1 $sp $t0
+in $t0
+mvdd $t1 $t0
+lit $t0 "0"
+sub $t1 $sp $t0
+mvds $t0 $t1
+lit $t1 "1"
+sub $t2 $sp $t1
+mvds $t2 $t2
+mvdd $t2 $t0
+lit $t0 "3"
+sub $sp $sp $t0
+lit $t0 "1"
+add $t1 $sp $t0
+mvds $t0 $t1
+jmp $t0
