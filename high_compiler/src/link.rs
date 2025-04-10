@@ -1,4 +1,4 @@
-use std::{iter::Peekable, mem, sync::Arc};
+use std::{iter::Peekable, sync::Arc};
 
 use itertools::Itertools;
 use uuid::Uuid;
@@ -42,7 +42,7 @@ pub enum Statement {
 
 pub fn link(mut ast: Vec<Arc<ast::TopItem>>) -> anyhow::Result<Vec<Arc<Proc>>> {
     fn declare_var(name: &str) -> Arc<ast::IdentDeclaration> {
-        Arc::new(ast::IdentDeclaration::Value { name: name.into() })
+        Arc::new(ast::IdentDeclaration::Array { name: name.into(), length: 1 })
     }
 
     fn var(name: &str) -> Arc<ast::Ident> {
@@ -76,10 +76,10 @@ pub fn link(mut ast: Vec<Arc<ast::TopItem>>) -> anyhow::Result<Vec<Arc<Proc>>> {
                     ast::Assign {
                         deref_ident: true,
                         ident: var("dest_ref"),
-                        pipeline: Arc::new(ast::Pipeline {
+                        expr: Arc::new(ast::AssignExpr::Pipeline(Arc::new(ast::Pipeline {
                             initial_val: Arc::new(ast::Value::Ident(var("answer"))),
                             operations: Arc::new(Vec::new()),
-                        }),
+                        }))),
                     },
                 ))))),
             ])),

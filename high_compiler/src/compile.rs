@@ -24,7 +24,6 @@ impl StackFrame {
 
         for ident in idents.iter().rev() {
             let size = match ident.as_ref() {
-                hast::IdentDeclaration::Value { .. } => 1,
                 hast::IdentDeclaration::Array { length, .. } => *length,
             };
 
@@ -377,28 +376,54 @@ fn compile_statement(
 ) -> anyhow::Result<Vec<Arc<opt::Command<opt::UMemLoc>>>> {
     let assignments = match statement {
         link::Statement::Assign(assign) => {
-            let compiled_ident_addr = compile_ident_to_addr(stack_frame, &assign.ident)?;
+            let elements = match assign.expr.as_ref() {
+                hast::AssignExpr::Pipeline(pipeline) => &Vec::from([Arc::clone(pipeline)]),
+                hast::AssignExpr::Array(array) => array.elements.as_ref(),
+            };
 
-            let compiled_pipeline = compile_pipeline(stack_frame, &assign.pipeline)?;
+            let mut element_assignments = Vec::new();
 
-            let mut assignments =
-                chain!(compiled_pipeline.commands, compiled_ident_addr.commands,).collect_vec();
+            for (i, element) in elements.iter().enumerate() {
+                let compiled_ident_addr = compile_ident_to_addr(stack_frame, &assign.ident)?;
+                let compiled_offset = compile_pipeline(
+                    stack_frame,
+                    &hast::Pipeline {
+                        initial_val: Arc::new(hast::Value::Literal(i.to_string().into())),
+                        operations: Arc::new(Vec::new()),
+                    },
+                )?;
 
-            if assign.deref_ident {
-                // deref var
-                assignments.push(Arc::new(opt::Command::Deref(Arc::new(opt::UnaryArgs {
-                    dest: compiled_ident_addr.mem_loc.clone(),
-                    src: compiled_ident_addr.mem_loc.clone(),
+                let compile_dest_addr =
+                    compile_addr_offset(compiled_ident_addr.mem_loc, compiled_offset.mem_loc)?;
+
+                let compiled_pipeline = compile_pipeline(stack_frame, element)?;
+
+                let mut assignments = chain!(
+                    compiled_pipeline.commands,
+                    compiled_ident_addr.commands,
+                    compiled_offset.commands,
+                    compile_dest_addr.commands
+                )
+                .collect_vec();
+
+                if assign.deref_ident {
+                    // deref var
+                    assignments.push(Arc::new(opt::Command::Deref(Arc::new(opt::UnaryArgs {
+                        dest: compile_dest_addr.mem_loc.clone(),
+                        src: compile_dest_addr.mem_loc.clone(),
+                    }))));
+                }
+
+                // assign to var
+                assignments.push(Arc::new(opt::Command::CopyDerefDest(Arc::new(opt::UnaryArgs {
+                    dest: compile_dest_addr.mem_loc,
+                    src: compiled_pipeline.mem_loc,
                 }))));
+
+                element_assignments.extend(assignments);
             }
 
-            // assign to var
-            assignments.push(Arc::new(opt::Command::CopyDerefDest(Arc::new(opt::UnaryArgs {
-                dest: compiled_ident_addr.mem_loc,
-                src: compiled_pipeline.mem_loc,
-            }))));
-
-            assignments
+            element_assignments
         },
         link::Statement::Native(native) => match native.as_ref() {
             hast::NativeOperation::Out { ident } => {
@@ -630,23 +655,35 @@ fn compile_ident_to_addr(
         hast::Ident::Array { name, index } => {
             let compiled_index = compile_pipeline(stack_frame, index)?;
             let compiled_ident_name = compile_ident_name_to_start_addr(stack_frame, name)?;
-            let indexed_addr_loc = temp();
-
-            let index_commands = [Arc::new(opt::Command::Add(Arc::new(opt::BinaryArgs {
-                dest: indexed_addr_loc.clone(),
-                left: compiled_ident_name.mem_loc,
-                right: compiled_index.mem_loc,
-            })))];
+            let offset_addr =
+                compile_addr_offset(compiled_ident_name.mem_loc, compiled_index.mem_loc)?;
 
             let commands =
-                chain!(compiled_index.commands, compiled_ident_name.commands, index_commands)
+                chain!(compiled_index.commands, compiled_ident_name.commands, offset_addr.commands)
                     .collect();
 
-            CompiledExpr { mem_loc: indexed_addr_loc, commands }
+            CompiledExpr { mem_loc: offset_addr.mem_loc, commands }
         },
     };
 
     Ok(compiled)
+}
+
+fn compile_addr_offset(
+    addr_loc: Arc<opt::UMemLoc>,
+    offset_loc: Arc<opt::UMemLoc>,
+) -> anyhow::Result<CompiledExpr> {
+    let indexed_addr_loc = temp();
+
+    let index_commands = [Arc::new(opt::Command::Add(Arc::new(opt::BinaryArgs {
+        dest: indexed_addr_loc.clone(),
+        left: addr_loc,
+        right: offset_loc,
+    })))];
+
+    let commands = chain!(index_commands).collect();
+
+    Ok(CompiledExpr { mem_loc: indexed_addr_loc, commands })
 }
 
 fn compile_ident_name_to_start_addr(

@@ -25,14 +25,12 @@ pub struct Func {
 
 #[derive(Debug, Clone)]
 pub enum IdentDeclaration {
-    Value { name: Arc<str> },
     Array { name: Arc<str>, length: usize },
 }
 
 impl IdentDeclaration {
     pub fn name(&self) -> &Arc<str> {
         match self {
-            Self::Value { name } => name,
             Self::Array { name, .. } => name,
         }
     }
@@ -42,15 +40,6 @@ impl IdentDeclaration {
 pub enum Ident {
     Var { name: Arc<str> },
     Array { name: Arc<str>, index: Arc<Pipeline> },
-}
-
-impl Ident {
-    pub fn name(&self) -> &Arc<str> {
-        match self {
-            Self::Var { name } => name,
-            Self::Array { name, .. } => name,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -84,7 +73,13 @@ pub enum Statement {
 pub struct Assign {
     pub deref_ident: bool,
     pub ident: Arc<Ident>,
-    pub pipeline: Arc<Pipeline>,
+    pub expr: Arc<AssignExpr>,
+}
+
+#[derive(Debug, Clone)]
+pub enum AssignExpr {
+    Pipeline(Arc<Pipeline>),
+    Array(Arc<Array>),
 }
 
 #[derive(Debug, Clone)]
@@ -98,6 +93,11 @@ pub enum Value {
 pub struct Pipeline {
     pub initial_val: Arc<Value>,
     pub operations: Arc<Vec<Arc<Operation>>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Array {
+    pub elements: Arc<Vec<Arc<Pipeline>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -241,7 +241,7 @@ fn parse_ident_declaration(
 
             IdentDeclaration::Array { name, length }
         },
-        _ => IdentDeclaration::Value { name },
+        _ => IdentDeclaration::Array { name, length: 1 },
     };
 
     Ok(ident)
@@ -349,15 +349,30 @@ fn parse_assign(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::
 
     let ident = parse_ident(tokens)?;
     let Some(Token::Eq) = tokens.next() else { bail!("Expected =") };
-    let pipeline = parse_pipeline(tokens)?;
+
+    let assign_expr = parse_assign_expr(tokens)?;
 
     let Some(Token::Semi) = tokens.next() else { bail!("Expected semicolon") };
 
     let assign =
-        Assign { deref_ident: deref_var, ident: Arc::new(ident), pipeline: Arc::new(pipeline) };
+        Assign { deref_ident: deref_var, ident: Arc::new(ident), expr: Arc::new(assign_expr) };
     let statement = Statement::Assign(Arc::new(assign));
 
     Ok(statement)
+}
+
+fn parse_assign_expr(
+    tokens: &mut MultiPeek<impl Iterator<Item = Token>>,
+) -> anyhow::Result<AssignExpr> {
+    tokens.reset_peek();
+
+    if let Some(Token::LeftBracket) = tokens.peek() {
+        let array = parse_array(tokens)?;
+        Ok(AssignExpr::Array(Arc::new(array)))
+    } else {
+        let pipeline = parse_pipeline(tokens)?;
+        Ok(AssignExpr::Pipeline(Arc::new(pipeline)))
+    }
 }
 
 fn parse_pipeline(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Pipeline> {
@@ -405,6 +420,15 @@ fn parse_pipeline(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow
         Pipeline { initial_val: Arc::new(initial_val), operations: Arc::new(operations) };
 
     Ok(pipeline)
+}
+
+fn parse_array(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Array> {
+    tokens.reset_peek();
+
+    let pipelines =
+        parse_pipeline_list!(tokens, Token::LeftBracket = "[", Token::RightBracket = "]")?;
+
+    Ok(Array { elements: Arc::new(pipelines) })
 }
 
 fn parse_value(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Value> {

@@ -1,0 +1,7 @@
+main || {
+    print_second([5, 10]);
+}
+
+func print_second(arr[2]) || {
+    out(arr[1]);
+}
