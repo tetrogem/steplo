@@ -5,6 +5,7 @@ use crate::link;
 use anyhow::bail;
 use itertools::chain;
 use itertools::Itertools;
+use mem_opt::ast;
 use mem_opt::ast as opt;
 use uuid::Uuid;
 
@@ -104,6 +105,49 @@ pub fn compile(linked: Vec<Arc<link::Proc>>) -> anyhow::Result<Vec<Arc<opt::Proc
     Ok(opt_procs)
 }
 
+fn stack_pointer() -> Arc<opt::UMemLoc> {
+    Arc::new(opt::UMemLoc::StackPointer)
+}
+
+fn literal(literal: impl ScratchLiteral) -> Arc<ast::Expr<opt::UMemLoc>> {
+    literal.to_expr()
+}
+
+trait ScratchLiteral {
+    fn to_expr(&self) -> Arc<ast::Expr<opt::UMemLoc>>;
+}
+
+impl ScratchLiteral for f64 {
+    fn to_expr(&self) -> Arc<ast::Expr<ast::UMemLoc>> {
+        Arc::new(ast::Expr::Value(Arc::new(ast::Value::Literal(self.to_string().into()))))
+    }
+}
+
+impl ScratchLiteral for &str {
+    fn to_expr(&self) -> Arc<ast::Expr<ast::UMemLoc>> {
+        Arc::new(ast::Expr::Value(Arc::new(ast::Value::Literal((*self).into()))))
+    }
+}
+
+fn label(uuid: Uuid) -> Arc<ast::Expr<opt::UMemLoc>> {
+    Arc::new(ast::Expr::Value(Arc::new(ast::Value::Label(uuid))))
+}
+
+fn mem_loc_expr(mem_loc: Arc<opt::UMemLoc>) -> Arc<ast::Expr<opt::UMemLoc>> {
+    Arc::new(ast::Expr::MemLoc(mem_loc))
+}
+
+fn temp_mem_loc() -> Arc<opt::UMemLoc> {
+    Arc::new(opt::UMemLoc::Temp(Arc::new(ast::TempVar::new())))
+}
+
+fn binary_args(
+    left: Arc<ast::Expr<opt::UMemLoc>>,
+    right: Arc<ast::Expr<opt::UMemLoc>>,
+) -> Arc<ast::BinaryArgs<opt::UMemLoc>> {
+    Arc::new(ast::BinaryArgs { left, right })
+}
+
 fn find_user_main_sp_uuid(procs: &[Arc<link::Proc>]) -> anyhow::Result<Uuid> {
     let Some(main_proc) = procs.iter().find(|proc| matches!(proc.kind, link::ProcKind::Main))
     else {
@@ -127,16 +171,13 @@ fn create_runner_proc(user_main_sp_uuid: Uuid) -> Arc<opt::Proc<opt::UMemLoc>> {
             commands: Arc::new(Vec::from([
                 // initialize stack pointer to point to -1
                 // (main func stack frame doesn't need return address)
-                Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
-                    dest: Arc::new(opt::UMemLoc::StackPointer),
-                    value: Arc::new(opt::Value::Literal((-1).to_string().into())),
-                }))),
+                Arc::new(opt::Command::SetMemLoc { mem_loc: stack_pointer(), val: literal(-1.0) }),
                 // jump to user main
-                Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
-                    dest: jump_loc.clone(),
-                    value: Arc::new(opt::Value::Label(user_main_sp_uuid)),
-                }))),
-                Arc::new(opt::Command::Jump(Arc::new(opt::VoidArgs { src: jump_loc }))),
+                Arc::new(opt::Command::SetMemLoc {
+                    mem_loc: jump_loc.clone(),
+                    val: label(user_main_sp_uuid),
+                }),
+                Arc::new(opt::Command::Jump(mem_loc_expr(jump_loc))),
             ])),
         })])),
     })
@@ -178,18 +219,20 @@ fn compile_sub_proc(
 ) -> anyhow::Result<Arc<opt::SubProc<opt::UMemLoc>>> {
     // initialize stack vars
     let stack_frame_commands = if proc_head {
-        let stack_frame_size_loc = Arc::new(opt::TempVar::new());
+        let stack_frame_size_loc = temp_mem_loc();
 
         Vec::from([
-            Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
-                dest: Arc::new(opt::UMemLoc::Temp(stack_frame_size_loc.clone())),
-                value: Arc::new(opt::Value::Literal(stack_frame.size().to_string().into())),
-            }))),
-            Arc::new(opt::Command::Add(Arc::new(opt::BinaryArgs {
-                dest: Arc::new(opt::UMemLoc::StackPointer),
-                left: Arc::new(opt::UMemLoc::StackPointer),
-                right: Arc::new(opt::UMemLoc::Temp(stack_frame_size_loc)),
-            }))),
+            Arc::new(opt::Command::SetMemLoc {
+                mem_loc: stack_frame_size_loc.clone(),
+                val: literal(stack_frame.size() as f64),
+            }),
+            Arc::new(opt::Command::SetMemLoc {
+                mem_loc: stack_pointer(),
+                val: Arc::new(ast::Expr::Add(binary_args(
+                    mem_loc_expr(stack_pointer()),
+                    mem_loc_expr(stack_frame_size_loc),
+                ))),
+            }),
         ])
     } else {
         Vec::new()
@@ -233,21 +276,21 @@ fn compile_call(
                     let param_addr_loc = temp();
 
                     let assign_commands = [
-                        Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
-                            dest: param_offset_loc.clone(),
-                            value: Arc::new(opt::Value::Literal(
-                                (param_stack_offset + i + 2).to_string().into(),
-                            )),
-                        }))),
-                        Arc::new(opt::Command::Add(Arc::new(opt::BinaryArgs {
-                            dest: param_addr_loc.clone(),
-                            left: Arc::new(opt::UMemLoc::StackPointer),
-                            right: param_offset_loc.clone(),
-                        }))),
-                        Arc::new(opt::Command::CopyDerefDest(Arc::new(opt::UnaryArgs {
-                            dest: param_addr_loc,
-                            src: element.mem_loc,
-                        }))),
+                        Arc::new(opt::Command::SetMemLoc {
+                            mem_loc: param_offset_loc.clone(),
+                            val: literal((param_stack_offset + i + 2) as f64),
+                        }),
+                        Arc::new(opt::Command::SetMemLoc {
+                            mem_loc: param_addr_loc.clone(),
+                            val: Arc::new(ast::Expr::Add(binary_args(
+                                mem_loc_expr(stack_pointer()),
+                                mem_loc_expr(param_offset_loc),
+                            ))),
+                        }),
+                        Arc::new(opt::Command::SetStack {
+                            addr: mem_loc_expr(param_addr_loc),
+                            val: mem_loc_expr(element.mem_loc),
+                        }),
                     ];
 
                     param_setup_commands.extend(assign_commands);
@@ -262,23 +305,25 @@ fn compile_call(
                 let return_label_loc = temp();
 
                 [
-                    Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
-                        dest: return_offset_loc.clone(),
-                        value: Arc::new(opt::Value::Literal(1.to_string().into())),
-                    }))),
-                    Arc::new(opt::Command::Add(Arc::new(opt::BinaryArgs {
-                        dest: return_addr_loc.clone(),
-                        left: Arc::new(opt::UMemLoc::StackPointer),
-                        right: return_offset_loc.clone(),
-                    }))),
-                    Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
-                        dest: return_label_loc.clone(),
-                        value: Arc::new(opt::Value::Label(*return_sub_proc)),
-                    }))),
-                    Arc::new(opt::Command::CopyDerefDest(Arc::new(opt::UnaryArgs {
-                        dest: return_addr_loc,
-                        src: return_label_loc,
-                    }))),
+                    Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: return_offset_loc.clone(),
+                        val: literal(1.0),
+                    }),
+                    Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: return_addr_loc.clone(),
+                        val: Arc::new(ast::Expr::Add(binary_args(
+                            mem_loc_expr(stack_pointer()),
+                            mem_loc_expr(return_offset_loc.clone()),
+                        ))),
+                    }),
+                    Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: return_label_loc.clone(),
+                        val: label(*return_sub_proc),
+                    }),
+                    Arc::new(opt::Command::SetStack {
+                        addr: mem_loc_expr(return_addr_loc),
+                        val: mem_loc_expr(return_label_loc),
+                    }),
                 ]
             };
 
@@ -287,11 +332,11 @@ fn compile_call(
                 let jump_label_loc = temp();
 
                 [
-                    Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
-                        dest: jump_label_loc.clone(),
-                        value: Arc::new(opt::Value::Label(func_head_uuid)),
-                    }))),
-                    Arc::new(opt::Command::Jump(Arc::new(opt::VoidArgs { src: jump_label_loc }))),
+                    Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: jump_label_loc.clone(),
+                        val: label(func_head_uuid),
+                    }),
+                    Arc::new(opt::Command::Jump(mem_loc_expr(jump_label_loc))),
                 ]
             };
 
@@ -301,11 +346,11 @@ fn compile_call(
             let return_label_loc = temp();
 
             Vec::from([
-                Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
-                    dest: return_label_loc.clone(),
-                    value: Arc::new(opt::Value::Label(*uuid)),
-                }))),
-                Arc::new(opt::Command::Jump(Arc::new(opt::VoidArgs { src: return_label_loc }))),
+                Arc::new(opt::Command::SetMemLoc {
+                    mem_loc: return_label_loc.clone(),
+                    val: label(*uuid),
+                }),
+                Arc::new(opt::Command::Jump(mem_loc_expr(return_label_loc))),
             ])
         },
         link::Call::IfElseBranch { cond_pipeline, then_sub_proc, else_sub_proc } => {
@@ -315,19 +360,19 @@ fn compile_call(
             let else_label_loc = temp();
 
             let branch_commands = Vec::from([
-                Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
-                    dest: then_label_loc.clone(),
-                    value: Arc::new(opt::Value::Label(*then_sub_proc)),
-                }))),
-                Arc::new(opt::Command::Branch(Arc::new(opt::CondArgs {
-                    cond: compiled_cond.mem_loc,
-                    src: then_label_loc,
-                }))),
-                Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
-                    dest: else_label_loc.clone(),
-                    value: Arc::new(opt::Value::Label(*else_sub_proc)),
-                }))),
-                Arc::new(opt::Command::Jump(Arc::new(opt::VoidArgs { src: else_label_loc }))),
+                Arc::new(opt::Command::SetMemLoc {
+                    mem_loc: then_label_loc.clone(),
+                    val: label(*then_sub_proc),
+                }),
+                Arc::new(opt::Command::Branch {
+                    cond: mem_loc_expr(compiled_cond.mem_loc),
+                    to: mem_loc_expr(then_label_loc),
+                }),
+                Arc::new(opt::Command::SetMemLoc {
+                    mem_loc: else_label_loc.clone(),
+                    val: label(*else_sub_proc),
+                }),
+                Arc::new(opt::Command::Jump(mem_loc_expr(else_label_loc))),
             ]);
 
             chain!(compiled_cond.commands, branch_commands).collect()
@@ -335,18 +380,20 @@ fn compile_call(
         link::Call::Return => {
             // free stack vars
             let stack_frame_commands = {
-                let stack_frame_size_loc = Arc::new(opt::TempVar::new());
+                let stack_frame_size_loc = temp();
 
                 [
-                    Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
-                        dest: Arc::new(opt::UMemLoc::Temp(stack_frame_size_loc.clone())),
-                        value: Arc::new(opt::Value::Literal(stack_frame.size().to_string().into())),
-                    }))),
-                    Arc::new(opt::Command::Sub(Arc::new(opt::BinaryArgs {
-                        dest: Arc::new(opt::UMemLoc::StackPointer),
-                        left: Arc::new(opt::UMemLoc::StackPointer),
-                        right: Arc::new(opt::UMemLoc::Temp(stack_frame_size_loc)),
-                    }))),
+                    Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: stack_frame_size_loc.clone(),
+                        val: literal(stack_frame.size() as f64),
+                    }),
+                    Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: stack_pointer(),
+                        val: Arc::new(ast::Expr::Sub(binary_args(
+                            mem_loc_expr(stack_pointer()),
+                            mem_loc_expr(stack_frame_size_loc),
+                        ))),
+                    }),
                 ]
             };
 
@@ -357,20 +404,22 @@ fn compile_call(
                 let label_loc = temp();
 
                 [
-                    Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
-                        dest: label_offset_loc.clone(),
-                        value: Arc::new(opt::Value::Literal(1.to_string().into())),
-                    }))),
-                    Arc::new(opt::Command::Add(Arc::new(opt::BinaryArgs {
-                        dest: label_addr_loc.clone(),
-                        left: Arc::new(opt::UMemLoc::StackPointer),
-                        right: label_offset_loc,
-                    }))),
-                    Arc::new(opt::Command::Deref(Arc::new(opt::UnaryArgs {
-                        dest: label_loc.clone(),
-                        src: label_addr_loc,
-                    }))),
-                    Arc::new(opt::Command::Jump(Arc::new(opt::VoidArgs { src: label_loc }))),
+                    Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: label_offset_loc.clone(),
+                        val: literal(1.0),
+                    }),
+                    Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: label_addr_loc.clone(),
+                        val: Arc::new(ast::Expr::Add(binary_args(
+                            mem_loc_expr(stack_pointer()),
+                            mem_loc_expr(label_offset_loc),
+                        ))),
+                    }),
+                    Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: label_loc.clone(),
+                        val: Arc::new(ast::Expr::Deref(mem_loc_expr(label_addr_loc))),
+                    }),
+                    Arc::new(opt::Command::Jump(mem_loc_expr(label_loc))),
                 ]
             };
 
@@ -414,17 +463,17 @@ fn compile_statement(
 
                 if assign.deref_ident {
                     // deref var
-                    assignments.push(Arc::new(opt::Command::Deref(Arc::new(opt::UnaryArgs {
-                        dest: compile_dest_addr.mem_loc.clone(),
-                        src: compile_dest_addr.mem_loc.clone(),
-                    }))));
+                    assignments.push(Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: compile_dest_addr.mem_loc.clone(),
+                        val: mem_loc_expr(compile_dest_addr.mem_loc.clone()),
+                    }));
                 }
 
                 // assign to var
-                assignments.push(Arc::new(opt::Command::CopyDerefDest(Arc::new(opt::UnaryArgs {
-                    dest: compile_dest_addr.mem_loc,
-                    src: element.mem_loc,
-                }))));
+                assignments.push(Arc::new(opt::Command::SetStack {
+                    addr: mem_loc_expr(compile_dest_addr.mem_loc),
+                    val: mem_loc_expr(element.mem_loc),
+                }));
 
                 element_assignments.extend(assignments);
             }
@@ -439,31 +488,28 @@ fn compile_statement(
                 chain!(
                     compiled_ident_addr.commands,
                     [
-                        Arc::new(opt::Command::Deref(Arc::new(opt::UnaryArgs {
-                            dest: ident_value_loc.clone(),
-                            src: compiled_ident_addr.mem_loc
-                        }))),
-                        Arc::new(opt::Command::Out(Arc::new(opt::VoidArgs {
-                            src: ident_value_loc
-                        }))),
+                        Arc::new(opt::Command::SetMemLoc {
+                            mem_loc: ident_value_loc.clone(),
+                            val: Arc::new(ast::Expr::Deref(mem_loc_expr(
+                                compiled_ident_addr.mem_loc
+                            ))),
+                        }),
+                        Arc::new(opt::Command::Out(mem_loc_expr(ident_value_loc))),
                     ]
                 )
                 .collect()
             },
             hast::NativeOperation::In { dest_ident } => {
                 let compiled_ident_addr = compile_ident_to_addr(stack_frame, dest_ident)?;
-                let answer_loc = temp();
 
                 chain!(
                     compiled_ident_addr.commands,
                     [
-                        Arc::new(opt::Command::In(Arc::new(opt::InputArgs {
-                            dest: answer_loc.clone()
-                        }))),
-                        Arc::new(opt::Command::CopyDerefDest(Arc::new(opt::UnaryArgs {
-                            dest: compiled_ident_addr.mem_loc,
-                            src: answer_loc
-                        }))),
+                        Arc::new(opt::Command::In),
+                        Arc::new(opt::Command::SetStack {
+                            addr: mem_loc_expr(compiled_ident_addr.mem_loc),
+                            val: Arc::new(ast::Expr::InAnswer),
+                        }),
                     ]
                 )
                 .collect()
@@ -535,72 +581,86 @@ fn compile_pipeline(
     for operation in pipeline.operations.as_ref() {
         let compiled_operation = match operation.as_ref() {
             hast::Operation::Deref => compile_unary_operation(|out| {
-                Vec::from([Arc::new(opt::Command::Deref(Arc::new(opt::UnaryArgs {
-                    dest: out,
-                    src: val.clone(),
-                })))])
+                Vec::from([Arc::new(opt::Command::SetMemLoc {
+                    mem_loc: out,
+                    val: Arc::new(ast::Expr::Deref(mem_loc_expr(val.clone()))),
+                })])
             }),
             hast::Operation::Add { operand } => {
                 compile_binary_operation(stack_frame, operand, |operand, out| {
-                    Vec::from([Arc::new(opt::Command::Add(Arc::new(opt::BinaryArgs {
-                        dest: out,
-                        left: val.clone(),
-                        right: operand,
-                    })))])
+                    Vec::from([Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: out,
+                        val: Arc::new(ast::Expr::Add(binary_args(
+                            mem_loc_expr(val.clone()),
+                            mem_loc_expr(operand),
+                        ))),
+                    })])
                 })
             },
             hast::Operation::Sub { operand } => {
                 compile_binary_operation(stack_frame, operand, |operand, out| {
-                    Vec::from([Arc::new(opt::Command::Sub(Arc::new(opt::BinaryArgs {
-                        dest: out,
-                        left: val.clone(),
-                        right: operand,
-                    })))])
+                    Vec::from([Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: out,
+                        val: Arc::new(ast::Expr::Sub(binary_args(
+                            mem_loc_expr(val.clone()),
+                            mem_loc_expr(operand),
+                        ))),
+                    })])
                 })
             },
             hast::Operation::Mul { operand } => {
                 compile_binary_operation(stack_frame, operand, |operand, out| {
-                    Vec::from([Arc::new(opt::Command::Mul(Arc::new(opt::BinaryArgs {
-                        dest: out,
-                        left: val.clone(),
-                        right: operand,
-                    })))])
+                    Vec::from([Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: out,
+                        val: Arc::new(ast::Expr::Mul(binary_args(
+                            mem_loc_expr(val.clone()),
+                            mem_loc_expr(operand),
+                        ))),
+                    })])
                 })
             },
             hast::Operation::Div { operand } => {
                 compile_binary_operation(stack_frame, operand, |operand, out| {
-                    Vec::from([Arc::new(opt::Command::Div(Arc::new(opt::BinaryArgs {
-                        dest: out,
-                        left: val.clone(),
-                        right: operand,
-                    })))])
+                    Vec::from([Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: out,
+                        val: Arc::new(ast::Expr::Div(binary_args(
+                            mem_loc_expr(val.clone()),
+                            mem_loc_expr(operand),
+                        ))),
+                    })])
                 })
             },
             hast::Operation::Mod { operand } => {
                 compile_binary_operation(stack_frame, operand, |operand, out| {
-                    Vec::from([Arc::new(opt::Command::Mod(Arc::new(opt::BinaryArgs {
-                        dest: out,
-                        left: val.clone(),
-                        right: operand,
-                    })))])
+                    Vec::from([Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: out,
+                        val: Arc::new(ast::Expr::Mod(binary_args(
+                            mem_loc_expr(val.clone()),
+                            mem_loc_expr(operand),
+                        ))),
+                    })])
                 })
             },
             hast::Operation::Eq { operand } => {
                 compile_binary_operation(stack_frame, operand, |operand, out| {
-                    Vec::from([Arc::new(opt::Command::Eq(Arc::new(opt::BinaryArgs {
-                        dest: out,
-                        left: val.clone(),
-                        right: operand,
-                    })))])
+                    Vec::from([Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: out,
+                        val: Arc::new(ast::Expr::Eq(binary_args(
+                            mem_loc_expr(val.clone()),
+                            mem_loc_expr(operand),
+                        ))),
+                    })])
                 })
             },
             hast::Operation::Neq { operand } => {
                 compile_binary_operation(stack_frame, operand, |operand, out| {
-                    Vec::from([Arc::new(opt::Command::Neq(Arc::new(opt::BinaryArgs {
-                        dest: out,
-                        left: val.clone(),
-                        right: operand,
-                    })))])
+                    Vec::from([Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: out,
+                        val: Arc::new(ast::Expr::Neq(binary_args(
+                            mem_loc_expr(val.clone()),
+                            mem_loc_expr(operand),
+                        ))),
+                    })])
                 })
             },
             hast::Operation::Gt { operand } => todo!(),
@@ -608,21 +668,23 @@ fn compile_pipeline(
             hast::Operation::Gte { operand } => todo!(),
             hast::Operation::Lte { operand } => {
                 compile_binary_operation(stack_frame, operand, |operand, out| {
-                    Vec::from([Arc::new(opt::Command::Lte(Arc::new(opt::BinaryArgs {
-                        dest: out,
-                        left: val.clone(),
-                        right: operand,
-                    })))])
+                    Vec::from([Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: out,
+                        val: Arc::new(ast::Expr::Lte(binary_args(
+                            mem_loc_expr(val.clone()),
+                            mem_loc_expr(operand),
+                        ))),
+                    })])
                 })
             },
             hast::Operation::And { operand } => todo!(),
             hast::Operation::Or { operand } => todo!(),
             hast::Operation::Xor { operand } => todo!(),
             hast::Operation::Not => compile_unary_operation(|out| {
-                Vec::from([Arc::new(opt::Command::Not(Arc::new(opt::UnaryArgs {
-                    dest: out,
-                    src: val.clone(),
-                })))])
+                Vec::from([Arc::new(opt::Command::SetMemLoc {
+                    mem_loc: out,
+                    val: Arc::new(ast::Expr::Not(mem_loc_expr(val.clone()))),
+                })])
             }),
             hast::Operation::Join { operand } => todo!(),
         }?;
@@ -668,14 +730,14 @@ fn compile_binary_operation(
 
 fn compile_value(stack_frame: &StackFrame, value: &hast::Value) -> anyhow::Result<CompiledExpr> {
     let compiled = match value {
-        hast::Value::Literal(literal) => {
-            let temp = Arc::new(opt::TempVar::new());
-            let assignments = Vec::from([Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
-                dest: Arc::new(opt::UMemLoc::Temp(temp.clone())),
-                value: Arc::new(opt::Value::Literal(literal.clone())),
-            })))]);
+        hast::Value::Literal(lit) => {
+            let value_temp = temp();
+            let assignments = Vec::from([Arc::new(opt::Command::SetMemLoc {
+                mem_loc: value_temp.clone(),
+                val: literal(lit.as_ref()),
+            })]);
 
-            CompiledExpr { mem_loc: Arc::new(opt::UMemLoc::Temp(temp)), commands: assignments }
+            CompiledExpr { mem_loc: value_temp, commands: assignments }
         },
         hast::Value::Ident(ident) => {
             let ident_addr = compile_ident_to_addr(stack_frame, ident)?;
@@ -693,10 +755,10 @@ fn compile_value(stack_frame: &StackFrame, value: &hast::Value) -> anyhow::Resul
 
 fn compile_addr_deref(addr: &Arc<opt::UMemLoc>) -> CompiledExpr {
     let ident_value_loc = temp();
-    let commands = Vec::from([Arc::new(opt::Command::Deref(Arc::new(opt::UnaryArgs {
-        dest: ident_value_loc.clone(),
-        src: addr.clone(),
-    })))]);
+    let commands = Vec::from([Arc::new(opt::Command::SetMemLoc {
+        mem_loc: ident_value_loc.clone(),
+        val: Arc::new(ast::Expr::Deref(mem_loc_expr(addr.clone()))),
+    })]);
 
     CompiledExpr { mem_loc: ident_value_loc, commands }
 }
@@ -730,11 +792,13 @@ fn compile_addr_offset(
 ) -> anyhow::Result<CompiledExpr> {
     let indexed_addr_loc = temp();
 
-    let index_commands = [Arc::new(opt::Command::Add(Arc::new(opt::BinaryArgs {
-        dest: indexed_addr_loc.clone(),
-        left: addr_loc,
-        right: offset_loc,
-    })))];
+    let index_commands = [Arc::new(opt::Command::SetMemLoc {
+        mem_loc: indexed_addr_loc.clone(),
+        val: Arc::new(ast::Expr::Add(binary_args(
+            mem_loc_expr(addr_loc),
+            mem_loc_expr(offset_loc),
+        ))),
+    })];
 
     let commands = chain!(index_commands).collect();
 
@@ -750,15 +814,17 @@ fn compile_ident_name_to_start_addr(
     let stack_addr_loc = temp();
 
     let commands = Vec::from([
-        Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
-            dest: stack_offset_loc.clone(),
-            value: Arc::new(opt::Value::Literal(var_info.offset.to_string().into())),
-        }))),
-        Arc::new(opt::Command::Sub(Arc::new(opt::BinaryArgs {
-            dest: stack_addr_loc.clone(),
-            left: Arc::new(opt::UMemLoc::StackPointer),
-            right: stack_offset_loc,
-        }))),
+        Arc::new(opt::Command::SetMemLoc {
+            mem_loc: stack_offset_loc.clone(),
+            val: literal(var_info.offset as f64),
+        }),
+        Arc::new(opt::Command::SetMemLoc {
+            mem_loc: stack_addr_loc.clone(),
+            val: Arc::new(ast::Expr::Sub(binary_args(
+                mem_loc_expr(stack_pointer()),
+                mem_loc_expr(stack_offset_loc),
+            ))),
+        }),
     ]);
 
     Ok(CompiledExpr { mem_loc: stack_addr_loc, commands })

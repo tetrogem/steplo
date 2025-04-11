@@ -27,72 +27,48 @@ pub enum Value {
 }
 
 #[derive(Debug)]
-pub struct SetArgs<MemLoc> {
-    pub dest: Arc<MemLoc>,
-    pub value: Arc<Value>,
-}
-
-#[derive(Debug)]
-pub struct UnaryArgs<MemLoc> {
-    pub dest: Arc<MemLoc>,
-    pub src: Arc<MemLoc>,
-}
-
-#[derive(Debug)]
 pub struct BinaryArgs<MemLoc> {
-    pub dest: Arc<MemLoc>,
-    pub left: Arc<MemLoc>,
-    pub right: Arc<MemLoc>,
+    pub left: Arc<Expr<MemLoc>>,
+    pub right: Arc<Expr<MemLoc>>,
 }
 
 #[derive(Debug)]
-pub struct VoidArgs<MemLoc> {
-    pub src: Arc<MemLoc>,
-}
-
-#[derive(Debug)]
-pub struct InputArgs<MemLoc> {
-    pub dest: Arc<MemLoc>,
-}
-
-#[derive(Debug)]
-pub struct CondArgs<MemLoc> {
-    pub cond: Arc<MemLoc>,
-    pub src: Arc<MemLoc>,
-}
-
-#[derive(Debug)]
-pub enum Command<MemLoc> {
-    Set(Arc<SetArgs<MemLoc>>),
-    Copy(Arc<UnaryArgs<MemLoc>>),
-    CopyDerefDest(Arc<UnaryArgs<MemLoc>>),
-    Deref(Arc<UnaryArgs<MemLoc>>),
+pub enum Expr<MemLoc> {
+    MemLoc(Arc<MemLoc>),
+    Value(Arc<Value>),
+    Deref(Arc<Expr<MemLoc>>),
     Add(Arc<BinaryArgs<MemLoc>>),
     Sub(Arc<BinaryArgs<MemLoc>>),
     Mul(Arc<BinaryArgs<MemLoc>>),
     Div(Arc<BinaryArgs<MemLoc>>),
     Mod(Arc<BinaryArgs<MemLoc>>),
-    Jump(Arc<VoidArgs<MemLoc>>),
-    Out(Arc<VoidArgs<MemLoc>>),
-    In(Arc<InputArgs<MemLoc>>),
-    Exit,
-    Branch(Arc<CondArgs<MemLoc>>),
     Eq(Arc<BinaryArgs<MemLoc>>),
     Lte(Arc<BinaryArgs<MemLoc>>),
     Neq(Arc<BinaryArgs<MemLoc>>),
-    Not(Arc<UnaryArgs<MemLoc>>),
+    Not(Arc<Expr<MemLoc>>),
+    InAnswer,
+}
+
+#[derive(Debug)]
+pub enum Command<MemLoc> {
+    SetMemLoc { mem_loc: Arc<MemLoc>, val: Arc<Expr<MemLoc>> },
+    SetStack { addr: Arc<Expr<MemLoc>>, val: Arc<Expr<MemLoc>> },
+    Exit,
+    Jump(Arc<Expr<MemLoc>>),
+    Branch { cond: Arc<Expr<MemLoc>>, to: Arc<Expr<MemLoc>> },
+    In,
+    Out(Arc<Expr<MemLoc>>),
 }
 
 #[derive(Debug)]
 pub enum UMemLoc {
     StackPointer,
     Temp(Arc<TempVar>),
-    // Stack { var: Arc<StackVar>, offset: Option<Arc<UMemLoc>> },
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TempVar {
-    uuid: Uuid,
+    pub uuid: Uuid,
 }
 
 impl TempVar {

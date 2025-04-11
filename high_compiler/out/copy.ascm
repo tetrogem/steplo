@@ -8,13 +8,17 @@ add $sp $sp $t0
 lit $t0 "12345"
 lit $t1 "1"
 sub $t2 $sp $t1
-mvdd $t2 $t0
+lit $t1 "0"
+add $t3 $t2 $t1
+mvdd $t3 $t0
 lit $t0 "1"
 sub $t1 $sp $t0
 mvds $t0 $t1
 lit $t1 "0"
 sub $t2 $sp $t1
-mvdd $t2 $t0
+lit $t1 "0"
+add $t3 $t2 $t1
+mvdd $t3 $t0
 exit
 
 #"func.out.0"
@@ -43,8 +47,10 @@ sub $t1 $sp $t0
 mvds $t0 $t1
 lit $t1 "1"
 sub $t2 $sp $t1
-mvds $t2 $t2
-mvdd $t2 $t0
+lit $t1 "0"
+add $t3 $t2 $t1
+mvds $t3 $t3
+mvdd $t3 $t0
 lit $t0 "3"
 sub $sp $sp $t0
 lit $t0 "1"
