@@ -53,26 +53,26 @@ impl StackFrame {
 
 struct FuncManager {
     name_to_head_uuid: HashMap<Arc<str>, Uuid>,
+    name_to_params: HashMap<Arc<str>, Arc<Vec<Arc<hast::IdentDeclaration>>>>,
 }
 
 impl FuncManager {
     fn try_new(procs: &[Arc<link::Proc>]) -> anyhow::Result<Self> {
-        let name_to_head_uuid = procs
-            .iter()
-            .filter_map(|proc| match &proc.kind {
-                link::ProcKind::Main => None,
-                link::ProcKind::Func { name, .. } => Some((name, &proc.sub_procs)),
-            })
-            .map(|(name, sps)| {
-                let Some(first_sp) = sps.first() else {
-                    bail!("procedure `{}` has no sub-procedures", name);
-                };
+        let mut name_to_head_uuid = HashMap::new();
+        let mut name_to_params = HashMap::new();
 
-                Ok((name.clone(), first_sp.uuid))
-            })
-            .collect::<Result<HashMap<_, _>, _>>()?;
+        for proc in procs {
+            let link::ProcKind::Func { name, params } = &proc.kind else { continue };
 
-        Ok(Self { name_to_head_uuid })
+            let Some(first_sp) = proc.sub_procs.first() else {
+                bail!("procedure `{}` has no sub-procedures", name);
+            };
+
+            name_to_head_uuid.insert(name.clone(), first_sp.uuid);
+            name_to_params.insert(name.clone(), params.clone());
+        }
+
+        Ok(Self { name_to_head_uuid, name_to_params })
     }
 
     fn get_head_uuid(&self, name: &str) -> anyhow::Result<Uuid> {
@@ -81,6 +81,14 @@ impl FuncManager {
         };
 
         Ok(*uuid)
+    }
+
+    fn get_params(&self, name: &str) -> anyhow::Result<&Arc<Vec<Arc<hast::IdentDeclaration>>>> {
+        let Some(params) = self.name_to_params.get(name) else {
+            bail!("no params registered for function `{}`", name)
+        };
+
+        Ok(params)
     }
 }
 
@@ -211,14 +219,42 @@ fn compile_call(
     call: &link::Call,
 ) -> anyhow::Result<Vec<Arc<opt::Command<opt::UMemLoc>>>> {
     let compiled = match call {
-        link::Call::Func { name, param_pipelines, return_sub_proc } => {
-            let mut param_assignments = Vec::new();
-            let mut param_mem_locs = Vec::new();
+        link::Call::Func { name, param_exprs, return_sub_proc } => {
+            let param_idents = func_manager.get_params(name)?;
+            let mut param_stack_offset = 0;
+            let mut param_setup_commands = Vec::new();
+            for (ident, expr) in param_idents.iter().zip(param_exprs.as_ref()) {
+                let elements = get_assign_expr_elements(expr);
 
-            for pipeline in param_pipelines.as_ref() {
-                let compiled_pipeline = compile_pipeline(stack_frame, pipeline)?;
-                param_mem_locs.push(compiled_pipeline.mem_loc);
-                param_assignments.extend(compiled_pipeline.commands);
+                for (i, element) in elements.iter().enumerate() {
+                    let compiled_pipeline = compile_pipeline(stack_frame, element)?;
+                    param_setup_commands.extend(compiled_pipeline.commands);
+
+                    let param_offset_loc = temp();
+                    let param_addr_loc = temp();
+
+                    let assign_commands = [
+                        Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
+                            dest: param_offset_loc.clone(),
+                            value: Arc::new(opt::Value::Literal(
+                                (param_stack_offset + i + 2).to_string().into(),
+                            )),
+                        }))),
+                        Arc::new(opt::Command::Add(Arc::new(opt::BinaryArgs {
+                            dest: param_addr_loc.clone(),
+                            left: Arc::new(opt::UMemLoc::StackPointer),
+                            right: param_offset_loc.clone(),
+                        }))),
+                        Arc::new(opt::Command::CopyDerefDest(Arc::new(opt::UnaryArgs {
+                            dest: param_addr_loc,
+                            src: compiled_pipeline.mem_loc,
+                        }))),
+                    ];
+
+                    param_setup_commands.extend(assign_commands);
+                }
+
+                param_stack_offset += ident.size();
             }
 
             let return_setup_commands = {
@@ -247,28 +283,6 @@ fn compile_call(
                 ]
             };
 
-            let param_setup_commands =
-                param_mem_locs.into_iter().enumerate().flat_map(|(i, param_value_loc)| {
-                    let param_offset_loc = temp();
-                    let param_addr_loc = temp();
-
-                    Vec::from([
-                        Arc::new(opt::Command::Set(Arc::new(opt::SetArgs {
-                            dest: param_offset_loc.clone(),
-                            value: Arc::new(opt::Value::Literal((i + 2).to_string().into())),
-                        }))),
-                        Arc::new(opt::Command::Add(Arc::new(opt::BinaryArgs {
-                            dest: param_addr_loc.clone(),
-                            left: Arc::new(opt::UMemLoc::StackPointer),
-                            right: param_offset_loc.clone(),
-                        }))),
-                        Arc::new(opt::Command::CopyDerefDest(Arc::new(opt::UnaryArgs {
-                            dest: param_addr_loc,
-                            src: param_value_loc,
-                        }))),
-                    ])
-                });
-
             let jump_commands = {
                 let func_head_uuid = func_manager.get_head_uuid(name)?;
                 let jump_label_loc = temp();
@@ -282,8 +296,7 @@ fn compile_call(
                 ]
             };
 
-            chain!(param_assignments, return_setup_commands, param_setup_commands, jump_commands)
-                .collect()
+            chain!(param_setup_commands, return_setup_commands, jump_commands).collect()
         },
         link::Call::SubProc(uuid) => {
             let return_label_loc = temp();
@@ -376,11 +389,7 @@ fn compile_statement(
 ) -> anyhow::Result<Vec<Arc<opt::Command<opt::UMemLoc>>>> {
     let assignments = match statement {
         link::Statement::Assign(assign) => {
-            let elements = match assign.expr.as_ref() {
-                hast::AssignExpr::Pipeline(pipeline) => &Vec::from([Arc::clone(pipeline)]),
-                hast::AssignExpr::Array(array) => array.elements.as_ref(),
-            };
-
+            let elements = get_assign_expr_elements(&assign.expr);
             let mut element_assignments = Vec::new();
 
             for (i, element) in elements.iter().enumerate() {
@@ -466,6 +475,13 @@ fn compile_statement(
     };
 
     Ok(assignments)
+}
+
+fn get_assign_expr_elements(expr: &hast::AssignExpr) -> Arc<Vec<Arc<hast::Pipeline>>> {
+    match expr {
+        hast::AssignExpr::Pipeline(pipeline) => Arc::new(Vec::from([Arc::clone(pipeline)])),
+        hast::AssignExpr::Array(array) => array.elements.clone(),
+    }
 }
 
 fn compile_pipeline(

@@ -34,6 +34,12 @@ impl IdentDeclaration {
             Self::Array { name, .. } => name,
         }
     }
+
+    pub fn size(&self) -> usize {
+        match self {
+            Self::Array { length, .. } => *length,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -65,7 +71,7 @@ pub enum BodyItem {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Assign(Arc<Assign>),
-    Call { func_name: Arc<str>, param_pipelines: Arc<Vec<Arc<Pipeline>>> },
+    Call { func_name: Arc<str>, param_exprs: Arc<Vec<Arc<AssignExpr>>> },
     Native(Arc<NativeOperation>), // not compiled to by source code, internal/built-ins only
 }
 
@@ -214,6 +220,40 @@ macro_rules! parse_pipeline_list {
             let Some($closer) = $tokens.next() else { bail!("Expected closing {}", $closer_name) };
 
             Ok(pipelines)
+        })()
+    };
+}
+
+macro_rules! parse_assign_expr_list {
+    (
+        $tokens:expr,
+        $opener:pat = $opener_name:expr,
+        $closer:pat = $closer_name:expr $(,)?
+    ) => {
+        (|| {
+            let Some($opener) = $tokens.next() else { bail!("Expected opening {}", $opener_name) };
+
+            let mut exprs = Vec::<Arc<AssignExpr>>::new();
+            loop {
+                $tokens.reset_peek();
+                if let Some($closer) = $tokens.peek() {
+                    break;
+                };
+
+                let expr = parse_assign_expr($tokens)?;
+                exprs.push(Arc::new(expr));
+
+                $tokens.reset_peek();
+                if matches!($tokens.peek(), Some(Token::Comma)).not() {
+                    break;
+                }
+
+                let Some(Token::Comma) = $tokens.next() else { bail!("Expected comma") };
+            }
+
+            let Some($closer) = $tokens.next() else { bail!("Expected closing {}", $closer_name) };
+
+            Ok(exprs)
         })()
     };
 }
@@ -454,12 +494,11 @@ fn parse_value(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::R
 
 fn parse_call(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Statement> {
     let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var name") };
-    let param_pipelines =
-        parse_pipeline_list!(tokens, Token::LeftParen = "(", Token::RightParen = ")")?;
+    let param_exprs =
+        parse_assign_expr_list!(tokens, Token::LeftParen = "(", Token::RightParen = ")")?;
     let Some(Token::Semi) = tokens.next() else { bail!("Expected semicolon") };
 
-    let statement =
-        Statement::Call { func_name: var.into(), param_pipelines: Arc::new(param_pipelines) };
+    let statement = Statement::Call { func_name: var.into(), param_exprs: Arc::new(param_exprs) };
 
     Ok(statement)
 }

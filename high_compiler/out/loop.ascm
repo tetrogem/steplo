@@ -8,16 +8,18 @@ add $sp $sp $t0
 lit $t0 "20"
 lit $t1 "0"
 sub $t2 $sp $t1
-mvdd $t2 $t0
+lit $t1 "0"
+add $t3 $t2 $t1
+mvdd $t3 $t0
 lit $t0 "0"
 sub $t1 $sp $t0
-lit $t0 "1"
-add $t2 $sp $t0
-lit $t0 #"main.1"
-mvdd $t2 $t0
 lit $t0 "2"
 add $t2 $sp $t0
 mvdd $t2 $t1
+lit $t0 "1"
+add $t1 $sp $t0
+lit $t0 #"main.1"
+mvdd $t1 $t0
 lit $t0 #"func.iterate.0"
 jmp $t0
 
@@ -33,7 +35,9 @@ mvds $t0 $t1
 mvds $t1 $t0
 lit $t0 "0"
 sub $t2 $sp $t0
-mvdd $t2 $t1
+lit $t0 "0"
+add $t3 $t2 $t0
+mvdd $t3 $t1
 lit $t0 "0"
 lit $t1 "0"
 sub $t2 $sp $t1
@@ -60,8 +64,10 @@ lit $t1 "1"
 sub $t2 $t0 $t1
 lit $t0 "1"
 sub $t1 $sp $t0
-mvds $t1 $t1
-mvdd $t1 $t2
+lit $t0 "0"
+add $t3 $t1 $t0
+mvds $t3 $t3
+mvdd $t3 $t2
 lit $t0 "1"
 add $t1 $sp $t0
 lit $t0 #"func.iterate.3"
@@ -73,13 +79,13 @@ jmp $t0
 lit $t0 "1"
 sub $t1 $sp $t0
 mvds $t0 $t1
-lit $t1 "1"
-add $t2 $sp $t1
-lit $t1 #"func.iterate.4"
-mvdd $t2 $t1
 lit $t1 "2"
 add $t2 $sp $t1
 mvdd $t2 $t0
+lit $t0 "1"
+add $t1 $sp $t0
+lit $t0 #"func.iterate.4"
+mvdd $t1 $t0
 lit $t0 #"func.iterate.0"
 jmp $t0
 
@@ -91,13 +97,13 @@ jmp $t0
 lit $t0 "1"
 add $sp $sp $t0
 lit $t0 "Hello!"
-lit $t1 "1"
-add $t2 $sp $t1
-lit $t1 #"func.greet.1"
-mvdd $t2 $t1
 lit $t1 "2"
 add $t2 $sp $t1
 mvdd $t2 $t0
+lit $t0 "1"
+add $t1 $sp $t0
+lit $t0 #"func.greet.1"
+mvdd $t1 $t0
 lit $t0 #"func.out.0"
 jmp $t0
 
@@ -135,8 +141,10 @@ sub $t1 $sp $t0
 mvds $t0 $t1
 lit $t1 "1"
 sub $t2 $sp $t1
-mvds $t2 $t2
-mvdd $t2 $t0
+lit $t1 "0"
+add $t3 $t2 $t1
+mvds $t3 $t3
+mvdd $t3 $t0
 lit $t0 "3"
 sub $sp $sp $t0
 lit $t0 "1"
