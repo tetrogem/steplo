@@ -224,11 +224,10 @@ fn compile_call(
             let mut param_stack_offset = 0;
             let mut param_setup_commands = Vec::new();
             for (ident, expr) in param_idents.iter().zip(param_exprs.as_ref()) {
-                let elements = get_assign_expr_elements(expr);
+                let elements = compile_assign_expr_elements(stack_frame, expr)?;
 
-                for (i, element) in elements.iter().enumerate() {
-                    let compiled_pipeline = compile_pipeline(stack_frame, element)?;
-                    param_setup_commands.extend(compiled_pipeline.commands);
+                for (i, element) in elements.into_iter().enumerate() {
+                    param_setup_commands.extend(element.commands);
 
                     let param_offset_loc = temp();
                     let param_addr_loc = temp();
@@ -247,7 +246,7 @@ fn compile_call(
                         }))),
                         Arc::new(opt::Command::CopyDerefDest(Arc::new(opt::UnaryArgs {
                             dest: param_addr_loc,
-                            src: compiled_pipeline.mem_loc,
+                            src: element.mem_loc,
                         }))),
                     ];
 
@@ -389,10 +388,10 @@ fn compile_statement(
 ) -> anyhow::Result<Vec<Arc<opt::Command<opt::UMemLoc>>>> {
     let assignments = match statement {
         link::Statement::Assign(assign) => {
-            let elements = get_assign_expr_elements(&assign.expr);
+            let elements = compile_assign_expr_elements(stack_frame, &assign.expr)?;
             let mut element_assignments = Vec::new();
 
-            for (i, element) in elements.iter().enumerate() {
+            for (i, element) in elements.into_iter().enumerate() {
                 let compiled_ident_addr = compile_ident_to_addr(stack_frame, &assign.ident)?;
                 let compiled_offset = compile_pipeline(
                     stack_frame,
@@ -405,10 +404,8 @@ fn compile_statement(
                 let compile_dest_addr =
                     compile_addr_offset(compiled_ident_addr.mem_loc, compiled_offset.mem_loc)?;
 
-                let compiled_pipeline = compile_pipeline(stack_frame, element)?;
-
                 let mut assignments = chain!(
-                    compiled_pipeline.commands,
+                    element.commands,
                     compiled_ident_addr.commands,
                     compiled_offset.commands,
                     compile_dest_addr.commands
@@ -426,7 +423,7 @@ fn compile_statement(
                 // assign to var
                 assignments.push(Arc::new(opt::Command::CopyDerefDest(Arc::new(opt::UnaryArgs {
                     dest: compile_dest_addr.mem_loc,
-                    src: compiled_pipeline.mem_loc,
+                    src: element.mem_loc,
                 }))));
 
                 element_assignments.extend(assignments);
@@ -477,11 +474,51 @@ fn compile_statement(
     Ok(assignments)
 }
 
-fn get_assign_expr_elements(expr: &hast::AssignExpr) -> Arc<Vec<Arc<hast::Pipeline>>> {
-    match expr {
-        hast::AssignExpr::Pipeline(pipeline) => Arc::new(Vec::from([Arc::clone(pipeline)])),
-        hast::AssignExpr::Array(array) => array.elements.clone(),
-    }
+fn compile_assign_expr_elements(
+    stack_frame: &StackFrame,
+    expr: &hast::AssignExpr,
+) -> anyhow::Result<Vec<CompiledExpr>> {
+    let compileds = match expr {
+        hast::AssignExpr::Pipeline(pipeline) => {
+            Vec::from([compile_pipeline(stack_frame, pipeline)?])
+        },
+        hast::AssignExpr::Array(array) => array
+            .elements
+            .iter()
+            .map(|pipeline| compile_pipeline(stack_frame, pipeline))
+            .collect::<anyhow::Result<Vec<_>>>()?
+            .into_iter()
+            .collect(),
+        hast::AssignExpr::Slice(slice) => {
+            let elements = (slice.start_in..slice.end_ex).map(|i| {
+                let ident_addr = compile_ident_to_addr(stack_frame, &slice.ident)?;
+                let offset = compile_pipeline(
+                    stack_frame,
+                    &hast::Pipeline {
+                        initial_val: Arc::new(hast::Value::Literal(i.to_string().into())),
+                        operations: Arc::new(Vec::new()),
+                    },
+                )?;
+
+                let element_addr = compile_addr_offset(ident_addr.mem_loc, offset.mem_loc)?;
+                let element = compile_addr_deref(&element_addr.mem_loc);
+
+                let commands = chain!(
+                    ident_addr.commands,
+                    offset.commands,
+                    element_addr.commands,
+                    element.commands
+                )
+                .collect();
+
+                Ok(CompiledExpr { mem_loc: element.mem_loc, commands })
+            });
+
+            elements.collect::<anyhow::Result<Vec<_>>>()?
+        },
+    };
+
+    Ok(compileds)
 }
 
 fn compile_pipeline(
@@ -641,25 +678,27 @@ fn compile_value(stack_frame: &StackFrame, value: &hast::Value) -> anyhow::Resul
             CompiledExpr { mem_loc: Arc::new(opt::UMemLoc::Temp(temp)), commands: assignments }
         },
         hast::Value::Ident(ident) => {
-            let compiled_ident_addr = compile_ident_to_addr(stack_frame, ident)?;
+            let ident_addr = compile_ident_to_addr(stack_frame, ident)?;
+            let value = compile_addr_deref(&ident_addr.mem_loc);
 
-            let ident_value_loc = temp();
+            let commands = chain!(ident_addr.commands, value.commands).collect();
 
-            let assignments = chain!(
-                compiled_ident_addr.commands,
-                [Arc::new(opt::Command::Deref(Arc::new(opt::UnaryArgs {
-                    dest: ident_value_loc.clone(),
-                    src: compiled_ident_addr.mem_loc,
-                })))]
-            )
-            .collect();
-
-            CompiledExpr { mem_loc: ident_value_loc, commands: assignments }
+            CompiledExpr { mem_loc: value.mem_loc, commands }
         },
         hast::Value::Ref(ident) => compile_ident_to_addr(stack_frame, ident)?,
     };
 
     Ok(compiled)
+}
+
+fn compile_addr_deref(addr: &Arc<opt::UMemLoc>) -> CompiledExpr {
+    let ident_value_loc = temp();
+    let commands = Vec::from([Arc::new(opt::Command::Deref(Arc::new(opt::UnaryArgs {
+        dest: ident_value_loc.clone(),
+        src: addr.clone(),
+    })))]);
+
+    CompiledExpr { mem_loc: ident_value_loc, commands }
 }
 
 fn compile_ident_to_addr(

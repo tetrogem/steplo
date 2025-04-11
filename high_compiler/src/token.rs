@@ -24,6 +24,8 @@ pub enum Token {
     Ref,
     LeftBracket,
     RightBracket,
+    Slice,
+    Period,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,6 +128,7 @@ fn consume_word(chars: &mut Peekable<impl Iterator<Item = char>>) -> anyhow::Res
         "if" => Token::If,
         "else" => Token::Else,
         "while" => Token::While,
+        "slice" => Token::Slice,
         w => match Opword::from_str(w) {
             Ok(comword) => Token::Comword(comword),
             Err(()) => {
@@ -161,6 +164,7 @@ pub fn tokenize(code: &str) -> anyhow::Result<Vec<Token>> {
             ']' => consume_char(&mut chars, Some(Token::RightBracket)),
             '|' => consume_char(&mut chars, Some(Token::Pipe)),
             ',' => consume_char(&mut chars, Some(Token::Comma)),
+            '.' => consume_char(&mut chars, Some(Token::Period)),
             '"' => Some(consume_literal(&mut chars)?),
             c if c.is_whitespace() => consume_char(&mut chars, None),
             _ => Some(consume_word(&mut chars)?),

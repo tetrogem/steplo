@@ -86,6 +86,7 @@ pub struct Assign {
 pub enum AssignExpr {
     Pipeline(Arc<Pipeline>),
     Array(Arc<Array>),
+    Slice(Arc<Slice>),
 }
 
 #[derive(Debug, Clone)]
@@ -104,6 +105,13 @@ pub struct Pipeline {
 #[derive(Debug, Clone)]
 pub struct Array {
     pub elements: Arc<Vec<Arc<Pipeline>>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Slice {
+    pub ident: Arc<Ident>,
+    pub start_in: usize,
+    pub end_ex: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -406,12 +414,10 @@ fn parse_assign_expr(
 ) -> anyhow::Result<AssignExpr> {
     tokens.reset_peek();
 
-    if let Some(Token::LeftBracket) = tokens.peek() {
-        let array = parse_array(tokens)?;
-        Ok(AssignExpr::Array(Arc::new(array)))
-    } else {
-        let pipeline = parse_pipeline(tokens)?;
-        Ok(AssignExpr::Pipeline(Arc::new(pipeline)))
+    match tokens.peek() {
+        Some(Token::LeftBracket) => Ok(AssignExpr::Array(Arc::new(parse_array(tokens)?))),
+        Some(Token::Slice) => Ok(AssignExpr::Slice(Arc::new(parse_slice(tokens)?))),
+        _ => Ok(AssignExpr::Pipeline(Arc::new(parse_pipeline(tokens)?))),
     }
 }
 
@@ -469,6 +475,38 @@ fn parse_array(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::R
         parse_pipeline_list!(tokens, Token::LeftBracket = "[", Token::RightBracket = "]")?;
 
     Ok(Array { elements: Arc::new(pipelines) })
+}
+
+fn parse_slice(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Slice> {
+    tokens.reset_peek();
+
+    let Some(Token::Slice) = tokens.next() else { bail!("Expected slice keyword") };
+    let Some(Token::Name(ident_name)) = tokens.next() else { bail!("Expected ident name") };
+    let Some(Token::LeftBracket) = tokens.next() else { bail!("Expected [") };
+
+    let start_in = match tokens.peek() {
+        Some(Token::Period) => 0,
+        Some(Token::Literal(_)) => {
+            let Some(Token::Literal(literal)) = tokens.next() else {
+                bail!("Expected unsigned integer")
+            };
+
+            literal.parse::<usize>()?
+        },
+        _ => bail!("Expected unsigned integer or .."),
+    };
+
+    let Some(Token::Period) = tokens.next() else { bail!("Expected ..") };
+    let Some(Token::Period) = tokens.next() else { bail!("Expected ..") };
+
+    let end_ex = match tokens.next() {
+        Some(Token::Literal(literal)) => literal.parse::<usize>()?,
+        _ => bail!("Expected unsigned integer"),
+    };
+
+    let Some(Token::RightBracket) = tokens.next() else { bail!("Expected ]") };
+
+    Ok(Slice { ident: Arc::new(Ident::Var { name: ident_name.into() }), start_in, end_ex })
 }
 
 fn parse_value(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Value> {
