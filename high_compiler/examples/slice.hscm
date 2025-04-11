@@ -5,6 +5,9 @@ main |foo[3], bar[3]| {
     bar = slice foo[..3];
     print_arr3(slice bar[..3]);
 
+    bar = [111, 222, 333];
+    bar = [foo[0], bar[1], foo[2] | add 50];
+
     out("Refs:");
     print_arr3_ref(ref foo);
     print_arr3_ref(ref bar);
