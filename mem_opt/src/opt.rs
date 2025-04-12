@@ -1,71 +1,174 @@
+use itertools::Itertools;
+use uuid::Uuid;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
+    mem,
     ops::Not,
     sync::Arc,
 };
 
-use uuid::Uuid;
+use crate::ast::{BinaryArgs, Call, Command, Expr, Proc, SubProc, TempVar, UMemLoc, Value};
 
-use crate::ast::{BinaryArgs, Call, Command, Expr, Proc, SubProc, TempVar, UMemLoc};
+const DEBUG: bool = false;
 
-pub fn optimize<'a>(procs: impl Iterator<Item = &'a Proc<UMemLoc>>) -> Vec<Arc<Proc<UMemLoc>>> {
-    procs.map(|proc| Arc::new(optimize_proc(proc))).collect()
-}
-
-fn optimize_proc(proc: &Proc<UMemLoc>) -> Proc<UMemLoc> {
-    Proc {
-        kind: proc.kind.clone(),
-        sub_procs: Arc::new(
-            proc.sub_procs.iter().map(|sp| optimize_sub_proc(sp.clone())).collect(),
-        ),
-    }
-}
-
-fn optimize_sub_proc(mut sp: Arc<SubProc<UMemLoc>>) -> Arc<SubProc<UMemLoc>> {
-    let optimizer = Optimizer {
-        optimizations: Vec::from([
-            optimization_inline_trivial_temps,
-            optimization_remove_unused_temps,
-        ]),
+macro_rules! opt_debug {
+    ($($tokens:tt)*) => {
+        if DEBUG {
+            println!("[opt] {}", format!($($tokens)*));
+        }
     };
+}
+
+pub fn optimize(procs: impl Iterator<Item = Arc<Proc<UMemLoc>>>) -> Vec<Arc<Proc<UMemLoc>>> {
+    let mut procs = procs.collect_vec();
+    let mut tracker = Tracker::default();
 
     loop {
-        let report = optimizer.optimize(sp);
-        sp = report.sp;
-        if report.optimized.not() {
+        opt_debug!("root");
+        procs = tracker.record(optimize_procs(procs));
+
+        if tracker.take_pass_optimized().not() {
             break;
         }
     }
 
-    sp
+    procs
 }
 
-struct Optimizer {
-    optimizations: Vec<fn(sp: Arc<SubProc<UMemLoc>>) -> OptimizationReport>,
+fn optimize_procs(
+    mut procs: Vec<Arc<Proc<UMemLoc>>>,
+) -> OptimizationReport<Vec<Arc<Proc<UMemLoc>>>> {
+    let optimizer = Optimizer {
+        optimizations: Vec::from([Optimization {
+            f: optimization_inline_pure_redirects,
+            name: "inline_pure_redirects",
+        }]),
+    };
+
+    let mut tracker = Tracker::default();
+
+    loop {
+        opt_debug!("procs");
+        procs = procs.into_iter().map(|proc| tracker.record(optimize_proc(proc))).collect();
+
+        procs = tracker.record(optimizer.optimize(procs));
+
+        if tracker.take_pass_optimized().not() {
+            break;
+        }
+    }
+
+    OptimizationReport { optimized: tracker.optimized(), val: procs }
 }
 
-impl Optimizer {
-    pub fn optimize(&self, mut sp: Arc<SubProc<UMemLoc>>) -> OptimizationReport {
+fn optimize_proc(mut proc: Arc<Proc<UMemLoc>>) -> OptimizationReport<Arc<Proc<UMemLoc>>> {
+    let optimizer = Optimizer { optimizations: Vec::from([]) };
+    let mut tracker = Tracker::default();
+
+    loop {
+        opt_debug!("proc {:?}", proc.kind);
+        proc = Arc::new(Proc {
+            kind: proc.kind.clone(),
+            sub_procs: Arc::new(
+                proc.sub_procs
+                    .iter()
+                    .map(|sp| tracker.record(optimize_sub_proc(sp.clone())))
+                    .collect(),
+            ),
+        });
+
+        proc = tracker.record(optimizer.optimize(proc));
+
+        if tracker.take_pass_optimized().not() {
+            break;
+        }
+    }
+
+    OptimizationReport { optimized: tracker.optimized(), val: proc }
+}
+
+fn optimize_sub_proc(mut sp: Arc<SubProc<UMemLoc>>) -> OptimizationReport<Arc<SubProc<UMemLoc>>> {
+    let optimizer = Optimizer {
+        optimizations: Vec::from([
+            Optimization { f: optimization_inline_trivial_temps, name: "inline_trivial_temps" },
+            Optimization { f: optimization_remove_unused_temps, name: "remove_unused_temps" },
+        ]),
+    };
+
+    let mut tracker = Tracker::default();
+
+    loop {
+        opt_debug!("sub_proc {}", sp.uuid);
+        sp = tracker.record(optimizer.optimize(sp));
+
+        if tracker.take_pass_optimized().not() {
+            break;
+        }
+    }
+
+    OptimizationReport { optimized: tracker.optimized(), val: sp }
+}
+
+type OptimizeFn<T> = fn(sp: T) -> OptimizationReport<T>;
+
+struct Optimization<T> {
+    f: OptimizeFn<T>,
+    name: &'static str,
+}
+
+struct Optimizer<T> {
+    optimizations: Vec<Optimization<T>>,
+}
+
+impl<T> Optimizer<T> {
+    pub fn optimize(&self, mut val: T) -> OptimizationReport<T> {
         let mut optimized = false;
         for optimization in &self.optimizations {
-            let report = optimization(sp);
+            let report = (optimization.f)(val);
             if report.optimized {
                 optimized = true;
             }
 
-            sp = report.sp;
+            val = report.val;
+
+            opt_debug!("{}: {}", optimization.name, report.optimized);
         }
 
-        OptimizationReport { optimized, sp }
+        OptimizationReport { optimized, val }
     }
 }
 
-struct OptimizationReport {
+#[derive(Default)]
+struct Tracker {
     optimized: bool,
-    sp: Arc<SubProc<UMemLoc>>,
+    pass_optimized: bool,
 }
 
-fn optimization_inline_trivial_temps(sp: Arc<SubProc<UMemLoc>>) -> OptimizationReport {
+impl Tracker {
+    pub fn record<T>(&mut self, report: OptimizationReport<T>) -> T {
+        self.optimized = self.optimized || report.optimized;
+        self.pass_optimized = self.pass_optimized || report.optimized;
+        report.val
+    }
+
+    pub fn optimized(&self) -> bool {
+        self.optimized
+    }
+
+    pub fn take_pass_optimized(&mut self) -> bool {
+        mem::take(&mut self.pass_optimized)
+    }
+}
+
+struct OptimizationReport<T> {
+    optimized: bool,
+    val: T,
+}
+
+fn optimization_inline_trivial_temps(
+    sp: Arc<SubProc<UMemLoc>>,
+) -> OptimizationReport<Arc<SubProc<UMemLoc>>> {
     let trivial_temp_to_expr = find_trivial_temps(&sp);
     let mut opt_commands = Vec::new();
     for command in sp.commands.as_ref() {
@@ -98,11 +201,10 @@ fn optimization_inline_trivial_temps(sp: Arc<SubProc<UMemLoc>>) -> OptimizationR
     };
 
     let optimized = trivial_temp_to_expr.is_empty().not();
-    println!("[opt] inline_trivial_temps: {}", optimized);
 
     OptimizationReport {
         optimized,
-        sp: Arc::new(SubProc {
+        val: Arc::new(SubProc {
             uuid: sp.uuid,
             commands: Arc::new(opt_commands),
             call: Arc::new(opt_call),
@@ -110,7 +212,9 @@ fn optimization_inline_trivial_temps(sp: Arc<SubProc<UMemLoc>>) -> OptimizationR
     }
 }
 
-fn optimization_remove_unused_temps(sp: Arc<SubProc<UMemLoc>>) -> OptimizationReport {
+fn optimization_remove_unused_temps(
+    sp: Arc<SubProc<UMemLoc>>,
+) -> OptimizationReport<Arc<SubProc<UMemLoc>>> {
     let unused_temps = find_unused_temps(&sp);
     let opt_commands = sp
         .commands
@@ -124,16 +228,99 @@ fn optimization_remove_unused_temps(sp: Arc<SubProc<UMemLoc>>) -> OptimizationRe
         .collect();
 
     let optimized = unused_temps.is_empty().not();
-    println!("[opt] remove_unused_temps: {}", optimized);
 
     OptimizationReport {
         optimized,
-        sp: Arc::new(SubProc {
+        val: Arc::new(SubProc {
             uuid: sp.uuid,
             commands: Arc::new(opt_commands),
             call: sp.call.clone(),
         }),
     }
+}
+
+fn optimization_inline_pure_redirects(
+    procs: Vec<Arc<Proc<UMemLoc>>>,
+) -> OptimizationReport<Vec<Arc<Proc<UMemLoc>>>> {
+    let mut pure_redirect_label_to_call = BTreeMap::new();
+
+    // find pure redirects
+    for sp in procs.iter().flat_map(|proc| proc.sub_procs.iter()) {
+        if sp.commands.is_empty() {
+            pure_redirect_label_to_call.insert(sp.uuid, sp.call.clone());
+        }
+    }
+
+    let mut optimized = false;
+
+    let optimize_jump = |to: &Expr<UMemLoc>| -> Option<Arc<Call<UMemLoc>>> {
+        let Expr::Value(value) = to else { return None };
+        let Value::Label(label) = value.as_ref() else { return None };
+
+        let redirect_call = pure_redirect_label_to_call.get(label)?;
+        Some(redirect_call.clone())
+    };
+
+    let call_to_single_to = |call: &Call<UMemLoc>| -> Option<Arc<Expr<UMemLoc>>> {
+        match call {
+            Call::Exit => None,
+            Call::Branch { .. } => None,
+            Call::Jump(to) => Some(to.clone()),
+        }
+    };
+
+    let optimize_call = |call: &Call<UMemLoc>| -> Option<Arc<Call<UMemLoc>>> {
+        match call {
+            Call::Exit => None,
+            Call::Jump(to) => optimize_jump(to),
+            Call::Branch { cond, then_to, else_to } => {
+                let then_to_redirect = optimize_jump(then_to);
+                let else_to_redirect = optimize_jump(else_to);
+
+                let then_to_optimized = then_to_redirect.and_then(|call| call_to_single_to(&call));
+                let else_to_optimized = else_to_redirect.and_then(|call| call_to_single_to(&call));
+
+                if then_to_optimized.is_none() && else_to_optimized.is_none() {
+                    return None;
+                }
+
+                Some(Arc::new(Call::Branch {
+                    cond: cond.clone(),
+                    then_to: then_to_optimized.unwrap_or_else(|| then_to.clone()),
+                    else_to: else_to_optimized.unwrap_or_else(|| else_to.clone()),
+                }))
+            },
+        }
+    };
+
+    let procs = procs
+        .iter()
+        .map(|proc| {
+            Arc::new(Proc {
+                kind: proc.kind.clone(),
+                sub_procs: Arc::new(
+                    proc.sub_procs
+                        .iter()
+                        .map(|sp| {
+                            Arc::new(SubProc {
+                                uuid: sp.uuid,
+                                commands: sp.commands.clone(),
+                                call: match optimize_call(&sp.call) {
+                                    Some(call) => {
+                                        optimized = true;
+                                        call
+                                    },
+                                    None => sp.call.clone(),
+                                },
+                            })
+                        })
+                        .collect(),
+                ),
+            })
+        })
+        .collect();
+
+    OptimizationReport { optimized, val: procs }
 }
 
 fn find_trivial_temps(sp: &SubProc<UMemLoc>) -> BTreeMap<Arc<TempVar>, Arc<Expr<UMemLoc>>> {

@@ -55,9 +55,8 @@ fn main() -> anyhow::Result<()> {
         fs::write(path, asm_export).expect("opt export should succeed");
     });
 
-    let mem_opt1_ast = time("Optimizing code...", || {
-        mem_opt::opt::optimize(mem_opt_ast.iter().map(AsRef::as_ref))
-    });
+    let mem_opt1_ast =
+        time("Optimizing code...", || mem_opt::opt::optimize(mem_opt_ast.iter().cloned()));
 
     time("Writing intermediate opt 1 file...", || {
         let asm_export = mem_opt::export::export(mem_opt1_ast.iter().map(AsRef::as_ref));
