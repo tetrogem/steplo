@@ -410,6 +410,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "asm_compiler",
+ "inter",
  "itertools 0.14.0",
  "shared",
  "uuid",

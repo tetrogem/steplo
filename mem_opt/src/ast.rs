@@ -18,6 +18,7 @@ pub enum ProcKind {
 pub struct SubProc<MemLoc> {
     pub uuid: Uuid,
     pub commands: Arc<Vec<Arc<Command<MemLoc>>>>,
+    pub call: Arc<Call<MemLoc>>,
 }
 
 #[derive(Debug)]
@@ -53,11 +54,15 @@ pub enum Expr<MemLoc> {
 pub enum Command<MemLoc> {
     SetMemLoc { mem_loc: Arc<MemLoc>, val: Arc<Expr<MemLoc>> },
     SetStack { addr: Arc<Expr<MemLoc>>, val: Arc<Expr<MemLoc>> },
-    Exit,
-    Jump(Arc<Expr<MemLoc>>),
-    Branch { cond: Arc<Expr<MemLoc>>, to: Arc<Expr<MemLoc>> },
     In,
     Out(Arc<Expr<MemLoc>>),
+}
+
+#[derive(Debug)]
+pub enum Call<MemLoc> {
+    Exit,
+    Jump(Arc<Expr<MemLoc>>),
+    Branch { cond: Arc<Expr<MemLoc>>, then_to: Arc<Expr<MemLoc>>, else_to: Arc<Expr<MemLoc>> },
 }
 
 #[derive(Debug)]

@@ -10,5 +10,6 @@ crate-type = ["lib"]
 anyhow = "1.0.95"
 shared = { path = "../shared" }
 asm_compiler = { path = "../asm_compiler" }
+inter = { path = "../inter" }
 uuid = "1.15.1"
 itertools = "0.14.0"

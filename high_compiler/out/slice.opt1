@@ -1,0 +1,143 @@
+main {
+    proc #cf {
+        $sp = "-1";
+        jump #0e;
+    }
+}
+
+func main {
+    proc #0e {
+        $sp = ($sp + "7");
+        stack[($sp + "2")] = "111";
+        stack[($sp + "3")] = "222";
+        stack[($sp + "4")] = "333";
+        stack[($sp + "1")] = #b3;
+        jump #df;
+    }
+
+    proc #b3 {
+        stack[(($sp - "5") + "0")] = "123";
+        stack[(($sp - "5") + "1")] = "456";
+        stack[(($sp - "5") + "2")] = "789";
+        stack[($sp + "2")] = stack[(($sp - "5") + "0")];
+        stack[($sp + "3")] = stack[(($sp - "5") + "1")];
+        stack[($sp + "4")] = stack[(($sp - "5") + "2")];
+        stack[($sp + "1")] = #0d;
+        jump #df;
+    }
+
+    proc #0d {
+        stack[(($sp - "2") + "0")] = stack[(($sp - "5") + "0")];
+        stack[(($sp - "2") + "1")] = stack[(($sp - "5") + "1")];
+        stack[(($sp - "2") + "2")] = stack[(($sp - "5") + "2")];
+        stack[($sp + "2")] = stack[(($sp - "2") + "0")];
+        stack[($sp + "3")] = stack[(($sp - "2") + "1")];
+        stack[($sp + "4")] = stack[(($sp - "2") + "2")];
+        stack[($sp + "1")] = #83;
+        jump #df;
+    }
+
+    proc #83 {
+        stack[(($sp - "2") + "0")] = "111";
+        stack[(($sp - "2") + "1")] = "222";
+        stack[(($sp - "2") + "2")] = "333";
+        stack[(($sp - "2") + "0")] = stack[(($sp - "5") + "0")];
+        stack[(($sp - "2") + "1")] = stack[(($sp - "2") + "1")];
+        stack[(($sp - "2") + "2")] = (stack[(($sp - "5") + "2")] + "50");
+        stack[($sp + "2")] = "Refs:";
+        stack[($sp + "1")] = #40;
+        jump #ac;
+    }
+
+    proc #40 {
+        stack[($sp + "2")] = ($sp - "5");
+        stack[($sp + "1")] = #92;
+        jump #d8;
+    }
+
+    proc #92 {
+        stack[($sp + "2")] = ($sp - "2");
+        stack[($sp + "1")] = #cb;
+        jump #d8;
+    }
+
+    proc #cb {
+        exit;
+    }
+}
+
+func func.print_arr3 {
+    proc #df {
+        $sp = ($sp + "4");
+        stack[($sp + "2")] = stack[(($sp - "2") + "0")];
+        stack[($sp + "1")] = #6b;
+        jump #ac;
+    }
+
+    proc #6b {
+        stack[($sp + "2")] = stack[(($sp - "2") + "1")];
+        stack[($sp + "1")] = #11;
+        jump #ac;
+    }
+
+    proc #11 {
+        stack[($sp + "2")] = stack[(($sp - "2") + "2")];
+        stack[($sp + "1")] = #f9;
+        jump #ac;
+    }
+
+    proc #f9 {
+        stack[(($sp - "2") + "0")] = "0";
+        stack[(($sp - "2") + "1")] = "0";
+        stack[(($sp - "2") + "2")] = "0";
+        $sp = ($sp - "4");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.print_arr3_ref {
+    proc #d8 {
+        $sp = ($sp + "2");
+        stack[($sp + "2")] = stack[(stack[($sp - "0")] + "0")];
+        stack[($sp + "1")] = #5a;
+        jump #ac;
+    }
+
+    proc #5a {
+        stack[($sp + "2")] = stack[(stack[($sp - "0")] + "1")];
+        stack[($sp + "1")] = #c9;
+        jump #ac;
+    }
+
+    proc #c9 {
+        stack[($sp + "2")] = stack[(stack[($sp - "0")] + "2")];
+        stack[($sp + "1")] = #f7;
+        jump #ac;
+    }
+
+    proc #f7 {
+        stack[(($sp - "0") + "0")] = "0";
+        $sp = ($sp - "2");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.out {
+    proc #ac {
+        $sp = ($sp + "2");
+        out stack[($sp - "0")];
+        $sp = ($sp - "2");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.in {
+    proc #97 {
+        $sp = ($sp + "3");
+        in;
+        stack[($sp - "0")] = $answer;
+        stack[stack[(($sp - "1") + "0")]] = stack[($sp - "0")];
+        $sp = ($sp - "3");
+        jump stack[($sp + "1")];
+    }
+}

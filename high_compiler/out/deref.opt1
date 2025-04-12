@@ -1,0 +1,49 @@
+main {
+    proc #0b {
+        $sp = "-1";
+        jump #ae;
+    }
+}
+
+func main {
+    proc #ae {
+        $sp = ($sp + "2");
+        stack[(($sp - "0") + "0")] = "Hello!";
+        stack[($sp + "2")] = ($sp - "0");
+        stack[($sp + "1")] = #3e;
+        jump #a3;
+    }
+
+    proc #3e {
+        exit;
+    }
+}
+
+func func.use_ref {
+    proc #a3 {
+        $sp = ($sp + "3");
+        stack[(($sp - "0") + "0")] = stack[stack[($sp - "1")]];
+        $sp = ($sp - "3");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.out {
+    proc #66 {
+        $sp = ($sp + "2");
+        out stack[($sp - "0")];
+        $sp = ($sp - "2");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.in {
+    proc #31 {
+        $sp = ($sp + "3");
+        in;
+        stack[($sp - "0")] = $answer;
+        stack[stack[(($sp - "1") + "0")]] = stack[($sp - "0")];
+        $sp = ($sp - "3");
+        jump stack[($sp + "1")];
+    }
+}

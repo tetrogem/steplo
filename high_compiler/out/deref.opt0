@@ -1,0 +1,100 @@
+main {
+    proc #0b {
+        $sp = "-1";
+        %f9 = #ae;
+        jump %f9;
+    }
+}
+
+func main {
+    proc #ae {
+        %56 = "2";
+        $sp = ($sp + %56);
+        %e5 = "Hello!";
+        %07 = "0";
+        %d4 = ($sp - %07);
+        %f6 = "0";
+        %96 = (%d4 + %f6);
+        stack[%96] = %e5;
+        %1c = "0";
+        %f1 = ($sp - %1c);
+        %49 = "2";
+        %58 = ($sp + %49);
+        stack[%58] = %f1;
+        %68 = "1";
+        %c0 = ($sp + %68);
+        %6b = #3e;
+        stack[%c0] = %6b;
+        %2e = #a3;
+        jump %2e;
+    }
+
+    proc #3e {
+        exit;
+    }
+}
+
+func func.use_ref {
+    proc #a3 {
+        %95 = "3";
+        $sp = ($sp + %95);
+        %b3 = "1";
+        %0f = ($sp - %b3);
+        %69 = stack[%0f];
+        %688 = stack[%69];
+        %12 = "0";
+        %e0 = ($sp - %12);
+        %7c = "0";
+        %4b = (%e0 + %7c);
+        stack[%4b] = %688;
+        %91 = "3";
+        $sp = ($sp - %91);
+        %46 = "1";
+        %2d = ($sp + %46);
+        %13 = stack[%2d];
+        jump %13;
+    }
+}
+
+func func.out {
+    proc #66 {
+        %44 = "2";
+        $sp = ($sp + %44);
+        %2a = "0";
+        %5a = ($sp - %2a);
+        %2d5 = stack[%5a];
+        out %2d5;
+        %cb = "2";
+        $sp = ($sp - %cb);
+        %ec = "1";
+        %bd = ($sp + %ec);
+        %26 = stack[%bd];
+        jump %26;
+    }
+}
+
+func func.in {
+    proc #31 {
+        %58d = "3";
+        $sp = ($sp + %58d);
+        %446 = "0";
+        %ab = ($sp - %446);
+        in;
+        stack[%ab] = $answer;
+        %d7 = "0";
+        %d3 = ($sp - %d7);
+        %4a = stack[%d3];
+        %03 = "1";
+        %7cc = ($sp - %03);
+        %952 = "0";
+        %a5 = (%7cc + %952);
+        %ed = stack[%a5];
+        stack[%ed] = %4a;
+        %76 = "3";
+        $sp = ($sp - %76);
+        %e4 = "1";
+        %ae5 = ($sp + %e4);
+        %cf = stack[%ae5];
+        jump %cf;
+    }
+}

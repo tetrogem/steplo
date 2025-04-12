@@ -6,7 +6,9 @@ use std::{
 use itertools::Itertools;
 use uuid::Uuid;
 
-use crate::ast::{BinaryArgs, Command, Expr, Proc, ProcKind, SubProc, TempVar, UMemLoc, Value};
+use crate::ast::{
+    BinaryArgs, Call, Command, Expr, Proc, ProcKind, SubProc, TempVar, UMemLoc, Value,
+};
 
 fn indent(str: impl AsRef<str>) -> String {
     str.as_ref().lines().map(|l| format!("    {}", l)).join("\n")
@@ -41,6 +43,7 @@ fn export_sub_proc(name_m: &mut NameManager, sp: &SubProc<UMemLoc>) -> String {
     lines.push(format!("proc {} {{", export_label(name_m, sp.uuid)));
 
     lines.extend(sp.commands.iter().map(|command| export_command(name_m, command)).map(indent));
+    lines.push(indent(export_call(name_m, &sp.call)));
 
     lines.push("}".into());
 
@@ -50,19 +53,33 @@ fn export_sub_proc(name_m: &mut NameManager, sp: &SubProc<UMemLoc>) -> String {
 fn export_command(name_m: &mut NameManager, command: &Command<UMemLoc>) -> String {
     let command_name = match command {
         Command::SetMemLoc { mem_loc, val } => {
-            format!("{} = {}", export_mem_loc(name_m, &mem_loc), export_expr(name_m, &val))
+            format!("{} = {}", export_mem_loc(name_m, mem_loc), export_expr(name_m, val))
         },
         Command::SetStack { addr, val } => {
-            format!("stack[{}] = {}", export_expr(name_m, &addr), export_expr(name_m, &val))
+            format!("stack[{}] = {}", export_expr(name_m, addr), export_expr(name_m, val))
         },
-        Command::Jump(to) => format!("jump {}", export_expr(name_m, &to)),
-        Command::Exit => "exit".into(),
-        Command::Branch { .. } => "branch".into(),
         Command::In => "in".into(),
-        Command::Out(val) => format!("out {}", export_expr(name_m, &val)),
+        Command::Out(val) => format!("out {}", export_expr(name_m, val)),
     };
 
     format!("{};", command_name)
+}
+
+fn export_call(name_m: &mut NameManager, call: &Call<UMemLoc>) -> String {
+    let call_name = match call {
+        Call::Jump(to) => format!("jump {}", export_expr(name_m, to)),
+        Call::Exit => "exit".into(),
+        Call::Branch { cond, then_to, else_to } => {
+            format!(
+                "if {} then jump {} else jump {}",
+                export_expr(name_m, cond),
+                export_expr(name_m, then_to),
+                export_expr(name_m, else_to)
+            )
+        },
+    };
+
+    format!("{};", call_name)
 }
 
 fn export_mem_loc(name_m: &mut NameManager, mem_loc: &UMemLoc) -> String {
