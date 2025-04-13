@@ -71,14 +71,20 @@ pub enum BodyItem {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Assign(Arc<Assign>),
+    DerefAssign(Arc<DerefAssign>),
     Call { func_name: Arc<str>, param_exprs: Arc<Vec<Arc<AssignExpr>>> },
     Native(Arc<NativeOperation>), // not compiled to by source code, internal/built-ins only
 }
 
 #[derive(Debug, Clone)]
 pub struct Assign {
-    pub deref_ident: bool,
     pub ident: Arc<Ident>,
+    pub expr: Arc<AssignExpr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DerefAssign {
+    pub addr: Arc<Pipeline>,
     pub expr: Arc<AssignExpr>,
 }
 
@@ -363,7 +369,7 @@ fn parse_body_item(
     let Some(peek_token) = tokens.peek() else { bail!("Expected statement") };
 
     let body_item = match peek_token {
-        Token::Deref => BodyItem::Statement(Arc::new(parse_assign(tokens)?)),
+        Token::Deref => BodyItem::Statement(Arc::new(parse_deref_assign(tokens)?)),
         Token::Name(_) => {
             let Some(peek_token) = tokens.peek() else {
                 bail!("Unexpected end after var name in statement")
@@ -387,13 +393,6 @@ fn parse_body_item(
 
 fn parse_assign(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Statement> {
     tokens.reset_peek();
-    let deref_var = match tokens.peek() {
-        Some(Token::Deref) => {
-            let Some(Token::Deref) = tokens.next() else { bail!("Expected deref") };
-            true
-        },
-        _ => false,
-    };
 
     let ident = parse_ident(tokens)?;
     let Some(Token::Eq) = tokens.next() else { bail!("Expected =") };
@@ -402,9 +401,27 @@ fn parse_assign(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::
 
     let Some(Token::Semi) = tokens.next() else { bail!("Expected semicolon") };
 
-    let assign =
-        Assign { deref_ident: deref_var, ident: Arc::new(ident), expr: Arc::new(assign_expr) };
+    let assign = Assign { ident: Arc::new(ident), expr: Arc::new(assign_expr) };
     let statement = Statement::Assign(Arc::new(assign));
+
+    Ok(statement)
+}
+
+fn parse_deref_assign(
+    tokens: &mut MultiPeek<impl Iterator<Item = Token>>,
+) -> anyhow::Result<Statement> {
+    tokens.reset_peek();
+
+    let Some(Token::Deref) = tokens.next() else { bail!("Expected deref") };
+    let addr = parse_pipeline(tokens)?;
+    let Some(Token::Eq) = tokens.next() else { bail!("Expected =") };
+
+    let assign_expr = parse_assign_expr(tokens)?;
+
+    let Some(Token::Semi) = tokens.next() else { bail!("Expected semicolon") };
+
+    let assign = DerefAssign { addr: Arc::new(addr), expr: Arc::new(assign_expr) };
+    let statement = Statement::DerefAssign(Arc::new(assign));
 
     Ok(statement)
 }

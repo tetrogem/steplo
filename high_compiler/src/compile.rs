@@ -483,19 +483,45 @@ fn compile_statement(
                 )
                 .collect_vec();
 
-                let dest_addr_loc = if assign.deref_ident {
-                    let deref_loc = temp();
+                let dest_addr_loc = compile_dest_addr.mem_loc;
 
-                    // deref var
-                    assignments.push(Arc::new(opt::Command::SetMemLoc {
-                        mem_loc: deref_loc.clone(),
-                        val: Arc::new(ast::Expr::Deref(mem_loc_expr(compile_dest_addr.mem_loc))),
-                    }));
+                // assign to var
+                assignments.push(Arc::new(opt::Command::SetStack {
+                    addr: mem_loc_expr(dest_addr_loc),
+                    val: mem_loc_expr(element.mem_loc),
+                }));
 
-                    deref_loc
-                } else {
-                    compile_dest_addr.mem_loc
-                };
+                element_assignments.extend(assignments);
+            }
+
+            element_assignments
+        },
+        link::Statement::DerefAssign(assign) => {
+            let elements = compile_assign_expr_elements(stack_frame, &assign.expr)?;
+            let mut element_assignments = Vec::new();
+
+            for (i, element) in elements.into_iter().enumerate() {
+                let compiled_addr = compile_pipeline(stack_frame, &assign.addr)?;
+                let compiled_offset = compile_pipeline(
+                    stack_frame,
+                    &hast::Pipeline {
+                        initial_val: Arc::new(hast::Value::Literal(i.to_string().into())),
+                        operations: Arc::new(Vec::new()),
+                    },
+                )?;
+
+                let compile_dest_addr =
+                    compile_addr_offset(compiled_addr.mem_loc, compiled_offset.mem_loc)?;
+
+                let mut assignments = chain!(
+                    element.commands,
+                    compiled_addr.commands,
+                    compiled_offset.commands,
+                    compile_dest_addr.commands
+                )
+                .collect_vec();
+
+                let dest_addr_loc = compile_dest_addr.mem_loc;
 
                 // assign to var
                 assignments.push(Arc::new(opt::Command::SetStack {
