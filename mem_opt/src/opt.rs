@@ -1,4 +1,4 @@
-use itertools::Itertools;
+use itertools::{chain, Itertools};
 use uuid::Uuid;
 
 use std::{
@@ -8,7 +8,9 @@ use std::{
     sync::Arc,
 };
 
-use crate::ast::{BinaryArgs, Call, Command, Expr, Proc, SubProc, TempVar, UMemLoc, Value};
+use crate::ast::{
+    BinaryArgs, Call, Command, Expr, Proc, ProcKind, SubProc, TempVar, UMemLoc, Value,
+};
 
 const DEBUG: bool = false;
 
@@ -48,6 +50,10 @@ fn optimize_procs(
             Optimization {
                 f: optimization_inline_pure_redirect_labels,
                 name: "inline_pure_redirect_labels",
+            },
+            Optimization {
+                f: optimization_remove_unused_sub_procs,
+                name: "remove_unused_sub_procs",
             },
         ]),
     };
@@ -489,6 +495,115 @@ fn optimization_inline_pure_redirect_labels(
         .collect();
 
     OptimizationReport { optimized, val: procs }
+}
+
+fn optimization_remove_unused_sub_procs(
+    procs: Vec<Arc<Proc<UMemLoc>>>,
+) -> OptimizationReport<Vec<Arc<Proc<UMemLoc>>>> {
+    let mut all_labels = BTreeSet::new();
+    let mut used_labels = BTreeSet::new();
+
+    // first main label is the start of the program...
+    // ...always used, but never called by anything else, so we have to add it manually
+    let main_proc = procs
+        .iter()
+        .find(|proc| matches!(proc.kind.as_ref(), ProcKind::Main))
+        .expect("main proc should exist");
+
+    let first_main_sp =
+        main_proc.sub_procs.first().expect("a sub proc for the main proc should exist");
+
+    used_labels.insert(first_main_sp.uuid);
+
+    // find all other used labels
+    for sp in procs.iter().flat_map(|proc| proc.sub_procs.iter()) {
+        all_labels.insert(sp.uuid);
+
+        let sp_used_labels = chain!(
+            sp.commands.iter().flat_map(|command| command_find_used_labels(command)),
+            call_find_used_labels(&sp.call)
+        )
+        .collect::<BTreeSet<_>>();
+
+        used_labels.extend(sp_used_labels);
+    }
+
+    fn command_find_used_labels(command: &Command<UMemLoc>) -> BTreeSet<Uuid> {
+        match command {
+            Command::SetMemLoc { val, .. } => expr_find_used_labels(val),
+            Command::SetStack { addr, val } => {
+                chain!(expr_find_used_labels(addr), expr_find_used_labels(val)).collect()
+            },
+            Command::In => Default::default(),
+            Command::Out(expr) => expr_find_used_labels(expr),
+        }
+    }
+
+    fn call_find_used_labels(call: &Call<UMemLoc>) -> BTreeSet<Uuid> {
+        match call {
+            Call::Exit => Default::default(),
+            Call::Jump(to) => expr_find_used_labels(to),
+            Call::Branch { cond, then_to, else_to } => chain!(
+                expr_find_used_labels(cond),
+                expr_find_used_labels(then_to),
+                expr_find_used_labels(else_to)
+            )
+            .collect(),
+        }
+    }
+
+    fn expr_find_used_labels(expr: &Expr<UMemLoc>) -> BTreeSet<Uuid> {
+        match expr {
+            Expr::MemLoc(_) => Default::default(),
+            Expr::Value(value) => match value.as_ref() {
+                Value::Literal(_) => Default::default(),
+                Value::Label(label) => BTreeSet::from([*label]),
+            },
+            Expr::Deref(expr) => expr_find_used_labels(expr),
+            Expr::Add(args) => binary_args_find_used_labels(args),
+            Expr::Sub(args) => binary_args_find_used_labels(args),
+            Expr::Mul(args) => binary_args_find_used_labels(args),
+            Expr::Div(args) => binary_args_find_used_labels(args),
+            Expr::Mod(args) => binary_args_find_used_labels(args),
+            Expr::Eq(args) => binary_args_find_used_labels(args),
+            Expr::Lte(args) => binary_args_find_used_labels(args),
+            Expr::Neq(args) => binary_args_find_used_labels(args),
+            Expr::Not(expr) => expr_find_used_labels(expr),
+            Expr::InAnswer => Default::default(),
+        }
+    }
+
+    fn binary_args_find_used_labels(args: &BinaryArgs<UMemLoc>) -> BTreeSet<Uuid> {
+        chain!(expr_find_used_labels(&args.left), expr_find_used_labels(&args.right)).collect()
+    }
+
+    // remove procs/sub procs that go unused
+    let unused_labels = all_labels.difference(&used_labels).copied().collect::<BTreeSet<_>>();
+
+    let optimized_procs = procs
+        .iter()
+        .map(|proc| {
+            let sub_procs = proc
+                .sub_procs
+                .iter()
+                .filter(|sp| unused_labels.contains(&sp.uuid).not())
+                .cloned()
+                .collect();
+
+            Arc::new(Proc { kind: proc.kind.clone(), sub_procs: Arc::new(sub_procs) })
+        })
+        .filter(|proc| proc.sub_procs.is_empty().not())
+        .collect::<Vec<_>>();
+
+    let procs_were_optimized = optimized_procs.len() != procs.len();
+    let sub_procs_were_optimized =
+        optimized_procs.iter().flat_map(|proc| proc.sub_procs.iter()).count()
+            != procs.iter().flat_map(|proc| proc.sub_procs.iter()).count();
+
+    OptimizationReport {
+        optimized: procs_were_optimized || sub_procs_were_optimized,
+        val: optimized_procs,
+    }
 }
 
 fn find_pure_redirects<'a>(

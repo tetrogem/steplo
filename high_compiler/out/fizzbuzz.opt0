@@ -1,260 +1,260 @@
 main {
-    proc #62 {
+    proc #4a {
         $sp = "-1";
-        %6f = #a0;
-        jump %6f;
+        %31 = #0f;
+        jump %31;
     }
 }
 
 func main {
-    proc #a0 {
-        %ff = "3";
-        $sp = ($sp + %ff);
-        %16 = "Enter how many iterations to perform:";
-        %06 = "2";
-        %70 = ($sp + %06);
-        stack[%70] = %16;
-        %86 = "1";
-        %7a = ($sp + %86);
-        %e8 = #fc;
-        stack[%7a] = %e8;
-        %aa = #f1;
-        jump %aa;
+    proc #0f {
+        %84 = "3";
+        $sp = ($sp + %84);
+        %29 = "Enter how many iterations to perform:";
+        %47 = "2";
+        %c7 = ($sp + %47);
+        stack[%c7] = %29;
+        %35 = "1";
+        %d7 = ($sp + %35);
+        %88 = #b1;
+        stack[%d7] = %88;
+        %471 = #0b;
+        jump %471;
     }
 
-    proc #fc {
-        %ad = "0";
-        %eb = ($sp - %ad);
-        %b0 = "2";
-        %53 = ($sp + %b0);
-        stack[%53] = %eb;
-        %bb = "1";
-        %ee = ($sp + %bb);
-        %36 = #d2;
-        stack[%ee] = %36;
-        %12 = #95;
-        jump %12;
-    }
-
-    proc #d2 {
-        %82 = "1";
-        %53b = "1";
-        %90 = ($sp - %53b);
-        %ca = "0";
-        %29 = (%90 + %ca);
-        stack[%29] = %82;
-        %b4 = #2b;
-        jump %b4;
-    }
-
-    proc #64 {
-        %4d = "Done!";
-        %87 = "2";
-        %0d = ($sp + %87);
-        stack[%0d] = %4d;
-        %ed = "1";
-        %d6 = ($sp + %ed);
-        %c6 = #a09;
-        stack[%d6] = %c6;
-        %72 = #f1;
+    proc #b1 {
+        %46 = "0";
+        %ed = ($sp - %46);
+        %b8 = "2";
+        %a7 = ($sp + %b8);
+        stack[%a7] = %ed;
+        %ba = "1";
+        %8a = ($sp + %ba);
+        %42 = #27;
+        stack[%8a] = %42;
+        %72 = #0a;
         jump %72;
     }
 
-    proc #a09 {
-        exit;
+    proc #27 {
+        %12 = "1";
+        %a4 = "1";
+        %7e = ($sp - %a4);
+        %3e = "0";
+        %7c = (%7e + %3e);
+        stack[%7c] = %12;
+        %b3 = #c2;
+        jump %b3;
     }
 
-    proc #b2 {
-        %bb7 = "1";
-        %df = ($sp - %bb7);
-        %bd = stack[%df];
-        %25 = "15";
-        %5e = (%bd % %25);
-        %e1 = "0";
-        %53b1 = (%5e == %e1);
-        %e85 = #ede;
-        %54 = #e3;
-        if %53b1 then jump %e85 else jump %54;
-    }
-
-    proc #d3 {
-        %13 = "1";
-        %d9 = ($sp - %13);
-        %a1 = stack[%d9];
-        %58 = "1";
-        %1b = (%a1 + %58);
-        %c62 = "1";
-        %52 = ($sp - %c62);
-        %cb = "0";
-        %98 = (%52 + %cb);
-        stack[%98] = %1b;
-        %9d = #2b;
-        jump %9d;
-    }
-
-    proc #ede {
-        %97 = "FizzBuzz";
-        %1a = "2";
-        %35 = ($sp + %1a);
-        stack[%35] = %97;
-        %9e = "1";
-        %99 = ($sp + %9e);
-        %b6 = #54b;
-        stack[%99] = %b6;
-        %c7 = #f1;
-        jump %c7;
-    }
-
-    proc #54b {
-        %59 = #d3;
-        jump %59;
+    proc #469 {
+        %c1 = "Done!";
+        %37 = "2";
+        %a1 = ($sp + %37);
+        stack[%a1] = %c1;
+        %93 = "1";
+        %92 = ($sp + %93);
+        %30 = #e3;
+        stack[%92] = %30;
+        %64 = #0b;
+        jump %64;
     }
 
     proc #e3 {
-        %7c = "1";
-        %3c = ($sp - %7c);
-        %ef = stack[%3c];
-        %9b = "3";
-        %f7 = (%ef % %9b);
-        %f9 = "0";
-        %37 = (%f7 == %f9);
-        %be = #73;
-        %5e8 = #361;
-        if %37 then jump %be else jump %5e8;
+        exit;
     }
 
-    proc #bb71 {
-        %3c4 = #d3;
-        jump %3c4;
+    proc #1f {
+        %4d = "1";
+        %08 = ($sp - %4d);
+        %9f = stack[%08];
+        %f2 = "15";
+        %ad = (%9f % %f2);
+        %ac = "0";
+        %fb = (%ad == %ac);
+        %37b = #c3;
+        %66 = #acd;
+        if %fb then jump %37b else jump %66;
     }
 
-    proc #73 {
-        %580 = "Fizz";
-        %3e = "2";
-        %42 = ($sp + %3e);
-        stack[%42] = %580;
-        %e6 = "1";
-        %14 = ($sp + %e6);
-        %51 = #85;
-        stack[%14] = %51;
-        %80 = #f1;
-        jump %80;
+    proc #55 {
+        %c5 = "1";
+        %bf = ($sp - %c5);
+        %2d = stack[%bf];
+        %f1 = "1";
+        %eb = (%2d + %f1);
+        %6a = "1";
+        %07 = ($sp - %6a);
+        %03 = "0";
+        %7b = (%07 + %03);
+        stack[%7b] = %eb;
+        %b2 = #c2;
+        jump %b2;
     }
 
-    proc #85 {
-        %11 = #bb71;
-        jump %11;
+    proc #c3 {
+        %6e = "FizzBuzz";
+        %43 = "2";
+        %460 = ($sp + %43);
+        stack[%460] = %6e;
+        %53 = "1";
+        %3d = ($sp + %53);
+        %475 = #e6;
+        stack[%3d] = %475;
+        %e5 = #0b;
+        jump %e5;
     }
 
-    proc #361 {
-        %db = "1";
-        %61 = ($sp - %db);
-        %03 = stack[%61];
-        %85d = "5";
-        %69 = (%03 % %85d);
-        %e0 = "0";
-        %3f = (%69 == %e0);
-        %b9 = #15;
-        %f2 = #3ed;
-        if %3f then jump %b9 else jump %f2;
+    proc #e6 {
+        %05 = #55;
+        jump %05;
     }
 
-    proc #6d {
-        %148 = #bb71;
-        jump %148;
+    proc #acd {
+        %54 = "1";
+        %db = ($sp - %54);
+        %13 = stack[%db];
+        %e2 = "3";
+        %7d = (%13 % %e2);
+        %cd = "0";
+        %d8 = (%7d == %cd);
+        %317 = #d4;
+        %1a = #2e;
+        if %d8 then jump %317 else jump %1a;
     }
 
-    proc #15 {
-        %79 = "Buzz";
-        %d2c = "2";
-        %9bb = ($sp + %d2c);
-        stack[%9bb] = %79;
-        %594 = "1";
-        %c9 = ($sp + %594);
-        %37e = #46;
-        stack[%c9] = %37e;
-        %07 = #f1;
-        jump %07;
+    proc #5d {
+        %7f = #55;
+        jump %7f;
     }
 
-    proc #46 {
-        %f6 = #6d;
-        jump %f6;
+    proc #d4 {
+        %cd7 = "Fizz";
+        %eb5 = "2";
+        %9fe = ($sp + %eb5);
+        stack[%9fe] = %cd7;
+        %66b = "1";
+        %d6 = ($sp + %66b);
+        %62 = #c9;
+        stack[%d6] = %62;
+        %90 = #0b;
+        jump %90;
     }
 
-    proc #3ed {
-        %f0 = "1";
-        %794 = ($sp - %f0);
-        %d8 = stack[%794];
-        %26 = "2";
-        %641 = ($sp + %26);
-        stack[%641] = %d8;
-        %10 = "1";
-        %4e = ($sp + %10);
-        %6d1 = #f99;
-        stack[%4e] = %6d1;
-        %5d = #f1;
-        jump %5d;
+    proc #c9 {
+        %4c = #5d;
+        jump %4c;
     }
 
-    proc #f99 {
-        %d3a = #6d;
-        jump %d3a;
+    proc #2e {
+        %d5 = "1";
+        %23 = ($sp - %d5);
+        %f8 = stack[%23];
+        %0d = "5";
+        %2de = (%f8 % %0d);
+        %cd75 = "0";
+        %38 = (%2de == %cd75);
+        %85 = #384;
+        %4b = #f0;
+        if %38 then jump %85 else jump %4b;
     }
 
-    proc #2b {
-        %736 = "1";
-        %30 = ($sp - %736);
-        %c6d = stack[%30];
-        %50 = "0";
-        %d0 = ($sp - %50);
-        %78 = stack[%d0];
-        %0b = (%c6d <= %78);
-        %036 = #b2;
-        %fc1 = #64;
-        if %0b then jump %036 else jump %fc1;
+    proc #93e {
+        %26 = #5d;
+        jump %26;
+    }
+
+    proc #384 {
+        %5f = "Buzz";
+        %07a = "2";
+        %50 = ($sp + %07a);
+        stack[%50] = %5f;
+        %f8e = "1";
+        %d9 = ($sp + %f8e);
+        %a76 = #7cf;
+        stack[%d9] = %a76;
+        %a0 = #0b;
+        jump %a0;
+    }
+
+    proc #7cf {
+        %57 = #93e;
+        jump %57;
+    }
+
+    proc #f0 {
+        %8af = "1";
+        %4e = ($sp - %8af);
+        %5f4 = stack[%4e];
+        %87 = "2";
+        %22 = ($sp + %87);
+        stack[%22] = %5f4;
+        %3d7 = "1";
+        %bf2 = ($sp + %3d7);
+        %40 = #8b;
+        stack[%bf2] = %40;
+        %a77 = #0b;
+        jump %a77;
+    }
+
+    proc #8b {
+        %19 = #93e;
+        jump %19;
+    }
+
+    proc #c2 {
+        %475b = "1";
+        %de = ($sp - %475b);
+        %0fe = stack[%de];
+        %275 = "0";
+        %58 = ($sp - %275);
+        %60 = stack[%58];
+        %037 = (%0fe <= %60);
+        %48 = #1f;
+        %f0c = #469;
+        if %037 then jump %48 else jump %f0c;
     }
 }
 
 func func.out {
-    proc #f1 {
-        %fa = "2";
-        $sp = ($sp + %fa);
-        %5c = "0";
-        %d4 = ($sp - %5c);
-        %74 = stack[%d4];
-        out %74;
-        %31 = "2";
-        $sp = ($sp - %31);
-        %75 = "1";
-        %e5 = ($sp + %75);
-        %f8 = stack[%e5];
-        jump %f8;
+    proc #0b {
+        %82 = "2";
+        $sp = ($sp + %82);
+        %0d7 = "0";
+        %5fc = ($sp - %0d7);
+        %dbe = stack[%5fc];
+        out %dbe;
+        %02 = "2";
+        $sp = ($sp - %02);
+        %c39 = "1";
+        %e7 = ($sp + %c39);
+        %dd = stack[%e7];
+        jump %dd;
     }
 }
 
 func func.in {
-    proc #95 {
-        %642 = "3";
-        $sp = ($sp + %642);
-        %37ee = "0";
-        %514 = ($sp - %37ee);
+    proc #0a {
+        %ff = "3";
+        $sp = ($sp + %ff);
+        %ca = "0";
+        %20 = ($sp - %ca);
         in;
-        stack[%514] = $answer;
-        %a4 = "0";
-        %427 = ($sp - %a4);
-        %eeb = stack[%427];
-        %f3 = "1";
-        %03e = ($sp - %f3);
-        %e7 = "0";
-        %e3b = (%03e + %e7);
-        %a7 = stack[%e3b];
-        stack[%a7] = %eeb;
-        %8b = "3";
-        $sp = ($sp - %8b);
-        %8d = "1";
-        %a5 = ($sp + %8d);
-        %c63 = stack[%a5];
-        jump %c63;
+        stack[%20] = $answer;
+        %0a6 = "0";
+        %4e9 = ($sp - %0a6);
+        %b9 = stack[%4e9];
+        %601 = "1";
+        %f2c = ($sp - %601);
+        %825 = "0";
+        %e3e = (%f2c + %825);
+        %0e = stack[%e3e];
+        stack[%0e] = %b9;
+        %b84 = "3";
+        $sp = ($sp - %b84);
+        %96 = "1";
+        %ebf = ($sp + %96);
+        %b5 = stack[%ebf];
+        jump %b5;
     }
 }

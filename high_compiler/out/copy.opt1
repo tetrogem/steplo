@@ -1,35 +1,15 @@
 main {
-    proc #87 {
+    proc #ba {
         $sp = "-1";
-        jump #df;
+        jump #4c;
     }
 }
 
 func main {
-    proc #df {
+    proc #4c {
         $sp = ($sp + "3");
         stack[(($sp - "1") + "0")] = "12345";
         stack[(($sp - "0") + "0")] = stack[($sp - "1")];
         exit;
-    }
-}
-
-func func.out {
-    proc #1d {
-        $sp = ($sp + "2");
-        out stack[($sp - "0")];
-        $sp = ($sp - "2");
-        jump stack[($sp + "1")];
-    }
-}
-
-func func.in {
-    proc #8c {
-        $sp = ($sp + "3");
-        in;
-        stack[($sp - "0")] = $answer;
-        stack[stack[(($sp - "1") + "0")]] = stack[($sp - "0")];
-        $sp = ($sp - "3");
-        jump stack[($sp + "1")];
     }
 }
