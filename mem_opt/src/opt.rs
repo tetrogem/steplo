@@ -40,10 +40,16 @@ fn optimize_procs(
     mut procs: Vec<Arc<Proc<UMemLoc>>>,
 ) -> OptimizationReport<Vec<Arc<Proc<UMemLoc>>>> {
     let optimizer = Optimizer {
-        optimizations: Vec::from([Optimization {
-            f: optimization_inline_pure_redirects,
-            name: "inline_pure_redirects",
-        }]),
+        optimizations: Vec::from([
+            Optimization {
+                f: optimization_inline_pure_redirect_calls,
+                name: "inline_pure_redirect_calls",
+            },
+            Optimization {
+                f: optimization_inline_pure_redirect_labels,
+                name: "inline_pure_redirect_labels",
+            },
+        ]),
     };
 
     let mut tracker = Tracker::default();
@@ -239,17 +245,10 @@ fn optimization_remove_unused_temps(
     }
 }
 
-fn optimization_inline_pure_redirects(
+fn optimization_inline_pure_redirect_calls(
     procs: Vec<Arc<Proc<UMemLoc>>>,
 ) -> OptimizationReport<Vec<Arc<Proc<UMemLoc>>>> {
-    let mut pure_redirect_label_to_call = BTreeMap::new();
-
-    // find pure redirects
-    for sp in procs.iter().flat_map(|proc| proc.sub_procs.iter()) {
-        if sp.commands.is_empty() {
-            pure_redirect_label_to_call.insert(sp.uuid, sp.call.clone());
-        }
-    }
+    let pure_redirect_label_to_call = find_pure_redirects(procs.iter());
 
     let mut optimized = false;
 
@@ -321,6 +320,189 @@ fn optimization_inline_pure_redirects(
         .collect();
 
     OptimizationReport { optimized, val: procs }
+}
+
+fn optimization_inline_pure_redirect_labels(
+    procs: Vec<Arc<Proc<UMemLoc>>>,
+) -> OptimizationReport<Vec<Arc<Proc<UMemLoc>>>> {
+    let pure_redirect_label_to_call = find_pure_redirects(procs.iter());
+
+    let pure_redirect_label_to_to_label = pure_redirect_label_to_call
+        .into_iter()
+        .filter_map(|(redirect_label, call)| match call.as_ref() {
+            Call::Exit => None,
+            Call::Branch { .. } => None,
+            Call::Jump(to) => {
+                let Expr::Value(value) = to.as_ref() else { return None };
+                let Value::Label(to_label) = value.as_ref() else { return None };
+                Some((redirect_label, *to_label))
+            },
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    fn expr_replace_pure_redirect_labels(
+        optimized: &mut bool,
+        // pure_redirect_label_to_to_label
+        rlabel_to_tlabel: &BTreeMap<Uuid, Uuid>,
+        expr: &Expr<UMemLoc>,
+    ) -> Arc<Expr<UMemLoc>> {
+        let expr = match expr {
+            Expr::MemLoc(mem_loc) => Expr::MemLoc(mem_loc.clone()),
+            Expr::Value(value) => match value.as_ref() {
+                Value::Literal(literal) => Expr::Value(Arc::new(Value::Literal(literal.clone()))),
+                Value::Label(label) => {
+                    let inlined_label = rlabel_to_tlabel.get(label);
+
+                    *optimized = *optimized || inlined_label.is_some();
+
+                    let label = *inlined_label.unwrap_or(label);
+                    Expr::Value(Arc::new(Value::Label(label)))
+                },
+            },
+            Expr::Deref(expr) => {
+                Expr::Deref(expr_replace_pure_redirect_labels(optimized, rlabel_to_tlabel, expr))
+            },
+            Expr::Add(args) => Expr::Add(binary_args_replace_pure_redirect_labels(
+                optimized,
+                rlabel_to_tlabel,
+                args,
+            )),
+            Expr::Sub(args) => Expr::Sub(binary_args_replace_pure_redirect_labels(
+                optimized,
+                rlabel_to_tlabel,
+                args,
+            )),
+            Expr::Mul(args) => Expr::Mul(binary_args_replace_pure_redirect_labels(
+                optimized,
+                rlabel_to_tlabel,
+                args,
+            )),
+            Expr::Div(args) => Expr::Div(binary_args_replace_pure_redirect_labels(
+                optimized,
+                rlabel_to_tlabel,
+                args,
+            )),
+            Expr::Mod(args) => Expr::Mod(binary_args_replace_pure_redirect_labels(
+                optimized,
+                rlabel_to_tlabel,
+                args,
+            )),
+            Expr::Eq(args) => Expr::Eq(binary_args_replace_pure_redirect_labels(
+                optimized,
+                rlabel_to_tlabel,
+                args,
+            )),
+            Expr::Lte(args) => Expr::Lte(binary_args_replace_pure_redirect_labels(
+                optimized,
+                rlabel_to_tlabel,
+                args,
+            )),
+            Expr::Neq(args) => Expr::Neq(binary_args_replace_pure_redirect_labels(
+                optimized,
+                rlabel_to_tlabel,
+                args,
+            )),
+            Expr::Not(expr) => {
+                Expr::Not(expr_replace_pure_redirect_labels(optimized, rlabel_to_tlabel, expr))
+            },
+            Expr::InAnswer => Expr::InAnswer,
+        };
+
+        Arc::new(expr)
+    }
+
+    fn binary_args_replace_pure_redirect_labels(
+        optimized: &mut bool,
+        // pure_redirect_label_to_to_label
+        rlabel_to_tlabel: &BTreeMap<Uuid, Uuid>,
+        args: &BinaryArgs<UMemLoc>,
+    ) -> Arc<BinaryArgs<UMemLoc>> {
+        Arc::new(BinaryArgs {
+            left: expr_replace_pure_redirect_labels(optimized, rlabel_to_tlabel, &args.left),
+            right: expr_replace_pure_redirect_labels(optimized, rlabel_to_tlabel, &args.right),
+        })
+    }
+
+    let mut optimized = false;
+
+    let procs = procs
+        .into_iter()
+        .map(|proc| {
+            Arc::new(Proc {
+                kind: proc.kind.clone(),
+                sub_procs: Arc::new(
+                    proc.sub_procs
+                        .iter()
+                        .map(|sp| {
+                            Arc::new(SubProc {
+                                uuid: sp.uuid,
+                                call: sp.call.clone(),
+                                commands: Arc::new(
+                                    sp.commands
+                                        .iter()
+                                        .map(|command| {
+                                            let command = match command.as_ref() {
+                                                Command::SetMemLoc { mem_loc, val } => {
+                                                    Command::SetMemLoc {
+                                                        mem_loc: mem_loc.clone(),
+                                                        val: expr_replace_pure_redirect_labels(
+                                                            &mut optimized,
+                                                            &pure_redirect_label_to_to_label,
+                                                            val,
+                                                        ),
+                                                    }
+                                                },
+                                                Command::SetStack { addr, val } => {
+                                                    Command::SetStack {
+                                                        addr: expr_replace_pure_redirect_labels(
+                                                            &mut optimized,
+                                                            &pure_redirect_label_to_to_label,
+                                                            addr,
+                                                        ),
+                                                        val: expr_replace_pure_redirect_labels(
+                                                            &mut optimized,
+                                                            &pure_redirect_label_to_to_label,
+                                                            val,
+                                                        ),
+                                                    }
+                                                },
+                                                Command::In => Command::In,
+                                                Command::Out(expr) => {
+                                                    Command::Out(expr_replace_pure_redirect_labels(
+                                                        &mut optimized,
+                                                        &pure_redirect_label_to_to_label,
+                                                        expr,
+                                                    ))
+                                                },
+                                            };
+
+                                            Arc::new(command)
+                                        })
+                                        .collect(),
+                                ),
+                            })
+                        })
+                        .collect(),
+                ),
+            })
+        })
+        .collect();
+
+    OptimizationReport { optimized, val: procs }
+}
+
+fn find_pure_redirects<'a>(
+    procs: impl Iterator<Item = &'a Arc<Proc<UMemLoc>>>,
+) -> BTreeMap<Uuid, Arc<Call<UMemLoc>>> {
+    let mut pure_redirect_label_to_call = BTreeMap::new();
+
+    for sp in procs.flat_map(|proc| proc.sub_procs.iter()) {
+        if sp.commands.is_empty() {
+            pure_redirect_label_to_call.insert(sp.uuid, sp.call.clone());
+        }
+    }
+
+    pure_redirect_label_to_call
 }
 
 fn find_trivial_temps(sp: &SubProc<UMemLoc>) -> BTreeMap<Arc<TempVar>, Arc<Expr<UMemLoc>>> {
