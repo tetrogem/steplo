@@ -153,7 +153,8 @@ pub enum NativeOperation {
 }
 
 pub fn parse(tokens: Vec<Token>) -> anyhow::Result<Vec<Arc<TopItem>>> {
-    let mut tokens = tokens.into_iter().multipeek();
+    let mut tokens =
+        tokens.into_iter().filter(|t| matches!(t, Token::Comment(_)).not()).multipeek();
     let mut items = Vec::new();
 
     tokens.reset_peek();

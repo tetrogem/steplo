@@ -1,0 +1,76 @@
+// https://leetcode.com/problems/merge-sorted-array
+
+main |arr1[13], vec1[2], arr2[6], vec2[2], temp| {
+    arr1 = ["-3","-2",0,0,0,6,7,0,0,0,0,0,0];
+    arr2 = ["-1",1,1,1,2,3];
+
+    Vector_new(ref vec1, ref arr1, 13);
+    Vector_new(ref vec2, ref arr2, 6);
+    Vector_to_string(ref temp, ref vec1);
+    out(temp);
+    Vector_to_string(ref temp, ref vec2);
+    out(temp);
+
+    merge_sorted_vecs(ref vec1, 7, ref vec2, 6);
+    Vector_to_string(ref temp, ref vec1);
+    out("Merged: " | join temp);
+}
+
+func Vector_new(ret_ref, vals_ref, len) || {
+    deref ret_ref = [vals_ref, len];
+}
+
+func Vector_vals_ref(ret_ref, self_ref) || {
+    deref ret_ref = self_ref | add 0 | deref;
+}
+
+func Vector_len(ret_ref, self_ref) || {
+    deref ret_ref = self_ref | add 1 | deref;
+}
+
+func Vector_to_string(ret_ref, self_ref) |str, i, vals_ref, len, val| {
+    Vector_vals_ref(ref vals_ref, self_ref);
+    Vector_len(ref len, self_ref);
+
+    str = "[";
+    i = 0;
+    while i | lt len {
+        val = vals_ref | add i | deref;
+        str = str | join val;
+
+        if i | add 1 | lt len {
+            str = str | join ", ";
+        }
+
+        i = i | add 1;
+    }
+
+    str = str | join "]";
+    deref ret_ref = str;
+}
+
+func merge_sorted_vecs(vec1_ref, m, vec2_ref, n)
+    |i, nums1_vals_ref, nums2_vals_ref, num1, num2, c1, c2|
+{
+    Vector_vals_ref(ref nums1_vals_ref, vec1_ref);
+    Vector_vals_ref(ref nums2_vals_ref, vec2_ref);
+
+    i = m | add n | sub 1;
+    while i | gte 0 {
+        num1 = nums1_vals_ref | add m | sub 1 | deref;
+        num2 = nums2_vals_ref | add n | sub 1 | deref;
+
+        c1 = n | lte 0;
+        c2 = num1 | gte num2;
+
+        if c1 | or c2 {
+            deref nums1_vals_ref | add i = num1;
+            m = m | sub 1;
+        } else {
+            deref nums1_vals_ref | add i = num2;
+            n = n | sub 1;
+        }
+
+        i = i | sub 1;
+    }
+}

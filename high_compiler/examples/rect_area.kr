@@ -1,0 +1,47 @@
+main |rect1[2], rect2[2]| {
+    Rect_new(ref rect1, 4, 4);
+    Rect_new(ref rect2, 5, 8);
+
+    Rect_print_info(ref rect1, "Rect 1");
+    Rect_print_info(ref rect2, "Rect 2");
+
+    out("Done!");
+}
+
+func Rect_new(ret_ref, width, height) || {
+    deref ret_ref = [width, height];
+}
+
+func Rect_width(ret_ref, self_ref) || {
+    deref ret_ref = self_ref | deref;
+}
+
+func Rect_height(ret_ref, self_ref) || {
+    deref ret_ref = self_ref | add 1 | deref;
+}
+
+func Rect_area(ret_ref, self_ref) |width, height| {
+    Rect_width(ref width, self_ref);
+    Rect_height(ref height, self_ref);
+    deref ret_ref = width | mul height;
+}
+
+func Rect_perimeter(ret_ref, self_ref) |width, height| {
+    Rect_width(ref width, self_ref);
+    Rect_height(ref height, self_ref);
+    width = width | mul 2;
+    height = height | mul 2;
+    deref ret_ref = width | add height;
+}
+
+func Rect_print_info(self_ref, name) |a, b| {
+    Rect_width(ref a, self_ref);
+    Rect_height(ref b, self_ref);
+    out(name | join " dimensions: " | join a | join " x " | join b);
+
+    Rect_perimeter(ref a, self_ref);
+    out(name | join " perimeter: " | join a);
+
+    Rect_area(ref a, self_ref);
+    out(name | join " area: " | join a);
+}

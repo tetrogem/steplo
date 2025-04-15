@@ -1,0 +1,98 @@
+main {
+    proc #72 {
+        $sp = "-1";
+        %41 = #7d;
+        jump %41;
+    }
+}
+
+func main {
+    proc #7d {
+        %78 = "3";
+        $sp = ($sp + %78);
+        %e0 = "Set via ident!";
+        %50 = "0";
+        %b7 = ($sp - %50);
+        %8c = "0";
+        %a5 = (%b7 + %8c);
+        stack[%a5] = %e0;
+        %57 = "1";
+        %40 = ($sp - %57);
+        %f4 = "2";
+        %2b = ($sp + %f4);
+        stack[%2b] = %40;
+        %bc = "1";
+        %53 = ($sp + %bc);
+        %34 = #b6;
+        stack[%53] = %34;
+        %0f = #28;
+        jump %0f;
+    }
+
+    proc #b6 {
+        exit;
+    }
+}
+
+func func.ret {
+    proc #28 {
+        %e1 = "2";
+        $sp = ($sp + %e1);
+        %7b = "Set via reference!";
+        %43 = "0";
+        %1e = ($sp - %43);
+        %47 = stack[%1e];
+        %8d = "0";
+        %aa = (%47 + %8d);
+        stack[%aa] = %7b;
+        %68 = "2";
+        $sp = ($sp - %68);
+        %92 = "1";
+        %70 = ($sp + %92);
+        %e4 = stack[%70];
+        jump %e4;
+    }
+}
+
+func func.out {
+    proc #4d {
+        %ad = "2";
+        $sp = ($sp + %ad);
+        %42 = "0";
+        %8b = ($sp - %42);
+        %4e = stack[%8b];
+        out %4e;
+        %df = "2";
+        $sp = ($sp - %df);
+        %b8 = "1";
+        %ade = ($sp + %b8);
+        %c0 = stack[%ade];
+        jump %c0;
+    }
+}
+
+func func.in {
+    proc #f9 {
+        %a5d = "3";
+        $sp = ($sp + %a5d);
+        %7a = "0";
+        %ed = ($sp - %7a);
+        in;
+        stack[%ed] = $answer;
+        %39 = "0";
+        %33 = ($sp - %39);
+        %f3 = stack[%33];
+        %fb = "1";
+        %75 = ($sp - %fb);
+        %c4 = stack[%75];
+        %d2 = "0";
+        %3f = (%c4 + %d2);
+        stack[%3f] = %f3;
+        %bd = "3";
+        $sp = ($sp - %bd);
+        %66 = "1";
+        %cc = ($sp + %66);
+        %921 = stack[%cc];
+        jump %921;
+    }
+}

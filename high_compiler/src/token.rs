@@ -26,6 +26,7 @@ pub enum Token {
     RightBracket,
     Slice,
     Period,
+    Comment(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -148,6 +149,22 @@ fn consume_word(chars: &mut Peekable<impl Iterator<Item = char>>) -> anyhow::Res
     Ok(token)
 }
 
+fn consume_comment(chars: &mut Peekable<impl Iterator<Item = char>>) -> anyhow::Result<Token> {
+    let Some('/') = chars.next() else { bail!("Expected //") };
+    let Some('/') = chars.next() else { bail!("Expected //") };
+
+    let mut comment = String::new();
+    for c in chars.by_ref() {
+        if c == '\n' {
+            break;
+        }
+
+        comment.push(c);
+    }
+
+    Ok(Token::Comment(comment))
+}
+
 pub fn tokenize(code: &str) -> anyhow::Result<Vec<Token>> {
     let mut chars = code.chars().peekable();
     let mut tokens = Vec::new();
@@ -166,6 +183,7 @@ pub fn tokenize(code: &str) -> anyhow::Result<Vec<Token>> {
             ',' => consume_char(&mut chars, Some(Token::Comma)),
             '.' => consume_char(&mut chars, Some(Token::Period)),
             '"' => Some(consume_literal(&mut chars)?),
+            '/' => Some(consume_comment(&mut chars)?),
             c if c.is_whitespace() => consume_char(&mut chars, None),
             _ => Some(consume_word(&mut chars)?),
         };

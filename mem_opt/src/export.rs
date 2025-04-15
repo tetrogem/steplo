@@ -103,10 +103,12 @@ fn export_expr(name_m: &mut NameManager, expr: &Expr<UMemLoc>) -> String {
         Expr::Div(args) => export_binary_op_expr(name_m, args, "/"),
         Expr::Mod(args) => export_binary_op_expr(name_m, args, "%"),
         Expr::Eq(args) => export_binary_op_expr(name_m, args, "=="),
-        Expr::Lte(args) => export_binary_op_expr(name_m, args, "<="),
-        Expr::Neq(args) => export_binary_op_expr(name_m, args, "!="),
+        Expr::Gt(args) => export_binary_op_expr(name_m, args, ">"),
+        Expr::Lt(args) => export_binary_op_expr(name_m, args, "<"),
         Expr::Not(expr) => format!("(!{})", export_expr(name_m, expr)),
+        Expr::Or(args) => export_binary_op_expr(name_m, args, "||"),
         Expr::InAnswer => "$answer".into(),
+        Expr::Join(args) => export_binary_op_expr(name_m, args, "~"),
     }
 }
 

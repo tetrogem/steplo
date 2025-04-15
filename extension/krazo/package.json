@@ -1,0 +1,37 @@
+{
+  "name": "krazo",
+  "displayName": "krazo",
+  "description": "Support for the Krazo programming language",
+  "version": "0.0.1",
+  "scripts": {
+    "package": "npx vsce package"
+  },
+  "engines": {
+    "vscode": "^1.99.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "krazo",
+        "aliases": [
+          "Krazo",
+          "krazo"
+        ],
+        "extensions": [
+          ".kr"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "krazo",
+        "scopeName": "source.krazo",
+        "path": "./syntaxes/krazo.tmLanguage.json"
+      }
+    ]
+  }
+}

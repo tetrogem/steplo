@@ -17,6 +17,8 @@ mod link;
 mod token;
 
 fn main() -> anyhow::Result<()> {
+    println!("KRAZO COMPILER");
+
     let mut args = env::args();
     let Some(_current_path) = args.next() else { panic!("Cannot get current dir") };
     let Some(in_path) = args.next() else { panic!("No input file given") };
@@ -25,8 +27,8 @@ fn main() -> anyhow::Result<()> {
 
     let in_path = Path::new(&in_path);
     assert!(
-        in_path.extension().and_then(|x| x.to_str()) == Some("hscm"),
-        "input file must be a .hscm file"
+        in_path.extension().and_then(|x| x.to_str()) == Some("kr"),
+        "input file must be a .kr file"
     );
 
     let mut in_file = File::open(in_path).expect("input file should open");

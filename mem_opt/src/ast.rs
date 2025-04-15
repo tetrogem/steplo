@@ -44,10 +44,12 @@ pub enum Expr<MemLoc> {
     Div(Arc<BinaryArgs<MemLoc>>),
     Mod(Arc<BinaryArgs<MemLoc>>),
     Eq(Arc<BinaryArgs<MemLoc>>),
-    Lte(Arc<BinaryArgs<MemLoc>>),
-    Neq(Arc<BinaryArgs<MemLoc>>),
+    Lt(Arc<BinaryArgs<MemLoc>>),
+    Gt(Arc<BinaryArgs<MemLoc>>),
     Not(Arc<Expr<MemLoc>>),
+    Or(Arc<BinaryArgs<MemLoc>>),
     InAnswer,
+    Join(Arc<BinaryArgs<MemLoc>>),
 }
 
 #[derive(Debug)]

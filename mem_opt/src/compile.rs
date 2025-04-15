@@ -1,5 +1,5 @@
 use itertools::{chain, Itertools};
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, ops::Not, sync::Arc};
 
 use inter::ez;
 use uuid::Uuid;
@@ -205,15 +205,37 @@ fn compile_call(compile_m: &mut CompileManager, call: &Call<RMemLoc>) -> Vec<ez:
             input: compile_expr(compile_m, to),
         })]),
         Call::Branch { cond, then_to, else_to } => {
-            Vec::from([ez::Op::Control(ez::ControlOp::IfElse {
-                condition: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
+            let compiled_cond = compile_expr(compile_m, cond);
+            let wrap_cond = 'wrap: {
+                let ez::Expr::Derived(op) = compiled_cond.as_ref() else { break 'wrap true };
+                let ez::Op::Operator(op) = op.as_ref() else { break 'wrap true };
+
+                matches!(
+                    op,
+                    ez::OperatorOp::And { .. }
+                        | ez::OperatorOp::Equals { .. }
+                        | ez::OperatorOp::GreaterThan { .. }
+                        | ez::OperatorOp::LessThan { .. }
+                        | ez::OperatorOp::Not { .. }
+                        | ez::OperatorOp::Or { .. }
+                )
+                .not()
+            };
+
+            let compiled_cond = match wrap_cond {
+                false => compiled_cond,
+                true => Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
                     ez::OperatorOp::Equals {
-                        operand_a: compile_expr(compile_m, cond),
+                        operand_a: compiled_cond,
                         operand_b: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
                             "true".into(),
                         )))),
                     },
                 )))),
+            };
+
+            Vec::from([ez::Op::Control(ez::ControlOp::IfElse {
+                condition: compiled_cond,
                 then_substack: Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
                     root: Arc::new(ez::Op::Event(ez::EventOp::BroadcastAndWait {
                         input: compile_expr(compile_m, then_to),
@@ -272,26 +294,28 @@ fn compile_expr(compile_m: &mut CompileManager, expr: &Expr<RMemLoc>) -> Arc<ez:
             operand_a: compile_expr(compile_m, &args.left),
             operand_b: compile_expr(compile_m, &args.right),
         }))),
-        Expr::Lte(args) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::Not {
-            operand: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
-                ez::OperatorOp::GreaterThan {
-                    operand_a: compile_expr(compile_m, &args.left),
-                    operand_b: compile_expr(compile_m, &args.right),
-                },
-            )))),
-        }))),
-        Expr::Neq(args) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::Not {
-            operand: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
-                ez::OperatorOp::Equals {
-                    operand_a: compile_expr(compile_m, &args.left),
-                    operand_b: compile_expr(compile_m, &args.right),
-                },
-            )))),
+        Expr::Gt(args) => {
+            ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::GreaterThan {
+                operand_a: compile_expr(compile_m, &args.left),
+                operand_b: compile_expr(compile_m, &args.right),
+            })))
+        },
+        Expr::Lt(args) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::LessThan {
+            operand_a: compile_expr(compile_m, &args.left),
+            operand_b: compile_expr(compile_m, &args.right),
         }))),
         Expr::Not(expr) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::Not {
             operand: compile_expr(compile_m, expr),
         }))),
+        Expr::Or(args) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::Or {
+            operand_a: compile_expr(compile_m, &args.left),
+            operand_b: compile_expr(compile_m, &args.right),
+        }))),
         Expr::InAnswer => ez::Expr::Derived(Arc::new(ez::Op::Sensing(ez::SensingOp::Answer))),
+        Expr::Join(args) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::Join {
+            string_a: compile_expr(compile_m, &args.left),
+            string_b: compile_expr(compile_m, &args.right),
+        }))),
     };
 
     Arc::new(compiled_expr)

@@ -710,29 +710,69 @@ fn compile_pipeline(
                 compile_binary_operation(stack_frame, operand, |operand, out| {
                     Vec::from([Arc::new(opt::Command::SetMemLoc {
                         mem_loc: out,
-                        val: Arc::new(ast::Expr::Neq(binary_args(
+                        val: Arc::new(ast::Expr::Not(Arc::new(ast::Expr::Eq(binary_args(
+                            mem_loc_expr(val.clone()),
+                            mem_loc_expr(operand),
+                        ))))),
+                    })])
+                })
+            },
+            hast::Operation::Gt { operand } => {
+                compile_binary_operation(stack_frame, operand, |operand, out| {
+                    Vec::from([Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: out,
+                        val: Arc::new(ast::Expr::Gt(binary_args(
                             mem_loc_expr(val.clone()),
                             mem_loc_expr(operand),
                         ))),
                     })])
                 })
             },
-            hast::Operation::Gt { operand } => todo!(),
-            hast::Operation::Lt { operand } => todo!(),
-            hast::Operation::Gte { operand } => todo!(),
+            hast::Operation::Lt { operand } => {
+                compile_binary_operation(stack_frame, operand, |operand, out| {
+                    Vec::from([Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: out,
+                        val: Arc::new(ast::Expr::Lt(binary_args(
+                            mem_loc_expr(val.clone()),
+                            mem_loc_expr(operand),
+                        ))),
+                    })])
+                })
+            },
+            hast::Operation::Gte { operand } => {
+                compile_binary_operation(stack_frame, operand, |operand, out| {
+                    Vec::from([Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: out,
+                        val: Arc::new(ast::Expr::Not(Arc::new(ast::Expr::Lt(binary_args(
+                            mem_loc_expr(val.clone()),
+                            mem_loc_expr(operand),
+                        ))))),
+                    })])
+                })
+            },
             hast::Operation::Lte { operand } => {
                 compile_binary_operation(stack_frame, operand, |operand, out| {
                     Vec::from([Arc::new(opt::Command::SetMemLoc {
                         mem_loc: out,
-                        val: Arc::new(ast::Expr::Lte(binary_args(
+                        val: Arc::new(ast::Expr::Not(Arc::new(ast::Expr::Gt(binary_args(
+                            mem_loc_expr(val.clone()),
+                            mem_loc_expr(operand),
+                        ))))),
+                    })])
+                })
+            },
+            hast::Operation::And { operand } => todo!(),
+            hast::Operation::Or { operand } => {
+                compile_binary_operation(stack_frame, operand, |operand, out| {
+                    Vec::from([Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: out,
+                        val: Arc::new(ast::Expr::Or(binary_args(
                             mem_loc_expr(val.clone()),
                             mem_loc_expr(operand),
                         ))),
                     })])
                 })
             },
-            hast::Operation::And { operand } => todo!(),
-            hast::Operation::Or { operand } => todo!(),
             hast::Operation::Xor { operand } => todo!(),
             hast::Operation::Not => compile_unary_operation(|out| {
                 Vec::from([Arc::new(opt::Command::SetMemLoc {
@@ -740,7 +780,17 @@ fn compile_pipeline(
                     val: Arc::new(ast::Expr::Not(mem_loc_expr(val.clone()))),
                 })])
             }),
-            hast::Operation::Join { operand } => todo!(),
+            hast::Operation::Join { operand } => {
+                compile_binary_operation(stack_frame, operand, |operand, out| {
+                    Vec::from([Arc::new(opt::Command::SetMemLoc {
+                        mem_loc: out,
+                        val: Arc::new(ast::Expr::Join(binary_args(
+                            mem_loc_expr(val.clone()),
+                            mem_loc_expr(operand),
+                        ))),
+                    })])
+                })
+            },
         }?;
 
         commands.extend(compiled_operation.commands);

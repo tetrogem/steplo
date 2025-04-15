@@ -259,10 +259,12 @@ impl HasMemLocs for ast::Expr<ast::UMemLoc> {
             ast::Expr::Div(args) => args.to_mem_locs(),
             ast::Expr::Mod(args) => args.to_mem_locs(),
             ast::Expr::Eq(args) => args.to_mem_locs(),
-            ast::Expr::Lte(args) => args.to_mem_locs(),
-            ast::Expr::Neq(args) => args.to_mem_locs(),
+            ast::Expr::Gt(args) => args.to_mem_locs(),
+            ast::Expr::Lt(args) => args.to_mem_locs(),
             ast::Expr::Not(expr) => expr.to_mem_locs(),
+            ast::Expr::Or(args) => args.to_mem_locs(),
             ast::Expr::InAnswer => Default::default(),
+            ast::Expr::Join(args) => args.to_mem_locs(),
         }
     }
 
@@ -277,10 +279,12 @@ impl HasMemLocs for ast::Expr<ast::UMemLoc> {
             ast::Expr::Div(args) => ast::Expr::Div(args.to_rmem(temp_m)),
             ast::Expr::Mod(args) => ast::Expr::Mod(args.to_rmem(temp_m)),
             ast::Expr::Eq(args) => ast::Expr::Eq(args.to_rmem(temp_m)),
-            ast::Expr::Lte(args) => ast::Expr::Lte(args.to_rmem(temp_m)),
-            ast::Expr::Neq(args) => ast::Expr::Neq(args.to_rmem(temp_m)),
+            ast::Expr::Gt(args) => ast::Expr::Gt(args.to_rmem(temp_m)),
+            ast::Expr::Lt(args) => ast::Expr::Lt(args.to_rmem(temp_m)),
             ast::Expr::Not(expr) => ast::Expr::Not(expr.to_rmem(temp_m)),
+            ast::Expr::Or(args) => ast::Expr::Or(args.to_rmem(temp_m)),
             ast::Expr::InAnswer => ast::Expr::InAnswer,
+            ast::Expr::Join(args) => ast::Expr::Join(args.to_rmem(temp_m)),
         };
 
         Arc::new(expr)

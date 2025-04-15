@@ -112,6 +112,13 @@ fn optimize_sub_proc(mut sp: Arc<SubProc<UMemLoc>>) -> OptimizationReport<Arc<Su
 
     loop {
         opt_debug!("sub_proc {}", sp.uuid);
+
+        sp = Arc::new(SubProc {
+            uuid: sp.uuid,
+            call: tracker.record(optimize_call(sp.call.clone())),
+            commands: tracker.record(optimize_commands(sp.commands.clone())),
+        });
+
         sp = tracker.record(optimizer.optimize(sp));
 
         if tracker.take_pass_optimized().not() {
@@ -120,6 +127,157 @@ fn optimize_sub_proc(mut sp: Arc<SubProc<UMemLoc>>) -> OptimizationReport<Arc<Su
     }
 
     OptimizationReport { optimized: tracker.optimized(), val: sp }
+}
+
+fn optimize_commands(
+    mut commands: Arc<Vec<Arc<Command<UMemLoc>>>>,
+) -> OptimizationReport<Arc<Vec<Arc<Command<UMemLoc>>>>> {
+    let optimizer = Optimizer { optimizations: Vec::new() };
+    let mut tracker = Tracker::default();
+
+    loop {
+        opt_debug!("commands");
+
+        commands = Arc::new(
+            commands
+                .iter()
+                .map(|command| tracker.record(optimize_command(command.clone())))
+                .collect(),
+        );
+
+        commands = tracker.record(optimizer.optimize(commands));
+
+        if tracker.take_pass_optimized().not() {
+            break;
+        }
+    }
+
+    OptimizationReport { optimized: tracker.optimized(), val: commands }
+}
+
+fn optimize_command(
+    mut command: Arc<Command<UMemLoc>>,
+) -> OptimizationReport<Arc<Command<UMemLoc>>> {
+    let optimizer = Optimizer { optimizations: Vec::new() };
+    let mut tracker = Tracker::default();
+
+    loop {
+        opt_debug!("command");
+
+        command = match command.as_ref() {
+            Command::SetMemLoc { mem_loc, val } => Arc::new(Command::SetMemLoc {
+                mem_loc: mem_loc.clone(),
+                val: tracker.record(optimize_expr(val.clone())),
+            }),
+            Command::SetStack { addr, val } => Arc::new(Command::SetStack {
+                addr: tracker.record(optimize_expr(addr.clone())),
+                val: tracker.record(optimize_expr(val.clone())),
+            }),
+            Command::In => Arc::new(Command::In),
+            Command::Out(expr) => {
+                Arc::new(Command::Out(tracker.record(optimize_expr(expr.clone()))))
+            },
+        };
+
+        command = tracker.record(optimizer.optimize(command));
+
+        if tracker.take_pass_optimized().not() {
+            break;
+        }
+    }
+
+    OptimizationReport { optimized: tracker.optimized(), val: command }
+}
+
+fn optimize_call(mut call: Arc<Call<UMemLoc>>) -> OptimizationReport<Arc<Call<UMemLoc>>> {
+    let optimizer = Optimizer { optimizations: Vec::new() };
+    let mut tracker = Tracker::default();
+
+    loop {
+        opt_debug!("call");
+
+        call = Arc::new(match call.as_ref() {
+            Call::Exit => Call::Exit,
+            Call::Jump(to) => Call::Jump(tracker.record(optimize_expr(to.clone()))),
+            Call::Branch { cond, then_to, else_to } => Call::Branch {
+                cond: tracker.record(optimize_expr(cond.clone())),
+                then_to: tracker.record(optimize_expr(then_to.clone())),
+                else_to: tracker.record(optimize_expr(else_to.clone())),
+            },
+        });
+
+        call = tracker.record(optimizer.optimize(call));
+
+        if tracker.take_pass_optimized().not() {
+            break;
+        }
+    }
+
+    OptimizationReport { optimized: tracker.optimized(), val: call }
+}
+
+fn optimize_expr(mut expr: Arc<Expr<UMemLoc>>) -> OptimizationReport<Arc<Expr<UMemLoc>>> {
+    let optimizer = Optimizer {
+        optimizations: Vec::from([Optimization {
+            f: optimization_eval_well_known_exprs,
+            name: "eval_well_known_exprs",
+        }]),
+    };
+    let mut tracker = Tracker::default();
+
+    loop {
+        opt_debug!("expr");
+
+        expr = Arc::new(match expr.as_ref() {
+            Expr::Value(value) => Expr::Value(value.clone()),
+            Expr::MemLoc(mem_loc) => Expr::MemLoc(mem_loc.clone()),
+            Expr::Deref(expr) => Expr::Deref(tracker.record(optimize_expr(expr.clone()))),
+            Expr::Add(args) => Expr::Add(tracker.record(optimize_binary_args(args.clone()))),
+            Expr::Sub(args) => Expr::Sub(tracker.record(optimize_binary_args(args.clone()))),
+            Expr::Mul(args) => Expr::Mul(tracker.record(optimize_binary_args(args.clone()))),
+            Expr::Div(args) => Expr::Div(tracker.record(optimize_binary_args(args.clone()))),
+            Expr::Mod(args) => Expr::Mod(tracker.record(optimize_binary_args(args.clone()))),
+            Expr::Eq(args) => Expr::Eq(tracker.record(optimize_binary_args(args.clone()))),
+            Expr::Gt(args) => Expr::Gt(tracker.record(optimize_binary_args(args.clone()))),
+            Expr::Lt(args) => Expr::Lt(tracker.record(optimize_binary_args(args.clone()))),
+            Expr::Not(expr) => Expr::Not(tracker.record(optimize_expr(expr.clone()))),
+            Expr::Or(args) => Expr::Or(tracker.record(optimize_binary_args(args.clone()))),
+            Expr::InAnswer => Expr::InAnswer,
+            Expr::Join(args) => Expr::Join(tracker.record(optimize_binary_args(args.clone()))),
+        });
+
+        expr = tracker.record(optimizer.optimize(expr));
+
+        if tracker.take_pass_optimized().not() {
+            break;
+        }
+    }
+
+    OptimizationReport { optimized: tracker.optimized(), val: expr }
+}
+
+fn optimize_binary_args(
+    mut args: Arc<BinaryArgs<UMemLoc>>,
+) -> OptimizationReport<Arc<BinaryArgs<UMemLoc>>> {
+    let optimizer = Optimizer { optimizations: Vec::new() };
+    let mut tracker = Tracker::default();
+
+    loop {
+        opt_debug!("binary args");
+
+        args = Arc::new(BinaryArgs {
+            left: tracker.record(optimize_expr(args.left.clone())),
+            right: tracker.record(optimize_expr(args.right.clone())),
+        });
+
+        args = tracker.record(optimizer.optimize(args));
+
+        if tracker.take_pass_optimized().not() {
+            break;
+        }
+    }
+
+    OptimizationReport { optimized: tracker.optimized(), val: args }
 }
 
 type OptimizeFn<T> = fn(sp: T) -> OptimizationReport<T>;
@@ -398,12 +556,12 @@ fn optimization_inline_pure_redirect_labels(
                 rlabel_to_tlabel,
                 args,
             )),
-            Expr::Lte(args) => Expr::Lte(binary_args_replace_pure_redirect_labels(
+            Expr::Gt(args) => Expr::Gt(binary_args_replace_pure_redirect_labels(
                 optimized,
                 rlabel_to_tlabel,
                 args,
             )),
-            Expr::Neq(args) => Expr::Neq(binary_args_replace_pure_redirect_labels(
+            Expr::Lt(args) => Expr::Lt(binary_args_replace_pure_redirect_labels(
                 optimized,
                 rlabel_to_tlabel,
                 args,
@@ -411,7 +569,17 @@ fn optimization_inline_pure_redirect_labels(
             Expr::Not(expr) => {
                 Expr::Not(expr_replace_pure_redirect_labels(optimized, rlabel_to_tlabel, expr))
             },
+            Expr::Or(args) => Expr::Or(binary_args_replace_pure_redirect_labels(
+                optimized,
+                rlabel_to_tlabel,
+                args,
+            )),
             Expr::InAnswer => Expr::InAnswer,
+            Expr::Join(args) => Expr::Join(binary_args_replace_pure_redirect_labels(
+                optimized,
+                rlabel_to_tlabel,
+                args,
+            )),
         };
 
         Arc::new(expr)
@@ -566,10 +734,12 @@ fn optimization_remove_unused_sub_procs(
             Expr::Div(args) => binary_args_find_used_labels(args),
             Expr::Mod(args) => binary_args_find_used_labels(args),
             Expr::Eq(args) => binary_args_find_used_labels(args),
-            Expr::Lte(args) => binary_args_find_used_labels(args),
-            Expr::Neq(args) => binary_args_find_used_labels(args),
+            Expr::Gt(args) => binary_args_find_used_labels(args),
+            Expr::Lt(args) => binary_args_find_used_labels(args),
             Expr::Not(expr) => expr_find_used_labels(expr),
+            Expr::Or(args) => binary_args_find_used_labels(args),
             Expr::InAnswer => Default::default(),
+            Expr::Join(args) => binary_args_find_used_labels(args),
         }
     }
 
@@ -604,6 +774,112 @@ fn optimization_remove_unused_sub_procs(
         optimized: procs_were_optimized || sub_procs_were_optimized,
         val: optimized_procs,
     }
+}
+
+fn optimization_eval_well_known_exprs(
+    expr: Arc<Expr<UMemLoc>>,
+) -> OptimizationReport<Arc<Expr<UMemLoc>>> {
+    fn eval_well_known_expr(expr: &Expr<UMemLoc>) -> Option<Arc<Expr<UMemLoc>>> {
+        match expr {
+            Expr::Add(args) => {
+                let BinaryArgs { left, right } = args.as_ref();
+
+                if let Expr::Value(left) = left.as_ref() {
+                    if let Value::Literal(left) = left.as_ref() {
+                        if left.as_ref() == "0" {
+                            return Some(right.clone());
+                        }
+                    }
+                }
+
+                if let Expr::Value(right) = right.as_ref() {
+                    if let Value::Literal(right) = right.as_ref() {
+                        if right.as_ref() == "0" {
+                            return Some(left.clone());
+                        }
+                    }
+                }
+            },
+            Expr::Sub(args) => {
+                let BinaryArgs { left, right } = args.as_ref();
+
+                if let Expr::Value(right) = right.as_ref() {
+                    if let Value::Literal(right) = right.as_ref() {
+                        if right.as_ref() == "0" {
+                            return Some(left.clone());
+                        }
+                    }
+                }
+            },
+            Expr::Mul(args) => {
+                let BinaryArgs { left, right } = args.as_ref();
+
+                if let Expr::Value(left) = left.as_ref() {
+                    if let Value::Literal(left) = left.as_ref() {
+                        if left.as_ref() == "0" {
+                            return Some(Arc::new(Expr::Value(Arc::new(Value::Literal(
+                                "0".into(),
+                            )))));
+                        }
+
+                        if left.as_ref() == "1" {
+                            return Some(right.clone());
+                        }
+                    }
+                }
+
+                if let Expr::Value(right) = right.as_ref() {
+                    if let Value::Literal(right) = right.as_ref() {
+                        if right.as_ref() == "0" {
+                            return Some(Arc::new(Expr::Value(Arc::new(Value::Literal(
+                                "0".into(),
+                            )))));
+                        }
+
+                        if right.as_ref() == "1" {
+                            return Some(left.clone());
+                        }
+                    }
+                }
+            },
+            Expr::Div(args) => {
+                let BinaryArgs { left, right } = args.as_ref();
+
+                if let Expr::Value(right) = right.as_ref() {
+                    if let Value::Literal(right) = right.as_ref() {
+                        if right.as_ref() == "1" {
+                            return Some(left.clone());
+                        }
+                    }
+                }
+            },
+            Expr::Join(args) => {
+                let BinaryArgs { left, right } = args.as_ref();
+
+                if let Expr::Value(left) = left.as_ref() {
+                    if let Value::Literal(left) = left.as_ref() {
+                        if left.as_ref() == "" {
+                            return Some(right.clone());
+                        }
+                    }
+                }
+
+                if let Expr::Value(right) = right.as_ref() {
+                    if let Value::Literal(right) = right.as_ref() {
+                        if right.as_ref() == "" {
+                            return Some(left.clone());
+                        }
+                    }
+                }
+            },
+            _ => {},
+        }
+
+        None
+    }
+
+    let optimized = eval_well_known_expr(&expr);
+    OptimizationReport { optimized: optimized.is_some(), val: optimized.unwrap_or(expr) }
 }
 
 fn find_pure_redirects<'a>(
@@ -679,16 +955,22 @@ fn expr_replace_trivial_temps(
         Expr::Eq(args) => {
             Arc::new(Expr::Eq(binary_args_replace_trivial_temps(args, trivial_temp_to_expr)))
         },
-        Expr::Lte(args) => {
-            Arc::new(Expr::Lte(binary_args_replace_trivial_temps(args, trivial_temp_to_expr)))
+        Expr::Gt(args) => {
+            Arc::new(Expr::Gt(binary_args_replace_trivial_temps(args, trivial_temp_to_expr)))
         },
-        Expr::Neq(args) => {
-            Arc::new(Expr::Neq(binary_args_replace_trivial_temps(args, trivial_temp_to_expr)))
+        Expr::Lt(args) => {
+            Arc::new(Expr::Lt(binary_args_replace_trivial_temps(args, trivial_temp_to_expr)))
         },
         Expr::Not(expr) => {
             Arc::new(Expr::Not(expr_replace_trivial_temps(expr, trivial_temp_to_expr)))
         },
+        Expr::Or(args) => {
+            Arc::new(Expr::Or(binary_args_replace_trivial_temps(args, trivial_temp_to_expr)))
+        },
         Expr::InAnswer => Arc::new(Expr::InAnswer),
+        Expr::Join(args) => {
+            Arc::new(Expr::Join(binary_args_replace_trivial_temps(args, trivial_temp_to_expr)))
+        },
     }
 }
 
@@ -751,10 +1033,12 @@ fn expr_get_used_temps(expr: &Expr<UMemLoc>) -> BTreeSet<Arc<TempVar>> {
         Expr::Div(args) => binary_args_get_used_temps(args),
         Expr::Mod(args) => binary_args_get_used_temps(args),
         Expr::Eq(args) => binary_args_get_used_temps(args),
-        Expr::Lte(args) => binary_args_get_used_temps(args),
-        Expr::Neq(args) => binary_args_get_used_temps(args),
+        Expr::Gt(args) => binary_args_get_used_temps(args),
+        Expr::Lt(args) => binary_args_get_used_temps(args),
         Expr::Not(expr) => expr_get_used_temps(expr),
+        Expr::Or(args) => binary_args_get_used_temps(args),
         Expr::InAnswer => Default::default(),
+        Expr::Join(args) => binary_args_get_used_temps(args),
     }
 }
 

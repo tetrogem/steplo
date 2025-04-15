@@ -1,7 +1,8 @@
-main |a| {
+main |a, b| {
+    b = "Set via ident!";
     ret(ref a);
 }
 
 func ret(ret_ref) || {
-    deref ret_ref = "Returned!";
+    deref ret_ref = "Set via reference!";
 }
