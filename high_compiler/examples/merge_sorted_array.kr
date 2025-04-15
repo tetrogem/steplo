@@ -13,7 +13,7 @@ main |arr1[13], vec1[2], arr2[6], vec2[2], temp| {
 
     merge_sorted_vecs(ref vec1, 7, ref vec2, 6);
     Vector_to_string(ref temp, ref vec1);
-    out("Merged: " | join temp);
+    out(("Merged: " ~ temp));
 }
 
 func Vector_new(ret_ref, vals_ref, len) || {
@@ -21,11 +21,11 @@ func Vector_new(ret_ref, vals_ref, len) || {
 }
 
 func Vector_vals_ref(ret_ref, self_ref) || {
-    deref ret_ref = self_ref | add 0 | deref;
+    deref ret_ref = (*(self_ref + 0));
 }
 
 func Vector_len(ret_ref, self_ref) || {
-    deref ret_ref = self_ref | add 1 | deref;
+    deref ret_ref = (*(self_ref + 1));
 }
 
 func Vector_to_string(ret_ref, self_ref) |str, i, vals_ref, len, val| {
@@ -34,43 +34,38 @@ func Vector_to_string(ret_ref, self_ref) |str, i, vals_ref, len, val| {
 
     str = "[";
     i = 0;
-    while i | lt len {
-        val = vals_ref | add i | deref;
-        str = str | join val;
+    while (i < len) {
+        val = (*(vals_ref + i));
+        str = (str ~ val);
 
-        if i | add 1 | lt len {
-            str = str | join ", ";
+        if ((i + 1) < len) {
+            str = (str ~ ", ");
         }
 
-        i = i | add 1;
+        i = (i + 1);
     }
 
-    str = str | join "]";
+    str = (str ~ "]");
     deref ret_ref = str;
 }
 
-func merge_sorted_vecs(vec1_ref, m, vec2_ref, n)
-    |i, nums1_vals_ref, nums2_vals_ref, num1, num2, c1, c2|
-{
+func merge_sorted_vecs(vec1_ref, m, vec2_ref, n) |i, nums1_vals_ref, nums2_vals_ref, num1, num2| {
     Vector_vals_ref(ref nums1_vals_ref, vec1_ref);
     Vector_vals_ref(ref nums2_vals_ref, vec2_ref);
 
-    i = m | add n | sub 1;
-    while i | gte 0 {
-        num1 = nums1_vals_ref | add m | sub 1 | deref;
-        num2 = nums2_vals_ref | add n | sub 1 | deref;
+    i = ((m + n) - 1);
+    while (i >= 0) {
+        num1 = (*((nums1_vals_ref + m) - 1));
+        num2 = (*((nums2_vals_ref + n) - 1));
 
-        c1 = n | lte 0;
-        c2 = num1 | gte num2;
-
-        if c1 | or c2 {
-            deref nums1_vals_ref | add i = num1;
-            m = m | sub 1;
+        if ((n <= 0) || (num1 >= num2)) {
+            deref (nums1_vals_ref + i) = num1;
+            m = (m - 1);
         } else {
-            deref nums1_vals_ref | add i = num2;
-            n = n | sub 1;
+            deref (nums1_vals_ref + i) = num2;
+            n = (n - 1);
         }
 
-        i = i | sub 1;
+        i = (i - 1);
     }
 }

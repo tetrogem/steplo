@@ -96,15 +96,16 @@ pub enum AssignExpr {
 }
 
 #[derive(Debug, Clone)]
-pub enum Value {
+pub enum Expr {
     Literal(Arc<str>),
     Ident(Arc<Ident>),
     Ref(Arc<Ident>),
+    ParenExpr(Arc<ParenExpr>),
 }
 
 #[derive(Debug, Clone)]
 pub struct Pipeline {
-    pub initial_val: Arc<Value>,
+    pub initial_val: Arc<Expr>,
     pub operations: Arc<Vec<Arc<Operation>>>,
 }
 
@@ -125,25 +126,75 @@ pub enum Operation {
     // memory
     Deref,
     // math
-    Add { operand: Arc<Value> },
-    Sub { operand: Arc<Value> },
-    Mul { operand: Arc<Value> },
-    Div { operand: Arc<Value> },
-    Mod { operand: Arc<Value> },
+    Add { operand: Arc<Expr> },
+    Sub { operand: Arc<Expr> },
+    Mul { operand: Arc<Expr> },
+    Div { operand: Arc<Expr> },
+    Mod { operand: Arc<Expr> },
     // inequality
-    Eq { operand: Arc<Value> },
-    Neq { operand: Arc<Value> },
-    Gt { operand: Arc<Value> },
-    Lt { operand: Arc<Value> },
-    Gte { operand: Arc<Value> },
-    Lte { operand: Arc<Value> },
+    Eq { operand: Arc<Expr> },
+    Neq { operand: Arc<Expr> },
+    Gt { operand: Arc<Expr> },
+    Lt { operand: Arc<Expr> },
+    Gte { operand: Arc<Expr> },
+    Lte { operand: Arc<Expr> },
     // boolean
-    And { operand: Arc<Value> },
-    Or { operand: Arc<Value> },
-    Xor { operand: Arc<Value> },
+    And { operand: Arc<Expr> },
+    Or { operand: Arc<Expr> },
+    Xor { operand: Arc<Expr> },
     Not,
     // string
-    Join { operand: Arc<Value> },
+    Join { operand: Arc<Expr> },
+}
+
+#[derive(Debug, Clone)]
+pub enum ParenExpr {
+    Unary(Arc<UnaryParenExpr>),
+    Binary(Arc<BinaryParenExpr>),
+}
+
+#[derive(Debug, Clone)]
+pub struct UnaryParenExpr {
+    pub op: UnaryParenExprOp,
+    pub operand: Arc<Expr>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum UnaryParenExprOp {
+    // memory
+    Deref,
+    // boolean
+    Not,
+}
+
+#[derive(Debug, Clone)]
+pub struct BinaryParenExpr {
+    pub op: BinaryParenExprOp,
+    pub left: Arc<Expr>,
+    pub right: Arc<Expr>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BinaryParenExprOp {
+    // math
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    // inequality
+    Eq,
+    Neq,
+    Gt,
+    Lt,
+    Gte,
+    Lte,
+    // boolean
+    And,
+    Or,
+    Xor,
+    // string
+    Join,
 }
 
 #[derive(Debug, Clone)]
@@ -440,7 +491,7 @@ fn parse_assign_expr(
 }
 
 fn parse_pipeline(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Pipeline> {
-    let initial_val = parse_value(tokens)?;
+    let initial_val = parse_expr(tokens)?;
 
     let mut operations = Vec::<Arc<Operation>>::new();
     loop {
@@ -465,7 +516,7 @@ fn parse_pipeline(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow
                     )*
                     $(
                         Opword:: $binary =>
-                        Operation:: $binary { operand: Arc::new(parse_value(tokens)?) },
+                        Operation:: $binary { operand: Arc::new(parse_expr(tokens)?) },
                     )*
                 }
             };
@@ -527,25 +578,107 @@ fn parse_slice(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::R
     Ok(Slice { ident: Arc::new(Ident::Var { name: ident_name.into() }), start_in, end_ex })
 }
 
-fn parse_value(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Value> {
+fn parse_expr(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Expr> {
     tokens.reset_peek();
-    let value = match tokens.peek() {
+    let expr = match tokens.peek() {
         Some(Token::Literal(_)) => {
             let Some(Token::Literal(val)) = tokens.next() else { bail!("Expected literal") };
-            Value::Literal(val.into())
+            Expr::Literal(val.into())
         },
         Some(Token::Ref) => {
             let Some(Token::Ref) = tokens.next() else { bail!("Expected ref") };
             let ident = parse_ident(tokens)?;
-            Value::Ref(Arc::new(ident))
+            Expr::Ref(Arc::new(ident))
         },
+        Some(Token::LeftParen) => Expr::ParenExpr(Arc::new(parse_paren_expr(tokens)?)),
         _ => {
             let ident = parse_ident(tokens)?;
-            Value::Ident(Arc::new(ident))
+            Expr::Ident(Arc::new(ident))
         },
     };
 
-    Ok(value)
+    Ok(expr)
+}
+
+fn parse_paren_expr(
+    tokens: &mut MultiPeek<impl Iterator<Item = Token>>,
+) -> anyhow::Result<ParenExpr> {
+    let Some(Token::LeftParen) = tokens.next() else { bail!("Expected (") };
+
+    tokens.reset_peek();
+    let expr = match tokens.peek() {
+        Some(Token::Asterisk | Token::Bang) => {
+            ParenExpr::Unary(Arc::new(parse_inner_unary_paren_expr(tokens)?))
+        },
+        _ => ParenExpr::Binary(Arc::new(parse_inner_binary_paren_expr(tokens)?)),
+    };
+
+    let Some(Token::RightParen) = tokens.next() else { bail!("Expected )") };
+
+    Ok(expr)
+}
+
+fn parse_inner_unary_paren_expr(
+    tokens: &mut MultiPeek<impl Iterator<Item = Token>>,
+) -> anyhow::Result<UnaryParenExpr> {
+    let op = match tokens.next() {
+        Some(Token::Asterisk) => UnaryParenExprOp::Deref,
+        Some(Token::Bang) => UnaryParenExprOp::Not,
+        _ => bail!("Expected unary operator"),
+    };
+
+    let expr = parse_expr(tokens)?;
+
+    Ok(UnaryParenExpr { op, operand: Arc::new(expr) })
+}
+
+fn parse_inner_binary_paren_expr(
+    tokens: &mut MultiPeek<impl Iterator<Item = Token>>,
+) -> anyhow::Result<BinaryParenExpr> {
+    let left = parse_expr(tokens)?;
+
+    tokens.reset_peek();
+    let op = match tokens.next() {
+        Some(Token::Plus) => BinaryParenExprOp::Add,
+        Some(Token::Dash) => BinaryParenExprOp::Sub,
+        Some(Token::Asterisk) => BinaryParenExprOp::Mul,
+        Some(Token::Slash) => BinaryParenExprOp::Div,
+        Some(Token::Percent) => BinaryParenExprOp::Mod,
+        Some(Token::Tilde) => BinaryParenExprOp::Join,
+        Some(Token::Eq) => match tokens.peek() {
+            Some(Token::Eq) => {
+                let Some(Token::Eq) = tokens.next() else { bail!("Expected ==") };
+                BinaryParenExprOp::Eq
+            },
+            _ => bail!("Expected =="),
+        },
+        Some(Token::LeftAngle) => match tokens.peek() {
+            Some(Token::Eq) => {
+                let Some(Token::Eq) = tokens.next() else { bail!("Expected <=") };
+                BinaryParenExprOp::Lte
+            },
+            _ => BinaryParenExprOp::Lt,
+        },
+        Some(Token::RightAngle) => match tokens.peek() {
+            Some(Token::Eq) => {
+                let Some(Token::Eq) = tokens.next() else { bail!("Expected >=") };
+                BinaryParenExprOp::Gte
+            },
+            _ => BinaryParenExprOp::Gt,
+        },
+        Some(Token::Pipe) => match tokens.peek() {
+            Some(Token::Pipe) => {
+                let Some(Token::Pipe) = tokens.next() else { bail!("Expected ||") };
+                BinaryParenExprOp::Or
+            },
+            _ => bail!("Expected ||"),
+        },
+        _ => bail!("Expected binary operator"),
+    };
+
+    let right = parse_expr(tokens)?;
+
+    Ok(BinaryParenExpr { op, left: Arc::new(left), right: Arc::new(right) })
 }
 
 fn parse_call(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Statement> {

@@ -1,6 +1,7 @@
 use std::{iter::Peekable, str::FromStr};
 
 use anyhow::bail;
+use itertools::{Itertools, MultiPeek};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
@@ -27,6 +28,15 @@ pub enum Token {
     Slice,
     Period,
     Comment(String),
+    Asterisk,
+    Slash,
+    Bang,
+    Plus,
+    Dash,
+    Tilde,
+    LeftAngle,
+    RightAngle,
+    Percent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,9 +120,12 @@ fn consume_literal(chars: &mut impl Iterator<Item = char>) -> anyhow::Result<Tok
     Ok(Token::Literal(value))
 }
 
-fn consume_word(chars: &mut Peekable<impl Iterator<Item = char>>) -> anyhow::Result<Token> {
+fn consume_word(chars: &mut MultiPeek<impl Iterator<Item = char>>) -> anyhow::Result<Token> {
     let mut word = String::new();
-    while let Some(&c) = chars.peek() {
+    while let Some(&c) = {
+        chars.reset_peek();
+        chars.peek()
+    } {
         if c.is_ascii_alphanumeric() || c == '_' {
             word.push(c);
             chars.next();
@@ -149,7 +162,7 @@ fn consume_word(chars: &mut Peekable<impl Iterator<Item = char>>) -> anyhow::Res
     Ok(token)
 }
 
-fn consume_comment(chars: &mut Peekable<impl Iterator<Item = char>>) -> anyhow::Result<Token> {
+fn consume_comment(chars: &mut impl Iterator<Item = char>) -> anyhow::Result<Token> {
     let Some('/') = chars.next() else { bail!("Expected //") };
     let Some('/') = chars.next() else { bail!("Expected //") };
 
@@ -166,10 +179,13 @@ fn consume_comment(chars: &mut Peekable<impl Iterator<Item = char>>) -> anyhow::
 }
 
 pub fn tokenize(code: &str) -> anyhow::Result<Vec<Token>> {
-    let mut chars = code.chars().peekable();
+    let mut chars = code.chars().multipeek();
     let mut tokens = Vec::new();
 
-    while let Some(peek) = chars.peek() {
+    while let Some(peek) = {
+        chars.reset_peek();
+        chars.peek()
+    } {
         let token = match *peek {
             '=' => consume_char(&mut chars, Some(Token::Eq)),
             ';' => consume_char(&mut chars, Some(Token::Semi)),
@@ -182,8 +198,19 @@ pub fn tokenize(code: &str) -> anyhow::Result<Vec<Token>> {
             '|' => consume_char(&mut chars, Some(Token::Pipe)),
             ',' => consume_char(&mut chars, Some(Token::Comma)),
             '.' => consume_char(&mut chars, Some(Token::Period)),
+            '*' => consume_char(&mut chars, Some(Token::Asterisk)),
+            '!' => consume_char(&mut chars, Some(Token::Bang)),
+            '+' => consume_char(&mut chars, Some(Token::Plus)),
+            '-' => consume_char(&mut chars, Some(Token::Dash)),
+            '~' => consume_char(&mut chars, Some(Token::Tilde)),
+            '<' => consume_char(&mut chars, Some(Token::LeftAngle)),
+            '>' => consume_char(&mut chars, Some(Token::RightAngle)),
+            '%' => consume_char(&mut chars, Some(Token::Percent)),
             '"' => Some(consume_literal(&mut chars)?),
-            '/' => Some(consume_comment(&mut chars)?),
+            '/' => match chars.peek() {
+                Some('/') => Some(consume_comment(&mut chars)?),
+                _ => consume_char(&mut chars, Some(Token::Slash)),
+            },
             c if c.is_whitespace() => consume_char(&mut chars, None),
             _ => Some(consume_word(&mut chars)?),
         };

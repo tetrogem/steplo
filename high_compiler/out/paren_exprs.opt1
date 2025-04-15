@@ -1,0 +1,29 @@
+main {
+    proc #51 {
+        $sp = "-1";
+        jump #58;
+    }
+}
+
+func main {
+    proc #58 {
+        $sp = ($sp + "2");
+        stack[$sp] = ((("1" + "1") + "1") + "1");
+        stack[($sp + "2")] = stack[$sp];
+        stack[($sp + "1")] = #c9;
+        jump #cd;
+    }
+
+    proc #c9 {
+        exit;
+    }
+}
+
+func func.out {
+    proc #cd {
+        $sp = ($sp + "2");
+        out stack[$sp];
+        $sp = ($sp - "2");
+        jump stack[($sp + "1")];
+    }
+}

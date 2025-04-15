@@ -76,11 +76,11 @@ pub fn link(mut ast: Vec<Arc<ast::TopItem>>) -> anyhow::Result<Vec<Arc<Proc>>> {
                 Arc::new(ast::BodyItem::Statement(Arc::new(ast::Statement::DerefAssign(
                     Arc::new(ast::DerefAssign {
                         addr: Arc::new(ast::Pipeline {
-                            initial_val: Arc::new(ast::Value::Ident(var("dest_ref"))),
+                            initial_val: Arc::new(ast::Expr::Ident(var("dest_ref"))),
                             operations: Arc::new(Vec::new()),
                         }),
                         expr: Arc::new(ast::AssignExpr::Pipeline(Arc::new(ast::Pipeline {
-                            initial_val: Arc::new(ast::Value::Ident(var("answer"))),
+                            initial_val: Arc::new(ast::Expr::Ident(var("answer"))),
                             operations: Arc::new(Vec::new()),
                         }))),
                     }),

@@ -1,12 +1,12 @@
 main {
-    proc #19 {
+    proc #8b {
         $sp = "-1";
-        jump #2f;
+        jump #ac;
     }
 }
 
 func main {
-    proc #2f {
+    proc #ac {
         $sp = ($sp + "25");
         stack[($sp - "23")] = "-3";
         stack[(($sp - "23") + "1")] = "-2";
@@ -30,73 +30,73 @@ func main {
         stack[($sp + "2")] = ($sp - "10");
         stack[($sp + "3")] = ($sp - "23");
         stack[($sp + "4")] = "13";
-        stack[($sp + "1")] = #4b;
-        jump #5e;
+        stack[($sp + "1")] = #fd;
+        jump #17;
     }
 
-    proc #4b {
+    proc #fd {
         stack[($sp + "2")] = ($sp - "2");
         stack[($sp + "3")] = ($sp - "8");
         stack[($sp + "4")] = "6";
-        stack[($sp + "1")] = #1b;
-        jump #5e;
+        stack[($sp + "1")] = #34;
+        jump #17;
     }
 
-    proc #1b {
+    proc #34 {
         stack[($sp + "2")] = $sp;
         stack[($sp + "3")] = ($sp - "10");
-        stack[($sp + "1")] = #f5;
-        jump #ce;
+        stack[($sp + "1")] = #fe;
+        jump #af;
     }
 
-    proc #f5 {
+    proc #fe {
         stack[($sp + "2")] = stack[$sp];
         stack[($sp + "1")] = #75;
-        jump #ec;
+        jump #70;
     }
 
     proc #75 {
         stack[($sp + "2")] = $sp;
         stack[($sp + "3")] = ($sp - "2");
-        stack[($sp + "1")] = #ad;
-        jump #ce;
+        stack[($sp + "1")] = #10;
+        jump #af;
     }
 
-    proc #ad {
+    proc #10 {
         stack[($sp + "2")] = stack[$sp];
-        stack[($sp + "1")] = #25;
-        jump #ec;
+        stack[($sp + "1")] = #98;
+        jump #70;
     }
 
-    proc #25 {
+    proc #98 {
         stack[($sp + "2")] = ($sp - "10");
         stack[($sp + "3")] = "7";
         stack[($sp + "4")] = ($sp - "2");
         stack[($sp + "5")] = "6";
-        stack[($sp + "1")] = #fd;
-        jump #23;
+        stack[($sp + "1")] = #b0;
+        jump #4a;
     }
 
-    proc #fd {
+    proc #b0 {
         stack[($sp + "2")] = $sp;
         stack[($sp + "3")] = ($sp - "10");
-        stack[($sp + "1")] = #db;
-        jump #ce;
+        stack[($sp + "1")] = #7e;
+        jump #af;
     }
 
-    proc #db {
+    proc #7e {
         stack[($sp + "2")] = ("Merged: " ~ stack[$sp]);
-        stack[($sp + "1")] = #38;
-        jump #ec;
+        stack[($sp + "1")] = #d2;
+        jump #70;
     }
 
-    proc #38 {
+    proc #d2 {
         exit;
     }
 }
 
 func func.Vector_new {
-    proc #5e {
+    proc #17 {
         $sp = ($sp + "4");
         stack[stack[($sp - "2")]] = stack[($sp - "1")];
         stack[(stack[($sp - "2")] + "1")] = stack[$sp];
@@ -106,7 +106,7 @@ func func.Vector_new {
 }
 
 func func.Vector_vals_ref {
-    proc #d8 {
+    proc #27 {
         $sp = ($sp + "3");
         stack[stack[($sp - "1")]] = stack[stack[$sp]];
         $sp = ($sp - "3");
@@ -115,7 +115,7 @@ func func.Vector_vals_ref {
 }
 
 func func.Vector_len {
-    proc #a1 {
+    proc #ec {
         $sp = ($sp + "3");
         stack[stack[($sp - "1")]] = stack[(stack[$sp] + "1")];
         $sp = ($sp - "3");
@@ -124,105 +124,103 @@ func func.Vector_len {
 }
 
 func func.Vector_to_string {
-    proc #ce {
+    proc #af {
         $sp = ($sp + "8");
         stack[($sp + "2")] = ($sp - "2");
         stack[($sp + "3")] = stack[($sp - "5")];
-        stack[($sp + "1")] = #80;
-        jump #d8;
+        stack[($sp + "1")] = #07;
+        jump #27;
     }
 
-    proc #80 {
+    proc #07 {
         stack[($sp + "2")] = ($sp - "1");
         stack[($sp + "3")] = stack[($sp - "5")];
-        stack[($sp + "1")] = #eb;
-        jump #a1;
+        stack[($sp + "1")] = #d4;
+        jump #ec;
     }
 
-    proc #eb {
+    proc #d4 {
         stack[($sp - "4")] = "[";
         stack[($sp - "3")] = "0";
-        if (stack[($sp - "3")] < stack[($sp - "1")]) then jump #b9 else jump #aa;
+        if (stack[($sp - "3")] < stack[($sp - "1")]) then jump #af6 else jump #26;
     }
 
-    proc #aa {
+    proc #26 {
         stack[($sp - "4")] = (stack[($sp - "4")] ~ "]");
         stack[stack[($sp - "6")]] = stack[($sp - "4")];
         $sp = ($sp - "8");
         jump stack[($sp + "1")];
     }
 
-    proc #b9 {
+    proc #af6 {
         stack[$sp] = stack[(stack[($sp - "2")] + stack[($sp - "3")])];
         stack[($sp - "4")] = (stack[($sp - "4")] ~ stack[$sp]);
-        if ((stack[($sp - "3")] + "1") < stack[($sp - "1")]) then jump #3f else jump #39;
+        if ((stack[($sp - "3")] + "1") < stack[($sp - "1")]) then jump #78 else jump #cb;
     }
 
-    proc #39 {
+    proc #cb {
         stack[($sp - "3")] = (stack[($sp - "3")] + "1");
-        if (stack[($sp - "3")] < stack[($sp - "1")]) then jump #b9 else jump #aa;
+        if (stack[($sp - "3")] < stack[($sp - "1")]) then jump #af6 else jump #26;
     }
 
-    proc #3f {
+    proc #78 {
         stack[($sp - "4")] = (stack[($sp - "4")] ~ ", ");
-        jump #39;
+        jump #cb;
     }
 }
 
 func func.merge_sorted_vecs {
-    proc #23 {
-        $sp = ($sp + "12");
-        stack[($sp + "2")] = ($sp - "5");
-        stack[($sp + "3")] = stack[($sp - "10")];
-        stack[($sp + "1")] = #64;
-        jump #d8;
-    }
-
-    proc #64 {
-        stack[($sp + "2")] = ($sp - "4");
+    proc #4a {
+        $sp = ($sp + "10");
+        stack[($sp + "2")] = ($sp - "3");
         stack[($sp + "3")] = stack[($sp - "8")];
-        stack[($sp + "1")] = #7f;
-        jump #d8;
+        stack[($sp + "1")] = #da;
+        jump #27;
     }
 
-    proc #7f {
-        stack[($sp - "6")] = ((stack[($sp - "9")] + stack[($sp - "7")]) - "1");
-        if (!(stack[($sp - "6")] < "0")) then jump #63 else jump #ff;
+    proc #da {
+        stack[($sp + "2")] = ($sp - "2");
+        stack[($sp + "3")] = stack[($sp - "6")];
+        stack[($sp + "1")] = #87;
+        jump #27;
     }
 
-    proc #ff {
-        $sp = ($sp - "12");
+    proc #87 {
+        stack[($sp - "4")] = ((stack[($sp - "7")] + stack[($sp - "5")]) - "1");
+        if (!(stack[($sp - "4")] < "0")) then jump #0a else jump #24;
+    }
+
+    proc #24 {
+        $sp = ($sp - "10");
         jump stack[($sp + "1")];
     }
 
-    proc #63 {
-        stack[($sp - "3")] = stack[((stack[($sp - "5")] + stack[($sp - "9")]) - "1")];
-        stack[($sp - "2")] = stack[((stack[($sp - "4")] + stack[($sp - "7")]) - "1")];
-        stack[($sp - "1")] = (!(stack[($sp - "7")] > "0"));
-        stack[$sp] = (!(stack[($sp - "3")] < stack[($sp - "2")]));
-        if (stack[($sp - "1")] || stack[$sp]) then jump #7b else jump #e5;
+    proc #0a {
+        stack[($sp - "1")] = stack[((stack[($sp - "3")] + stack[($sp - "7")]) - "1")];
+        stack[$sp] = stack[((stack[($sp - "2")] + stack[($sp - "5")]) - "1")];
+        if ((!(stack[($sp - "5")] > "0")) || (!(stack[($sp - "1")] < stack[$sp]))) then jump #4c else jump #97;
     }
 
-    proc #e7 {
-        stack[($sp - "6")] = (stack[($sp - "6")] - "1");
-        if (!(stack[($sp - "6")] < "0")) then jump #63 else jump #ff;
+    proc #85 {
+        stack[($sp - "4")] = (stack[($sp - "4")] - "1");
+        if (!(stack[($sp - "4")] < "0")) then jump #0a else jump #24;
     }
 
-    proc #7b {
-        stack[(stack[($sp - "5")] + stack[($sp - "6")])] = stack[($sp - "3")];
-        stack[($sp - "9")] = (stack[($sp - "9")] - "1");
-        jump #e7;
-    }
-
-    proc #e5 {
-        stack[(stack[($sp - "5")] + stack[($sp - "6")])] = stack[($sp - "2")];
+    proc #4c {
+        stack[(stack[($sp - "3")] + stack[($sp - "4")])] = stack[($sp - "1")];
         stack[($sp - "7")] = (stack[($sp - "7")] - "1");
-        jump #e7;
+        jump #85;
+    }
+
+    proc #97 {
+        stack[(stack[($sp - "3")] + stack[($sp - "4")])] = stack[$sp];
+        stack[($sp - "5")] = (stack[($sp - "5")] - "1");
+        jump #85;
     }
 }
 
 func func.out {
-    proc #ec {
+    proc #70 {
         $sp = ($sp + "2");
         out stack[$sp];
         $sp = ($sp - "2");
