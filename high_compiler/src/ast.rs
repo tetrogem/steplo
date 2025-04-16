@@ -1,9 +1,9 @@
-use std::{iter::Peekable, ops::Not, sync::Arc};
+use std::{ops::Not, sync::Arc};
 
 use anyhow::bail;
 use itertools::{Itertools, MultiPeek};
 
-use crate::token::{Opword, Token};
+use crate::token::Token;
 
 #[derive(Debug, Clone)]
 pub enum TopItem {
@@ -45,7 +45,7 @@ impl IdentDeclaration {
 #[derive(Debug, Clone)]
 pub enum Ident {
     Var { name: Arc<str> },
-    Array { name: Arc<str>, index: Arc<Pipeline> },
+    Array { name: Arc<str>, index: Arc<Expr> },
 }
 
 #[derive(Debug, Clone)]
@@ -58,12 +58,12 @@ pub struct Proc {
 pub enum BodyItem {
     Statement(Arc<Statement>),
     If {
-        cond_pipeline: Arc<Pipeline>,
+        cond_pipeline: Arc<Expr>,
         then_body: Arc<Vec<Arc<BodyItem>>>,
         else_body: Option<Arc<Vec<Arc<BodyItem>>>>,
     },
     While {
-        cond_pipeline: Arc<Pipeline>,
+        cond_pipeline: Arc<Expr>,
         body: Arc<Vec<Arc<BodyItem>>>,
     },
 }
@@ -84,13 +84,13 @@ pub struct Assign {
 
 #[derive(Debug, Clone)]
 pub struct DerefAssign {
-    pub addr: Arc<Pipeline>,
+    pub addr: Arc<Expr>,
     pub expr: Arc<AssignExpr>,
 }
 
 #[derive(Debug, Clone)]
 pub enum AssignExpr {
-    Pipeline(Arc<Pipeline>),
+    Expr(Arc<Expr>),
     Array(Arc<Array>),
     Slice(Arc<Slice>),
 }
@@ -100,18 +100,12 @@ pub enum Expr {
     Literal(Arc<str>),
     Ident(Arc<Ident>),
     Ref(Arc<Ident>),
-    ParenExpr(Arc<ParenExpr>),
-}
-
-#[derive(Debug, Clone)]
-pub struct Pipeline {
-    pub initial_val: Arc<Expr>,
-    pub operations: Arc<Vec<Arc<Operation>>>,
+    Paren(Arc<ParenExpr>),
 }
 
 #[derive(Debug, Clone)]
 pub struct Array {
-    pub elements: Arc<Vec<Arc<Pipeline>>>,
+    pub elements: Arc<Vec<Arc<Expr>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -119,32 +113,6 @@ pub struct Slice {
     pub ident: Arc<Ident>,
     pub start_in: usize,
     pub end_ex: usize,
-}
-
-#[derive(Debug, Clone)]
-pub enum Operation {
-    // memory
-    Deref,
-    // math
-    Add { operand: Arc<Expr> },
-    Sub { operand: Arc<Expr> },
-    Mul { operand: Arc<Expr> },
-    Div { operand: Arc<Expr> },
-    Mod { operand: Arc<Expr> },
-    // inequality
-    Eq { operand: Arc<Expr> },
-    Neq { operand: Arc<Expr> },
-    Gt { operand: Arc<Expr> },
-    Lt { operand: Arc<Expr> },
-    Gte { operand: Arc<Expr> },
-    Lte { operand: Arc<Expr> },
-    // boolean
-    And { operand: Arc<Expr> },
-    Or { operand: Arc<Expr> },
-    Xor { operand: Arc<Expr> },
-    Not,
-    // string
-    Join { operand: Arc<Expr> },
 }
 
 #[derive(Debug, Clone)]
@@ -256,7 +224,7 @@ macro_rules! parse_ident_declaration_list {
     };
 }
 
-macro_rules! parse_pipeline_list {
+macro_rules! parse_expr_list {
     (
         $tokens:expr,
         $opener:pat = $opener_name:expr,
@@ -265,15 +233,15 @@ macro_rules! parse_pipeline_list {
         (|| {
             let Some($opener) = $tokens.next() else { bail!("Expected opening {}", $opener_name) };
 
-            let mut pipelines = Vec::<Arc<Pipeline>>::new();
+            let mut exprs = Vec::<Arc<Expr>>::new();
             loop {
                 $tokens.reset_peek();
                 if let Some($closer) = $tokens.peek() {
                     break;
                 };
 
-                let pipeline = parse_pipeline($tokens)?;
-                pipelines.push(Arc::new(pipeline));
+                let expr = parse_expr($tokens)?;
+                exprs.push(Arc::new(expr));
 
                 $tokens.reset_peek();
                 if matches!($tokens.peek(), Some(Token::Comma)).not() {
@@ -285,7 +253,7 @@ macro_rules! parse_pipeline_list {
 
             let Some($closer) = $tokens.next() else { bail!("Expected closing {}", $closer_name) };
 
-            Ok(pipelines)
+            Ok(exprs)
         })()
     };
 }
@@ -361,7 +329,7 @@ fn parse_ident(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::R
     let ident = match tokens.peek() {
         Some(Token::LeftBracket) => {
             let Some(Token::LeftBracket) = tokens.next() else { bail!("Expected left bracket") };
-            let index = parse_pipeline(tokens)?;
+            let index = parse_expr(tokens)?;
             let Some(Token::RightBracket) = tokens.next() else { bail!("Expected right bracket") };
 
             Ident::Array { name, index: Arc::new(index) }
@@ -465,7 +433,7 @@ fn parse_deref_assign(
     tokens.reset_peek();
 
     let Some(Token::Deref) = tokens.next() else { bail!("Expected deref") };
-    let addr = parse_pipeline(tokens)?;
+    let addr = parse_expr(tokens)?;
     let Some(Token::Eq) = tokens.next() else { bail!("Expected =") };
 
     let assign_expr = parse_assign_expr(tokens)?;
@@ -486,62 +454,14 @@ fn parse_assign_expr(
     match tokens.peek() {
         Some(Token::LeftBracket) => Ok(AssignExpr::Array(Arc::new(parse_array(tokens)?))),
         Some(Token::Slice) => Ok(AssignExpr::Slice(Arc::new(parse_slice(tokens)?))),
-        _ => Ok(AssignExpr::Pipeline(Arc::new(parse_pipeline(tokens)?))),
+        _ => Ok(AssignExpr::Expr(Arc::new(parse_expr(tokens)?))),
     }
-}
-
-fn parse_pipeline(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Pipeline> {
-    let initial_val = parse_expr(tokens)?;
-
-    let mut operations = Vec::<Arc<Operation>>::new();
-    loop {
-        tokens.reset_peek();
-        if !matches!(tokens.peek(), Some(Token::Pipe)) {
-            break;
-        }
-
-        let Some(Token::Pipe) = tokens.next() else { bail!("Expected pipe") };
-
-        let opword = match tokens.next() {
-            Some(Token::Deref) => Opword::Deref,
-            Some(Token::Comword(comword)) => comword,
-            _ => bail!("Expected comword"),
-        };
-
-        macro_rules! opword_to_op {
-            ($opword:expr, [$($unary:ident),* $(,)?], [$($binary:ident),* $(,)?] $(,)?) => {
-                match $opword {
-                    $(
-                        Opword:: $unary => Operation:: $unary,
-                    )*
-                    $(
-                        Opword:: $binary =>
-                        Operation:: $binary { operand: Arc::new(parse_expr(tokens)?) },
-                    )*
-                }
-            };
-        }
-
-        let operation = opword_to_op!(
-            opword,
-            [Deref, Not],
-            [Add, Sub, Mul, Div, Mod, Eq, Neq, Gt, Lt, Gte, Lte, And, Or, Xor, Join],
-        );
-
-        operations.push(Arc::new(operation));
-    }
-
-    let pipeline =
-        Pipeline { initial_val: Arc::new(initial_val), operations: Arc::new(operations) };
-
-    Ok(pipeline)
 }
 
 fn parse_array(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Array> {
     tokens.reset_peek();
 
-    let pipelines =
-        parse_pipeline_list!(tokens, Token::LeftBracket = "[", Token::RightBracket = "]")?;
+    let pipelines = parse_expr_list!(tokens, Token::LeftBracket = "[", Token::RightBracket = "]")?;
 
     Ok(Array { elements: Arc::new(pipelines) })
 }
@@ -590,7 +510,7 @@ fn parse_expr(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Re
             let ident = parse_ident(tokens)?;
             Expr::Ref(Arc::new(ident))
         },
-        Some(Token::LeftParen) => Expr::ParenExpr(Arc::new(parse_paren_expr(tokens)?)),
+        Some(Token::LeftParen) => Expr::Paren(Arc::new(parse_paren_expr(tokens)?)),
         _ => {
             let ident = parse_ident(tokens)?;
             Expr::Ident(Arc::new(ident))
@@ -652,6 +572,13 @@ fn parse_inner_binary_paren_expr(
             },
             _ => bail!("Expected =="),
         },
+        Some(Token::Bang) => match tokens.peek() {
+            Some(Token::Eq) => {
+                let Some(Token::Eq) = tokens.next() else { bail!("Expected !=") };
+                BinaryParenExprOp::Neq
+            },
+            _ => bail!("Expected !="),
+        },
         Some(Token::LeftAngle) => match tokens.peek() {
             Some(Token::Eq) => {
                 let Some(Token::Eq) = tokens.next() else { bail!("Expected <=") };
@@ -694,7 +621,7 @@ fn parse_call(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Re
 
 fn parse_if(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<BodyItem> {
     let Some(Token::If) = tokens.next() else { bail!("Expected if") };
-    let cond_pipeline = parse_pipeline(tokens)?;
+    let cond_expr = parse_expr(tokens)?;
 
     let then_body_items = Arc::new(parse_body(tokens)?);
 
@@ -718,7 +645,7 @@ fn parse_if(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Resu
     };
 
     let statement = BodyItem::If {
-        cond_pipeline: Arc::new(cond_pipeline),
+        cond_pipeline: Arc::new(cond_expr),
         then_body: then_body_items,
         else_body: else_body_items,
     };
@@ -727,11 +654,11 @@ fn parse_if(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Resu
 
 fn parse_while(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<BodyItem> {
     let Some(Token::While) = tokens.next() else { bail!("Expected while") };
-    let cond_pipeline = parse_pipeline(tokens)?;
+    let cond_expr = parse_expr(tokens)?;
 
     let body_items = Arc::new(parse_body(tokens)?);
 
-    let statement = BodyItem::While { cond_pipeline: Arc::new(cond_pipeline), body: body_items };
+    let statement = BodyItem::While { cond_pipeline: Arc::new(cond_expr), body: body_items };
     Ok(statement)
 }
 

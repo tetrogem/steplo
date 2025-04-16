@@ -1,4 +1,4 @@
-use std::{iter::Peekable, str::FromStr};
+use std::str::FromStr;
 
 use anyhow::bail;
 use itertools::{Itertools, MultiPeek};
@@ -6,7 +6,6 @@ use itertools::{Itertools, MultiPeek};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     Name(String),
-    Comword(Opword),
     Eq,
     Semi,
     LeftParen,
@@ -37,61 +36,6 @@ pub enum Token {
     LeftAngle,
     RightAngle,
     Percent,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Opword {
-    // memory
-    Deref,
-    // math
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-    // inequality
-    Eq,
-    Neq,
-    Gt,
-    Lt,
-    Gte,
-    Lte,
-    // boolean
-    And,
-    Or,
-    Xor,
-    Not,
-    // string
-    Join,
-}
-
-impl FromStr for Opword {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let comword = match s {
-            "deref" => Opword::Deref,
-            "add" => Opword::Add,
-            "sub" => Opword::Sub,
-            "mul" => Opword::Mul,
-            "div" => Opword::Div,
-            "mod" => Opword::Mod,
-            "eq" => Opword::Eq,
-            "neq" => Opword::Neq,
-            "gt" => Opword::Gt,
-            "lt" => Opword::Lt,
-            "gte" => Opword::Gte,
-            "lte" => Opword::Lte,
-            "and" => Opword::And,
-            "or" => Opword::Or,
-            "xor" => Opword::Xor,
-            "not" => Opword::Not,
-            "join" => Opword::Join,
-            _ => return Err(()),
-        };
-
-        Ok(comword)
-    }
 }
 
 fn consume_char(chars: &mut impl Iterator<Item = char>, token: Option<Token>) -> Option<Token> {
@@ -143,19 +87,16 @@ fn consume_word(chars: &mut MultiPeek<impl Iterator<Item = char>>) -> anyhow::Re
         "else" => Token::Else,
         "while" => Token::While,
         "slice" => Token::Slice,
-        w => match Opword::from_str(w) {
-            Ok(comword) => Token::Comword(comword),
-            Err(()) => {
-                if word.is_empty() {
-                    bail!("Word is empty");
-                }
+        _ => {
+            if word.is_empty() {
+                bail!("Word is empty");
+            }
 
-                if word.chars().next().map(|c| c.is_numeric()).unwrap_or(false) {
-                    Token::Literal(word)
-                } else {
-                    Token::Name(word)
-                }
-            },
+            if word.chars().next().map(|c| c.is_numeric()).unwrap_or(false) {
+                Token::Literal(word)
+            } else {
+                Token::Name(word)
+            }
         },
     };
 

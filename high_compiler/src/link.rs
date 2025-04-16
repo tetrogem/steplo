@@ -29,7 +29,7 @@ pub struct SubProc {
 pub enum Call {
     Func { name: Arc<str>, param_exprs: Arc<Vec<Arc<ast::AssignExpr>>>, return_sub_proc: Uuid },
     SubProc(Uuid),
-    IfElseBranch { cond_pipeline: Arc<ast::Pipeline>, then_sub_proc: Uuid, else_sub_proc: Uuid },
+    IfElseBranch { cond_expr: Arc<ast::Expr>, then_sub_proc: Uuid, else_sub_proc: Uuid },
     Return,
     Terminate,
 }
@@ -75,14 +75,10 @@ pub fn link(mut ast: Vec<Arc<ast::TopItem>>) -> anyhow::Result<Vec<Arc<Proc>>> {
                 ))))),
                 Arc::new(ast::BodyItem::Statement(Arc::new(ast::Statement::DerefAssign(
                     Arc::new(ast::DerefAssign {
-                        addr: Arc::new(ast::Pipeline {
-                            initial_val: Arc::new(ast::Expr::Ident(var("dest_ref"))),
-                            operations: Arc::new(Vec::new()),
-                        }),
-                        expr: Arc::new(ast::AssignExpr::Pipeline(Arc::new(ast::Pipeline {
-                            initial_val: Arc::new(ast::Expr::Ident(var("answer"))),
-                            operations: Arc::new(Vec::new()),
-                        }))),
+                        addr: Arc::new(ast::Expr::Ident(var("dest_ref"))),
+                        expr: Arc::new(ast::AssignExpr::Expr(Arc::new(ast::Expr::Ident(var(
+                            "answer",
+                        ))))),
                     }),
                 )))),
             ])),
@@ -165,7 +161,7 @@ fn create_sub_proc<'a>(
 
                 let call = match else_body {
                     None => Call::IfElseBranch {
-                        cond_pipeline: Arc::clone(cond_pipeline),
+                        cond_expr: Arc::clone(cond_pipeline),
                         then_sub_proc: then_sp.uuid,
                         else_sub_proc: pop_sp.uuid,
                     },
@@ -176,7 +172,7 @@ fn create_sub_proc<'a>(
                         );
 
                         Call::IfElseBranch {
-                            cond_pipeline: Arc::clone(cond_pipeline),
+                            cond_expr: Arc::clone(cond_pipeline),
                             then_sub_proc: then_sp.uuid,
                             else_sub_proc: else_sp.uuid,
                         }
@@ -203,7 +199,7 @@ fn create_sub_proc<'a>(
                     uuid: check_uuid,
                     statements: Arc::new(Vec::new()),
                     next_call: Arc::new(Call::IfElseBranch {
-                        cond_pipeline: Arc::clone(cond_pipeline),
+                        cond_expr: Arc::clone(cond_pipeline),
                         then_sub_proc: then_sp.uuid,
                         else_sub_proc: pop_sp.uuid,
                     }),
