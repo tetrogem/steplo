@@ -1,83 +1,83 @@
 main {
-    proc #4c {
+    proc #af {
         $sp = "-1";
-        jump #33;
+        jump #04;
     }
 }
 
 func main {
-    proc #33 {
+    proc #04 {
         $sp = ($sp + "3");
         stack[($sp + "2")] = "Enter how many iterations to perform:";
-        stack[($sp + "1")] = #bc;
-        jump #28;
+        stack[($sp + "1")] = #c7;
+        jump #043;
     }
 
-    proc #bc {
+    proc #c7 {
         stack[($sp + "2")] = $sp;
-        stack[($sp + "1")] = #6a;
-        jump #c2;
+        stack[($sp + "1")] = #58;
+        jump #be;
     }
 
-    proc #6a {
+    proc #58 {
         stack[($sp - "1")] = "1";
-        if (!(stack[($sp - "1")] > stack[$sp])) then jump #b8 else jump #49;
+        if (!(stack[($sp - "1")] > stack[$sp])) then jump #db else jump #e9;
     }
 
-    proc #49 {
+    proc #e9 {
         stack[($sp + "2")] = "Done!";
-        stack[($sp + "1")] = #08;
-        jump #28;
+        stack[($sp + "1")] = #a8;
+        jump #043;
     }
 
-    proc #08 {
+    proc #a8 {
         exit;
     }
 
-    proc #b8 {
-        if ((stack[($sp - "1")] % "15") == "0") then jump #f4 else jump #5f;
+    proc #db {
+        if ((stack[($sp - "1")] % "15") == "0") then jump #ad else jump #8d;
     }
 
-    proc #c0 {
+    proc #bb {
         stack[($sp - "1")] = (stack[($sp - "1")] + "1");
-        if (!(stack[($sp - "1")] > stack[$sp])) then jump #b8 else jump #49;
+        if (!(stack[($sp - "1")] > stack[$sp])) then jump #db else jump #e9;
     }
 
-    proc #f4 {
+    proc #ad {
         stack[($sp + "2")] = "FizzBuzz";
-        stack[($sp + "1")] = #c0;
-        jump #28;
+        stack[($sp + "1")] = #bb;
+        jump #043;
     }
 
-    proc #5f {
-        if ((stack[($sp - "1")] % "3") == "0") then jump #03 else jump #f6;
+    proc #8d {
+        if ((stack[($sp - "1")] % "3") == "0") then jump #57 else jump #9e;
     }
 
-    proc #03 {
+    proc #57 {
         stack[($sp + "2")] = "Fizz";
-        stack[($sp + "1")] = #c0;
-        jump #28;
+        stack[($sp + "1")] = #bb;
+        jump #043;
     }
 
-    proc #f6 {
-        if ((stack[($sp - "1")] % "5") == "0") then jump #cc else jump #34;
+    proc #9e {
+        if ((stack[($sp - "1")] % "5") == "0") then jump #b7 else jump #96;
     }
 
-    proc #cc {
+    proc #b7 {
         stack[($sp + "2")] = "Buzz";
-        stack[($sp + "1")] = #c0;
-        jump #28;
+        stack[($sp + "1")] = #bb;
+        jump #043;
     }
 
-    proc #34 {
+    proc #96 {
         stack[($sp + "2")] = stack[($sp - "1")];
-        stack[($sp + "1")] = #c0;
-        jump #28;
+        stack[($sp + "1")] = #bb;
+        jump #043;
     }
 }
 
 func func.out {
-    proc #28 {
+    proc #043 {
         $sp = ($sp + "2");
         out stack[$sp];
         $sp = ($sp - "2");
@@ -86,7 +86,7 @@ func func.out {
 }
 
 func func.in {
-    proc #c2 {
+    proc #be {
         $sp = ($sp + "3");
         in;
         stack[$sp] = $answer;

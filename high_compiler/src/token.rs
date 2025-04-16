@@ -15,13 +15,11 @@ pub enum Token {
     Pipe,
     Comma,
     Literal(String),
-    Deref,
     Main,
     Func,
     If,
     Else,
     While,
-    Ref,
     LeftBracket,
     RightBracket,
     Slice,
@@ -36,6 +34,9 @@ pub enum Token {
     LeftAngle,
     RightAngle,
     Percent,
+    Ampersand,
+    Set,
+    Call,
 }
 
 fn consume_char(chars: &mut impl Iterator<Item = char>, token: Option<Token>) -> Option<Token> {
@@ -81,12 +82,12 @@ fn consume_word(chars: &mut MultiPeek<impl Iterator<Item = char>>) -> anyhow::Re
     let token = match word.as_str() {
         "main" => Token::Main,
         "func" => Token::Func,
-        "ref" => Token::Ref,
-        "deref" => Token::Deref,
         "if" => Token::If,
         "else" => Token::Else,
         "while" => Token::While,
         "slice" => Token::Slice,
+        "set" => Token::Set,
+        "call" => Token::Call,
         _ => {
             if word.is_empty() {
                 bail!("Word is empty");
@@ -147,6 +148,7 @@ pub fn tokenize(code: &str) -> anyhow::Result<Vec<Token>> {
             '<' => consume_char(&mut chars, Some(Token::LeftAngle)),
             '>' => consume_char(&mut chars, Some(Token::RightAngle)),
             '%' => consume_char(&mut chars, Some(Token::Percent)),
+            '&' => consume_char(&mut chars, Some(Token::Ampersand)),
             '"' => Some(consume_literal(&mut chars)?),
             '/' => match chars.peek() {
                 Some('/') => Some(consume_comment(&mut chars)?),

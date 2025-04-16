@@ -1,71 +1,71 @@
 // https://leetcode.com/problems/merge-sorted-array
 
 main |arr1[13], vec1[2], arr2[6], vec2[2], temp| {
-    arr1 = ["-3","-2",0,0,0,6,7,0,0,0,0,0,0];
-    arr2 = ["-1",1,1,1,2,3];
+    set arr1 = ["-3","-2",0,0,0,6,7,0,0,0,0,0,0];
+    set arr2 = ["-1",1,1,1,2,3];
 
-    Vector_new(ref vec1, ref arr1, 13);
-    Vector_new(ref vec2, ref arr2, 6);
-    Vector_to_string(ref temp, ref vec1);
-    out(temp);
-    Vector_to_string(ref temp, ref vec2);
-    out(temp);
+    call Vector_new(&vec1, &arr1, 13);
+    call Vector_new(&vec2, &arr2, 6);
+    call Vector_to_string(&temp, &vec1);
+    call out(temp);
+    call Vector_to_string(&temp, &vec2);
+    call out(temp);
 
-    merge_sorted_vecs(ref vec1, 7, ref vec2, 6);
-    Vector_to_string(ref temp, ref vec1);
-    out(("Merged: " ~ temp));
+    call merge_sorted_vecs(&vec1, 7, &vec2, 6);
+    call Vector_to_string(&temp, &vec1);
+    call out(("Merged: " ~ temp));
 }
 
 func Vector_new(ret_ref, vals_ref, len) || {
-    deref ret_ref = [vals_ref, len];
+    set *ret_ref = [vals_ref, len];
 }
 
 func Vector_vals_ref(ret_ref, self_ref) || {
-    deref ret_ref = (*(self_ref + 0));
+    set *ret_ref = (*self_ref)[0];
 }
 
 func Vector_len(ret_ref, self_ref) || {
-    deref ret_ref = (*(self_ref + 1));
+    set *ret_ref = (*self_ref)[1];
 }
 
 func Vector_to_string(ret_ref, self_ref) |str, i, vals_ref, len, val| {
-    Vector_vals_ref(ref vals_ref, self_ref);
-    Vector_len(ref len, self_ref);
+    call Vector_vals_ref(&vals_ref, self_ref);
+    call Vector_len(&len, self_ref);
 
-    str = "[";
-    i = 0;
+    set str = "[";
+    set i = 0;
     while (i < len) {
-        val = (*(vals_ref + i));
-        str = (str ~ val);
+        set val = (*(vals_ref + i));
+        set str = (str ~ val);
 
         if ((i + 1) < len) {
-            str = (str ~ ", ");
+            set str = (str ~ ", ");
         }
 
-        i = (i + 1);
+        set i = (i + 1);
     }
 
-    str = (str ~ "]");
-    deref ret_ref = str;
+    set str = (str ~ "]");
+    set *ret_ref = str;
 }
 
 func merge_sorted_vecs(vec1_ref, m, vec2_ref, n) |i, nums1_vals_ref, nums2_vals_ref, num1, num2| {
-    Vector_vals_ref(ref nums1_vals_ref, vec1_ref);
-    Vector_vals_ref(ref nums2_vals_ref, vec2_ref);
+    call Vector_vals_ref(&nums1_vals_ref, vec1_ref);
+    call Vector_vals_ref(&nums2_vals_ref, vec2_ref);
 
-    i = ((m + n) - 1);
+    set i = ((m + n) - 1);
     while (i >= 0) {
-        num1 = (*((nums1_vals_ref + m) - 1));
-        num2 = (*((nums2_vals_ref + n) - 1));
+        set num1 = (*nums1_vals_ref)[(m - 1)];
+        set num2 = (*nums2_vals_ref)[(n - 1)];
 
         if ((n <= 0) || (num1 >= num2)) {
-            deref (nums1_vals_ref + i) = num1;
-            m = (m - 1);
+            set (*nums1_vals_ref)[i] = num1;
+            set m = (m - 1);
         } else {
-            deref (nums1_vals_ref + i) = num2;
-            n = (n - 1);
+            set (*nums1_vals_ref)[i] = num2;
+            set n = (n - 1);
         }
 
-        i = (i - 1);
+        set i = (i - 1);
     }
 }

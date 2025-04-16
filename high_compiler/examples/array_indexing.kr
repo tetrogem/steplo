@@ -1,9 +1,9 @@
 main |foo[10], foo_ref| {
-    foo = [98, 76, 54, 32, 90, 80, 70, 60, 50, 40];
-    foo_ref = ref foo;
+    set foo = [98, 76, 54, 32, 90, 80, 70, 60, 50, 40];
+    set foo_ref = &foo;
 
-    // out((ref foo)[1]);
-    // out((*(ref foo + 1)));
-    // out(foo_ref[1]);
-    // out((*(foo_ref + 1)));
+    call out(foo[1]);
+    call out(*(&foo + 1));
+    call out((*foo_ref)[1]);
+    call out(*(foo_ref + 1));
 }

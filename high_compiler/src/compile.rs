@@ -463,7 +463,7 @@ fn compile_statement(
             let mut element_assignments = Vec::new();
 
             for (i, element) in elements.into_iter().enumerate() {
-                let compiled_ident_addr = compile_ident_to_addr(stack_frame, &assign.ident)?;
+                let compiled_ident_addr = compile_loc_to_addr(stack_frame, &assign.loc)?;
                 let compiled_offset =
                     compile_expr(stack_frame, &hast::Expr::Literal(i.to_string().into()))?;
 
@@ -491,42 +491,9 @@ fn compile_statement(
 
             element_assignments
         },
-        link::Statement::DerefAssign(assign) => {
-            let elements = compile_assign_expr_elements(stack_frame, &assign.expr)?;
-            let mut element_assignments = Vec::new();
-
-            for (i, element) in elements.into_iter().enumerate() {
-                let compiled_addr = compile_expr(stack_frame, &assign.addr)?;
-                let compiled_offset =
-                    compile_expr(stack_frame, &hast::Expr::Literal(i.to_string().into()))?;
-
-                let compile_dest_addr =
-                    compile_addr_offset(compiled_addr.mem_loc, compiled_offset.mem_loc)?;
-
-                let mut assignments = chain!(
-                    element.commands,
-                    compiled_addr.commands,
-                    compiled_offset.commands,
-                    compile_dest_addr.commands
-                )
-                .collect_vec();
-
-                let dest_addr_loc = compile_dest_addr.mem_loc;
-
-                // assign to var
-                assignments.push(Arc::new(opt::Command::SetStack {
-                    addr: mem_loc_expr(dest_addr_loc),
-                    val: mem_loc_expr(element.mem_loc),
-                }));
-
-                element_assignments.extend(assignments);
-            }
-
-            element_assignments
-        },
         link::Statement::Native(native) => match native.as_ref() {
             hast::NativeOperation::Out { ident } => {
-                let compiled_ident_addr = compile_ident_to_addr(stack_frame, ident)?;
+                let compiled_ident_addr = compile_loc_to_addr(stack_frame, ident)?;
                 let ident_value_loc = temp();
 
                 chain!(
@@ -544,7 +511,7 @@ fn compile_statement(
                 .collect()
             },
             hast::NativeOperation::In { dest_ident } => {
-                let compiled_ident_addr = compile_ident_to_addr(stack_frame, dest_ident)?;
+                let compiled_ident_addr = compile_loc_to_addr(stack_frame, dest_ident)?;
 
                 chain!(
                     compiled_ident_addr.commands,
@@ -579,7 +546,7 @@ fn compile_assign_expr_elements(
             .collect(),
         hast::AssignExpr::Slice(slice) => {
             let elements = (slice.start_in..slice.end_ex).map(|i| {
-                let ident_addr = compile_ident_to_addr(stack_frame, &slice.ident)?;
+                let ident_addr = compile_loc_to_addr(stack_frame, &slice.ident)?;
                 let offset = compile_expr(stack_frame, &hast::Expr::Literal(i.to_string().into()))?;
 
                 let element_addr = compile_addr_offset(ident_addr.mem_loc, offset.mem_loc)?;
@@ -615,14 +582,14 @@ fn compile_expr(stack_frame: &StackFrame, expr: &hast::Expr) -> anyhow::Result<C
             CompiledExpr { mem_loc: value_temp, commands: assignments }
         },
         hast::Expr::Ident(ident) => {
-            let ident_addr = compile_ident_to_addr(stack_frame, ident)?;
+            let ident_addr = compile_loc_to_addr(stack_frame, ident)?;
             let value = compile_addr_deref(&ident_addr.mem_loc);
 
             let commands = chain!(ident_addr.commands, value.commands).collect();
 
             CompiledExpr { mem_loc: value.mem_loc, commands }
         },
-        hast::Expr::Ref(ident) => compile_ident_to_addr(stack_frame, ident)?,
+        hast::Expr::Ref(ident) => compile_loc_to_addr(stack_frame, ident)?,
         hast::Expr::Paren(expr) => compile_paren_expr(stack_frame, expr)?,
     };
 
@@ -647,10 +614,6 @@ fn compile_unary_paren_expr(
     let operand_ops = compile_expr(stack_frame, &expr.operand)?;
 
     let expr_commands = match expr.op {
-        hast::UnaryParenExprOp::Deref => Vec::from([Arc::new(opt::Command::SetMemLoc {
-            mem_loc: res_loc.clone(),
-            val: Arc::new(opt::Expr::Deref(mem_loc_expr(operand_ops.mem_loc))),
-        })]),
         hast::UnaryParenExprOp::Not => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Not(mem_loc_expr(operand_ops.mem_loc))),
@@ -782,20 +745,20 @@ fn compile_addr_deref(addr: &Arc<opt::UMemLoc>) -> CompiledExpr {
     CompiledExpr { mem_loc: ident_value_loc, commands }
 }
 
-fn compile_ident_to_addr(
+fn compile_loc_to_addr(
     stack_frame: &StackFrame,
-    ident: &hast::Ident,
+    ident: &hast::MemLoc,
 ) -> anyhow::Result<CompiledExpr> {
     let compiled = match ident {
-        hast::Ident::Var { name } => compile_ident_name_to_start_addr(stack_frame, name)?,
-        hast::Ident::Array { name, index } => {
+        hast::MemLoc::Ident { name } => compile_ident_name_to_start_addr(stack_frame, name)?,
+        hast::MemLoc::Deref { addr } => compile_expr(stack_frame, addr)?,
+        hast::MemLoc::Index { loc, index } => {
             let compiled_index = compile_expr(stack_frame, index)?;
-            let compiled_ident_name = compile_ident_name_to_start_addr(stack_frame, name)?;
-            let offset_addr =
-                compile_addr_offset(compiled_ident_name.mem_loc, compiled_index.mem_loc)?;
+            let compiled_loc = compile_loc_to_addr(stack_frame, loc)?;
+            let offset_addr = compile_addr_offset(compiled_loc.mem_loc, compiled_index.mem_loc)?;
 
             let commands =
-                chain!(compiled_index.commands, compiled_ident_name.commands, offset_addr.commands)
+                chain!(compiled_index.commands, compiled_loc.commands, offset_addr.commands)
                     .collect();
 
             CompiledExpr { mem_loc: offset_addr.mem_loc, commands }

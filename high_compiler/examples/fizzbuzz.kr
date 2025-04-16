@@ -1,6 +1,6 @@
 main |i, nums| {
     out("Enter how many iterations to perform:");
-    in(ref nums);
+    in(&nums);
 
     i = 1;
     while (i <= nums) {

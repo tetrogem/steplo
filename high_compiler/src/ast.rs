@@ -43,9 +43,10 @@ impl IdentDeclaration {
 }
 
 #[derive(Debug, Clone)]
-pub enum Ident {
-    Var { name: Arc<str> },
-    Array { name: Arc<str>, index: Arc<Expr> },
+pub enum MemLoc {
+    Ident { name: Arc<str> },
+    Deref { addr: Arc<Expr> },
+    Index { loc: Arc<MemLoc>, index: Arc<Expr> },
 }
 
 #[derive(Debug, Clone)]
@@ -71,20 +72,13 @@ pub enum BodyItem {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Assign(Arc<Assign>),
-    DerefAssign(Arc<DerefAssign>),
     Call { func_name: Arc<str>, param_exprs: Arc<Vec<Arc<AssignExpr>>> },
     Native(Arc<NativeOperation>), // not compiled to by source code, internal/built-ins only
 }
 
 #[derive(Debug, Clone)]
 pub struct Assign {
-    pub ident: Arc<Ident>,
-    pub expr: Arc<AssignExpr>,
-}
-
-#[derive(Debug, Clone)]
-pub struct DerefAssign {
-    pub addr: Arc<Expr>,
+    pub loc: Arc<MemLoc>,
     pub expr: Arc<AssignExpr>,
 }
 
@@ -98,8 +92,8 @@ pub enum AssignExpr {
 #[derive(Debug, Clone)]
 pub enum Expr {
     Literal(Arc<str>),
-    Ident(Arc<Ident>),
-    Ref(Arc<Ident>),
+    Ident(Arc<MemLoc>),
+    Ref(Arc<MemLoc>),
     Paren(Arc<ParenExpr>),
 }
 
@@ -110,7 +104,7 @@ pub struct Array {
 
 #[derive(Debug, Clone)]
 pub struct Slice {
-    pub ident: Arc<Ident>,
+    pub ident: Arc<MemLoc>,
     pub start_in: usize,
     pub end_ex: usize,
 }
@@ -129,8 +123,6 @@ pub struct UnaryParenExpr {
 
 #[derive(Debug, Clone, Copy)]
 pub enum UnaryParenExprOp {
-    // memory
-    Deref,
     // boolean
     Not,
 }
@@ -167,8 +159,8 @@ pub enum BinaryParenExprOp {
 
 #[derive(Debug, Clone)]
 pub enum NativeOperation {
-    Out { ident: Arc<Ident> },
-    In { dest_ident: Arc<Ident> },
+    Out { ident: Arc<MemLoc> },
+    In { dest_ident: Arc<MemLoc> },
 }
 
 pub fn parse(tokens: Vec<Token>) -> anyhow::Result<Vec<Arc<TopItem>>> {
@@ -321,23 +313,31 @@ fn parse_ident_declaration(
     Ok(ident)
 }
 
-fn parse_ident(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Ident> {
-    let Some(Token::Name(name)) = tokens.next() else { bail!("Expected var name") };
-    let name: Arc<str> = name.into();
+fn parse_mem_loc(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<MemLoc> {
+    let mem_loc = match tokens.next() {
+        Some(Token::Name(name)) => MemLoc::Ident { name: name.into() },
+        Some(Token::Asterisk) => MemLoc::Deref { addr: Arc::new(parse_expr(tokens)?) },
+        Some(Token::LeftParen) => {
+            let mem_loc = parse_mem_loc(tokens)?;
+            let Some(Token::RightParen) = tokens.next() else { bail!("Expected )") };
+            mem_loc
+        },
+        t => bail!("Expected mem loc (Found {:?})", t),
+    };
 
     tokens.reset_peek();
-    let ident = match tokens.peek() {
+    let mem_loc = match tokens.peek() {
         Some(Token::LeftBracket) => {
             let Some(Token::LeftBracket) = tokens.next() else { bail!("Expected left bracket") };
             let index = parse_expr(tokens)?;
             let Some(Token::RightBracket) = tokens.next() else { bail!("Expected right bracket") };
 
-            Ident::Array { name, index: Arc::new(index) }
+            MemLoc::Index { loc: Arc::new(mem_loc), index: Arc::new(index) }
         },
-        _ => Ident::Var { name },
+        _ => mem_loc,
     };
 
-    Ok(ident)
+    Ok(mem_loc)
 }
 
 fn parse_main(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Main> {
@@ -389,20 +389,8 @@ fn parse_body_item(
     let Some(peek_token) = tokens.peek() else { bail!("Expected statement") };
 
     let body_item = match peek_token {
-        Token::Deref => BodyItem::Statement(Arc::new(parse_deref_assign(tokens)?)),
-        Token::Name(_) => {
-            let Some(peek_token) = tokens.peek() else {
-                bail!("Unexpected end after var name in statement")
-            };
-
-            match peek_token {
-                Token::Eq | Token::LeftBracket => {
-                    BodyItem::Statement(Arc::new(parse_assign(tokens)?))
-                },
-                Token::LeftParen => BodyItem::Statement(Arc::new(parse_call(tokens)?)),
-                _ => bail!("Expected =, [, or ("),
-            }
-        },
+        Token::Set => BodyItem::Statement(Arc::new(parse_assign(tokens)?)),
+        Token::Call => BodyItem::Statement(Arc::new(parse_call(tokens)?)),
         Token::If => parse_if(tokens)?,
         Token::While => parse_while(tokens)?,
         t => bail!("Expected deref, var name, or if at start of statement (Found: {:?})", t),
@@ -414,34 +402,16 @@ fn parse_body_item(
 fn parse_assign(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Statement> {
     tokens.reset_peek();
 
-    let ident = parse_ident(tokens)?;
+    let Some(Token::Set) = tokens.next() else { bail!("Expected `set`") };
+    let ident = parse_mem_loc(tokens)?;
     let Some(Token::Eq) = tokens.next() else { bail!("Expected =") };
 
     let assign_expr = parse_assign_expr(tokens)?;
 
     let Some(Token::Semi) = tokens.next() else { bail!("Expected semicolon") };
 
-    let assign = Assign { ident: Arc::new(ident), expr: Arc::new(assign_expr) };
+    let assign = Assign { loc: Arc::new(ident), expr: Arc::new(assign_expr) };
     let statement = Statement::Assign(Arc::new(assign));
-
-    Ok(statement)
-}
-
-fn parse_deref_assign(
-    tokens: &mut MultiPeek<impl Iterator<Item = Token>>,
-) -> anyhow::Result<Statement> {
-    tokens.reset_peek();
-
-    let Some(Token::Deref) = tokens.next() else { bail!("Expected deref") };
-    let addr = parse_expr(tokens)?;
-    let Some(Token::Eq) = tokens.next() else { bail!("Expected =") };
-
-    let assign_expr = parse_assign_expr(tokens)?;
-
-    let Some(Token::Semi) = tokens.next() else { bail!("Expected semicolon") };
-
-    let assign = DerefAssign { addr: Arc::new(addr), expr: Arc::new(assign_expr) };
-    let statement = Statement::DerefAssign(Arc::new(assign));
 
     Ok(statement)
 }
@@ -495,26 +465,30 @@ fn parse_slice(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::R
 
     let Some(Token::RightBracket) = tokens.next() else { bail!("Expected ]") };
 
-    Ok(Slice { ident: Arc::new(Ident::Var { name: ident_name.into() }), start_in, end_ex })
+    Ok(Slice { ident: Arc::new(MemLoc::Ident { name: ident_name.into() }), start_in, end_ex })
 }
 
 fn parse_expr(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Expr> {
     tokens.reset_peek();
     let expr = match tokens.peek() {
+        Some(Token::LeftParen) => match tokens.peek() {
+            Some(Token::Asterisk) => Expr::Ident(Arc::new(parse_mem_loc(tokens)?)),
+            _ => Expr::Paren(Arc::new(parse_paren_expr(tokens)?)),
+        },
         Some(Token::Literal(_)) => {
             let Some(Token::Literal(val)) = tokens.next() else { bail!("Expected literal") };
             Expr::Literal(val.into())
         },
-        Some(Token::Ref) => {
-            let Some(Token::Ref) = tokens.next() else { bail!("Expected ref") };
-            let ident = parse_ident(tokens)?;
+        Some(Token::Ampersand) => {
+            let Some(Token::Ampersand) = tokens.next() else { bail!("Expected &") };
+            let ident = parse_mem_loc(tokens)?;
             Expr::Ref(Arc::new(ident))
         },
-        Some(Token::LeftParen) => Expr::Paren(Arc::new(parse_paren_expr(tokens)?)),
-        _ => {
-            let ident = parse_ident(tokens)?;
+        Some(Token::Name(_) | Token::Asterisk) => {
+            let ident = parse_mem_loc(tokens)?;
             Expr::Ident(Arc::new(ident))
         },
+        t => bail!("Expected expr (Found: {:?})", t),
     };
 
     Ok(expr)
@@ -523,7 +497,10 @@ fn parse_expr(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Re
 fn parse_paren_expr(
     tokens: &mut MultiPeek<impl Iterator<Item = Token>>,
 ) -> anyhow::Result<ParenExpr> {
-    let Some(Token::LeftParen) = tokens.next() else { bail!("Expected (") };
+    match tokens.next() {
+        Some(Token::LeftParen) => {},
+        t => bail!("Expected (, (Found {:?})", t),
+    }
 
     tokens.reset_peek();
     let expr = match tokens.peek() {
@@ -533,7 +510,10 @@ fn parse_paren_expr(
         _ => ParenExpr::Binary(Arc::new(parse_inner_binary_paren_expr(tokens)?)),
     };
 
-    let Some(Token::RightParen) = tokens.next() else { bail!("Expected )") };
+    match tokens.next() {
+        Some(Token::RightParen) => {},
+        t => bail!("Expected ), (Found {:?})", t),
+    }
 
     Ok(expr)
 }
@@ -542,7 +522,6 @@ fn parse_inner_unary_paren_expr(
     tokens: &mut MultiPeek<impl Iterator<Item = Token>>,
 ) -> anyhow::Result<UnaryParenExpr> {
     let op = match tokens.next() {
-        Some(Token::Asterisk) => UnaryParenExprOp::Deref,
         Some(Token::Bang) => UnaryParenExprOp::Not,
         _ => bail!("Expected unary operator"),
     };
@@ -609,6 +588,7 @@ fn parse_inner_binary_paren_expr(
 }
 
 fn parse_call(tokens: &mut MultiPeek<impl Iterator<Item = Token>>) -> anyhow::Result<Statement> {
+    let Some(Token::Call) = tokens.next() else { bail!("Expected `call`") };
     let Some(Token::Name(var)) = tokens.next() else { bail!("Expected var name") };
     let param_exprs =
         parse_assign_expr_list!(tokens, Token::LeftParen = "(", Token::RightParen = ")")?;

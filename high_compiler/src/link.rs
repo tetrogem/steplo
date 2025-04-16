@@ -37,7 +37,6 @@ pub enum Call {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Assign(Arc<ast::Assign>),
-    DerefAssign(Arc<ast::DerefAssign>),
     Native(Arc<ast::NativeOperation>),
 }
 
@@ -46,8 +45,8 @@ pub fn link(mut ast: Vec<Arc<ast::TopItem>>) -> anyhow::Result<Vec<Arc<Proc>>> {
         Arc::new(ast::IdentDeclaration::Array { name: name.into(), length: 1 })
     }
 
-    fn var(name: &str) -> Arc<ast::Ident> {
-        Arc::new(ast::Ident::Var { name: name.into() })
+    fn var(name: &str) -> Arc<ast::MemLoc> {
+        Arc::new(ast::MemLoc::Ident { name: name.into() })
     }
 
     // add built-in native functions
@@ -73,14 +72,16 @@ pub fn link(mut ast: Vec<Arc<ast::TopItem>>) -> anyhow::Result<Vec<Arc<Proc>>> {
                 Arc::new(ast::BodyItem::Statement(Arc::new(ast::Statement::Native(Arc::new(
                     ast::NativeOperation::In { dest_ident: var("answer") },
                 ))))),
-                Arc::new(ast::BodyItem::Statement(Arc::new(ast::Statement::DerefAssign(
-                    Arc::new(ast::DerefAssign {
-                        addr: Arc::new(ast::Expr::Ident(var("dest_ref"))),
+                Arc::new(ast::BodyItem::Statement(Arc::new(ast::Statement::Assign(Arc::new(
+                    ast::Assign {
+                        loc: Arc::new(ast::MemLoc::Deref {
+                            addr: Arc::new(ast::Expr::Ident(var("dest_ref"))),
+                        }),
                         expr: Arc::new(ast::AssignExpr::Expr(Arc::new(ast::Expr::Ident(var(
                             "answer",
                         ))))),
-                    }),
-                )))),
+                    },
+                ))))),
             ])),
         }),
     };
@@ -217,9 +218,6 @@ fn create_sub_proc<'a>(
             ast::BodyItem::Statement(statement) => match statement.as_ref() {
                 ast::Statement::Assign(assign) => {
                     statements.push(Arc::new(Statement::Assign(Arc::clone(assign))));
-                },
-                ast::Statement::DerefAssign(assign) => {
-                    statements.push(Arc::new(Statement::DerefAssign(Arc::clone(assign))));
                 },
                 ast::Statement::Native(native) => {
                     statements.push(Arc::new(Statement::Native(Arc::clone(native))));
