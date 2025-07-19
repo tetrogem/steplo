@@ -10,7 +10,7 @@ use mem_opt::ast as opt;
 use uuid::Uuid;
 
 struct StackFrame {
-    ident_name_to_info: HashMap<Arc<str>, Arc<StackVarInfo>>,
+    ident_name_to_info: HashMap<Arc<hast::Name>, Arc<StackVarInfo>>,
 }
 
 struct StackVarInfo {
@@ -24,10 +24,7 @@ impl StackFrame {
         let mut total_offset = 0;
 
         for ident in idents.iter().rev() {
-            let size = match ident.as_ref() {
-                hast::IdentDeclaration::Array { length, .. } => *length,
-            };
-
+            let size = ident.size();
             total_offset += size;
             let info = StackVarInfo { size, offset: total_offset - 1 };
 
@@ -37,9 +34,9 @@ impl StackFrame {
         Self { ident_name_to_info }
     }
 
-    fn get_info(&self, name: &str) -> anyhow::Result<&Arc<StackVarInfo>> {
+    fn get_info(&self, name: &hast::Name) -> anyhow::Result<&Arc<StackVarInfo>> {
         let Some(info) = self.ident_name_to_info.get(name) else {
-            bail!("ident name {} is not in current stack frame", name);
+            bail!("ident name {} is not in current stack frame", name.str);
         };
 
         Ok(info)
@@ -53,8 +50,8 @@ impl StackFrame {
 }
 
 struct FuncManager {
-    name_to_head_uuid: HashMap<Arc<str>, Uuid>,
-    name_to_params: HashMap<Arc<str>, Arc<Vec<Arc<hast::IdentDeclaration>>>>,
+    name_to_head_uuid: HashMap<Arc<hast::Name>, Uuid>,
+    name_to_params: HashMap<Arc<hast::Name>, Arc<Vec<Arc<hast::IdentDeclaration>>>>,
 }
 
 impl FuncManager {
@@ -66,27 +63,30 @@ impl FuncManager {
             let link::ProcKind::Func { name, params } = &proc.kind else { continue };
 
             let Some(first_sp) = proc.sub_procs.first() else {
-                bail!("procedure `{}` has no sub-procedures", name);
+                bail!("procedure `{}` has no sub-procedures", name.str);
             };
 
             name_to_head_uuid.insert(name.clone(), first_sp.uuid);
-            name_to_params.insert(name.clone(), params.clone());
+            name_to_params.insert(name.clone(), params.elements.clone());
         }
 
         Ok(Self { name_to_head_uuid, name_to_params })
     }
 
-    fn get_head_uuid(&self, name: &str) -> anyhow::Result<Uuid> {
+    fn get_head_uuid(&self, name: &hast::Name) -> anyhow::Result<Uuid> {
         let Some(uuid) = self.name_to_head_uuid.get(name) else {
-            bail!("no head UUID registered for function `{}`", name)
+            bail!("no head UUID registered for function `{}`", name.str)
         };
 
         Ok(*uuid)
     }
 
-    fn get_params(&self, name: &str) -> anyhow::Result<&Arc<Vec<Arc<hast::IdentDeclaration>>>> {
+    fn get_params(
+        &self,
+        name: &hast::Name,
+    ) -> anyhow::Result<&Arc<Vec<Arc<hast::IdentDeclaration>>>> {
         let Some(params) = self.name_to_params.get(name) else {
-            bail!("no params registered for function `{}`", name)
+            bail!("no params registered for function `{}`", name.str)
         };
 
         Ok(params)
@@ -126,6 +126,18 @@ impl ScratchLiteral for f64 {
 impl ScratchLiteral for &str {
     fn to_expr(&self) -> Arc<ast::Expr<ast::UMemLoc>> {
         Arc::new(ast::Expr::Value(Arc::new(ast::Value::Literal((*self).into()))))
+    }
+}
+
+impl ScratchLiteral for hast::Literal {
+    fn to_expr(&self) -> Arc<ast::Expr<ast::UMemLoc>> {
+        self.str.as_ref().to_expr()
+    }
+}
+
+impl<T: ScratchLiteral> ScratchLiteral for &T {
+    fn to_expr(&self) -> Arc<ast::Expr<ast::UMemLoc>> {
+        T::to_expr(self)
     }
 }
 
@@ -190,12 +202,12 @@ fn compile_proc(
     let (kind, stack_params) = match &proc.kind {
         link::ProcKind::Main => (opt::ProcKind::Func { name: "main".into() }, Vec::new()),
         link::ProcKind::Func { name, params } => (
-            opt::ProcKind::Func { name: format!("func.{}", name).into() },
-            params.iter().cloned().collect(),
+            opt::ProcKind::Func { name: format!("func.{}", name.str).into() },
+            params.elements.iter().cloned().collect(),
         ),
     };
 
-    let stack_vars = proc.idents.iter().cloned();
+    let stack_vars = proc.idents.elements.iter().cloned();
     let stack_idents = chain!(stack_params, stack_vars).collect_vec();
 
     let stack_frame = StackFrame::new(&stack_idents);
@@ -272,7 +284,7 @@ fn compile_call(
             let param_idents = func_manager.get_params(name)?;
             let mut param_stack_offset = 0;
             let mut param_setup_commands = Vec::new();
-            for (ident, expr) in param_idents.iter().zip(param_exprs.as_ref()) {
+            for (ident, expr) in param_idents.iter().zip(param_exprs.elements.as_ref()) {
                 let elements = compile_assign_expr_elements(stack_frame, expr)?;
 
                 for (i, element) in elements.into_iter().enumerate() {
@@ -463,9 +475,11 @@ fn compile_statement(
             let mut element_assignments = Vec::new();
 
             for (i, element) in elements.into_iter().enumerate() {
-                let compiled_ident_addr = compile_loc_to_addr(stack_frame, &assign.loc)?;
-                let compiled_offset =
-                    compile_expr(stack_frame, &hast::Expr::Literal(i.to_string().into()))?;
+                let compiled_ident_addr = compile_place_to_addr(stack_frame, &assign.loc)?;
+                let compiled_offset = compile_expr(
+                    stack_frame,
+                    &hast::Expr::Literal(Arc::new(hast::Literal { str: i.to_string().into() })),
+                )?;
 
                 let compile_dest_addr =
                     compile_addr_offset(compiled_ident_addr.mem_loc, compiled_offset.mem_loc)?;
@@ -493,7 +507,7 @@ fn compile_statement(
         },
         link::Statement::Native(native) => match native.as_ref() {
             hast::NativeOperation::Out { ident } => {
-                let compiled_ident_addr = compile_loc_to_addr(stack_frame, ident)?;
+                let compiled_ident_addr = compile_place_to_addr(stack_frame, ident)?;
                 let ident_value_loc = temp();
 
                 chain!(
@@ -511,7 +525,7 @@ fn compile_statement(
                 .collect()
             },
             hast::NativeOperation::In { dest_ident } => {
-                let compiled_ident_addr = compile_loc_to_addr(stack_frame, dest_ident)?;
+                let compiled_ident_addr = compile_place_to_addr(stack_frame, dest_ident)?;
 
                 chain!(
                     compiled_ident_addr.commands,
@@ -537,7 +551,8 @@ fn compile_assign_expr_elements(
 ) -> anyhow::Result<Vec<CompiledExpr>> {
     let compileds = match expr {
         hast::AssignExpr::Expr(expr) => Vec::from([compile_expr(stack_frame, expr)?]),
-        hast::AssignExpr::Array(array) => array
+        hast::AssignExpr::Span(array) => array
+            .elements
             .elements
             .iter()
             .map(|expr| compile_expr(stack_frame, expr))
@@ -546,8 +561,11 @@ fn compile_assign_expr_elements(
             .collect(),
         hast::AssignExpr::Slice(slice) => {
             let elements = (slice.start_in..slice.end_ex).map(|i| {
-                let ident_addr = compile_loc_to_addr(stack_frame, &slice.ident)?;
-                let offset = compile_expr(stack_frame, &hast::Expr::Literal(i.to_string().into()))?;
+                let ident_addr = compile_place_to_addr(stack_frame, &slice.place)?;
+                let offset = compile_expr(
+                    stack_frame,
+                    &hast::Expr::Literal(Arc::new(hast::Literal { str: i.to_string().into() })),
+                )?;
 
                 let element_addr = compile_addr_offset(ident_addr.mem_loc, offset.mem_loc)?;
                 let element = compile_addr_deref(&element_addr.mem_loc);
@@ -581,15 +599,15 @@ fn compile_expr(stack_frame: &StackFrame, expr: &hast::Expr) -> anyhow::Result<C
 
             CompiledExpr { mem_loc: value_temp, commands: assignments }
         },
-        hast::Expr::Ident(ident) => {
-            let ident_addr = compile_loc_to_addr(stack_frame, ident)?;
+        hast::Expr::Place(ident) => {
+            let ident_addr = compile_place_to_addr(stack_frame, ident)?;
             let value = compile_addr_deref(&ident_addr.mem_loc);
 
             let commands = chain!(ident_addr.commands, value.commands).collect();
 
             CompiledExpr { mem_loc: value.mem_loc, commands }
         },
-        hast::Expr::Ref(ident) => compile_loc_to_addr(stack_frame, ident)?,
+        hast::Expr::Ref(expr) => compile_place_to_addr(stack_frame, &expr.place)?,
         hast::Expr::Paren(expr) => compile_paren_expr(stack_frame, expr)?,
     };
 
@@ -614,7 +632,7 @@ fn compile_unary_paren_expr(
     let operand_ops = compile_expr(stack_frame, &expr.operand)?;
 
     let expr_commands = match expr.op {
-        hast::UnaryParenExprOp::Not => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::UnaryParenExprOp::Not(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Not(mem_loc_expr(operand_ops.mem_loc))),
         })]),
@@ -635,91 +653,91 @@ fn compile_binary_paren_expr(
     let right_ops = compile_expr(stack_frame, &expr.right)?;
 
     let expr_commands = match expr.op {
-        hast::BinaryParenExprOp::Add => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Add(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Add(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Sub => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Sub(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Sub(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Mul => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Mul(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Mul(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Div => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Div(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Div(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Mod => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Mod(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Mod(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Eq => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Eq(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Eq(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Neq => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Neq(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Not(Arc::new(opt::Expr::Eq(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))))),
         })]),
-        hast::BinaryParenExprOp::Lt => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Lt(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Lt(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Gt => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Gt(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Gt(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Lte => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Lte(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Not(Arc::new(opt::Expr::Gt(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))))),
         })]),
-        hast::BinaryParenExprOp::Gte => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Gte(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Not(Arc::new(opt::Expr::Lt(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))))),
         })]),
-        hast::BinaryParenExprOp::Join => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Join(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Join(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Or => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Or(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Or(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
@@ -745,27 +763,36 @@ fn compile_addr_deref(addr: &Arc<opt::UMemLoc>) -> CompiledExpr {
     CompiledExpr { mem_loc: ident_value_loc, commands }
 }
 
-fn compile_loc_to_addr(
+fn compile_place_to_addr(
     stack_frame: &StackFrame,
-    ident: &hast::MemLoc,
+    place: &hast::Place,
 ) -> anyhow::Result<CompiledExpr> {
-    let compiled = match ident {
-        hast::MemLoc::Ident { name } => compile_ident_name_to_start_addr(stack_frame, name)?,
-        hast::MemLoc::Deref { addr } => compile_expr(stack_frame, addr)?,
-        hast::MemLoc::Index { loc, index } => {
-            let compiled_index = compile_expr(stack_frame, index)?;
-            let compiled_loc = compile_loc_to_addr(stack_frame, loc)?;
-            let offset_addr = compile_addr_offset(compiled_loc.mem_loc, compiled_index.mem_loc)?;
+    let compiled_head = compile_place_head_to_add(stack_frame, &place.head)?;
+    let compiled_place = match &place.offset {
+        None => compiled_head,
+        Some(offset) => {
+            let compiled_index = compile_expr(stack_frame, &offset.expr)?;
+            let offset_addr = compile_addr_offset(compiled_head.mem_loc, compiled_index.mem_loc)?;
 
             let commands =
-                chain!(compiled_index.commands, compiled_loc.commands, offset_addr.commands)
+                chain!(compiled_index.commands, compiled_head.commands, offset_addr.commands)
                     .collect();
 
             CompiledExpr { mem_loc: offset_addr.mem_loc, commands }
         },
     };
 
-    Ok(compiled)
+    Ok(compiled_place)
+}
+
+fn compile_place_head_to_add(
+    stack_frame: &StackFrame,
+    place_head: &hast::PlaceHead,
+) -> anyhow::Result<CompiledExpr> {
+    match place_head {
+        hast::PlaceHead::Ident(ident) => compile_ident_name_to_start_addr(stack_frame, &ident.name),
+        hast::PlaceHead::Deref(deref) => compile_expr(stack_frame, &deref.addr),
+    }
 }
 
 fn compile_addr_offset(
@@ -789,7 +816,7 @@ fn compile_addr_offset(
 
 fn compile_ident_name_to_start_addr(
     stack_frame: &StackFrame,
-    ident_name: &str,
+    ident_name: &hast::Name,
 ) -> anyhow::Result<CompiledExpr> {
     let var_info = stack_frame.get_info(ident_name)?;
     let stack_offset_loc = temp(); // offset of var within the current stack frame

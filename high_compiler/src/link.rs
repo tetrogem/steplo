@@ -1,6 +1,6 @@
 use std::{iter::Peekable, sync::Arc};
 
-use itertools::Itertools;
+use itertools::{chain, Itertools};
 use uuid::Uuid;
 
 use crate::ast;
@@ -8,14 +8,14 @@ use crate::ast;
 #[derive(Debug, Clone)]
 pub struct Proc {
     pub kind: ProcKind,
-    pub idents: Arc<Vec<Arc<ast::IdentDeclaration>>>,
+    pub idents: Arc<ast::CommaSeparated<ast::IdentDeclaration>>,
     pub sub_procs: Arc<Vec<Arc<SubProc>>>,
 }
 
 #[derive(Debug, Clone)]
 pub enum ProcKind {
     Main,
-    Func { name: Arc<str>, params: Arc<Vec<Arc<ast::IdentDeclaration>>> },
+    Func { name: Arc<ast::Name>, params: Arc<ast::CommaSeparated<ast::IdentDeclaration>> },
 }
 
 #[derive(Debug, Clone)]
@@ -27,9 +27,17 @@ pub struct SubProc {
 
 #[derive(Debug, Clone)]
 pub enum Call {
-    Func { name: Arc<str>, param_exprs: Arc<Vec<Arc<ast::AssignExpr>>>, return_sub_proc: Uuid },
+    Func {
+        name: Arc<ast::Name>,
+        param_exprs: Arc<ast::CommaSeparated<ast::AssignExpr>>,
+        return_sub_proc: Uuid,
+    },
     SubProc(Uuid),
-    IfElseBranch { cond_expr: Arc<ast::Expr>, then_sub_proc: Uuid, else_sub_proc: Uuid },
+    IfElseBranch {
+        cond_expr: Arc<ast::Expr>,
+        then_sub_proc: Uuid,
+        else_sub_proc: Uuid,
+    },
     Return,
     Terminate,
 }
@@ -40,58 +48,86 @@ pub enum Statement {
     Native(Arc<ast::NativeOperation>),
 }
 
-pub fn link(mut ast: Vec<Arc<ast::TopItem>>) -> anyhow::Result<Vec<Arc<Proc>>> {
-    fn declare_var(name: &str) -> Arc<ast::IdentDeclaration> {
-        Arc::new(ast::IdentDeclaration::Array { name: name.into(), length: 1 })
+pub fn link(ast: &ast::Program) -> anyhow::Result<Vec<Arc<Proc>>> {
+    fn gen_single_decl(name: &str) -> Arc<ast::IdentDeclaration> {
+        Arc::new(ast::IdentDeclaration::Single(Arc::new(ast::SingleIdentDeclaration {
+            name: Arc::new(ast::Name { str: name.into() }),
+        })))
     }
 
-    fn var(name: &str) -> Arc<ast::MemLoc> {
-        Arc::new(ast::MemLoc::Ident { name: name.into() })
+    fn gen_ident(name: &str) -> Arc<ast::Place> {
+        Arc::new(ast::Place {
+            head: Arc::new(ast::PlaceHead::Ident(Arc::new(ast::Ident { name: gen_name(name) }))),
+            offset: None,
+        })
+    }
+
+    fn gen_deref(addr: Arc<ast::Expr>) -> Arc<ast::Place> {
+        Arc::new(ast::Place {
+            head: Arc::new(ast::PlaceHead::Deref(Arc::new(ast::Deref { addr }))),
+            offset: None,
+        })
+    }
+
+    fn gen_name(name: &str) -> Arc<ast::Name> {
+        Arc::new(ast::Name { str: name.into() })
+    }
+
+    fn gen_comma_sep<T>(elements: impl IntoIterator<Item = Arc<T>>) -> Arc<ast::CommaSeparated<T>> {
+        Arc::new(ast::CommaSeparated { elements: Arc::new(elements.into_iter().collect()) })
+    }
+
+    fn gen_statement_item(statement: ast::Statement) -> Arc<ast::BodyItem> {
+        Arc::new(ast::BodyItem::Statement(Arc::new(statement)))
+    }
+
+    fn gen_body(items: impl IntoIterator<Item = Arc<ast::BodyItem>>) -> Arc<ast::Body> {
+        Arc::new(ast::Body {
+            items: Arc::new(ast::SemiSeparated { elements: Arc::new(items.into_iter().collect()) }),
+        })
+    }
+
+    fn gen_func_item(func: ast::Func) -> Arc<ast::TopItem> {
+        Arc::new(ast::TopItem::Func(Arc::new(func)))
     }
 
     // add built-in native functions
-    let out_func = ast::Func {
-        name: "out".into(),
-        params: Arc::new(Vec::from([declare_var("val")])),
+    let out_func = gen_func_item(ast::Func {
+        name: gen_name("out"),
+        params: gen_comma_sep([gen_single_decl("val")]),
         proc: Arc::new(ast::Proc {
-            idents: Arc::new(Vec::new()),
-            body: Arc::new(Vec::from([Arc::new(ast::BodyItem::Statement(Arc::new(
-                ast::Statement::Native(Arc::new(ast::NativeOperation::Out { ident: var("val") })),
-            )))])),
+            idents: gen_comma_sep([]),
+            body: gen_body([gen_statement_item(ast::Statement::Native(Arc::new(
+                ast::NativeOperation::Out { ident: gen_ident("val") },
+            )))]),
         }),
-    };
+    });
 
-    ast.push(Arc::new(ast::TopItem::Func(Arc::new(out_func))));
-
-    let in_func = ast::Func {
-        name: "in".into(),
-        params: Arc::new(Vec::from([declare_var("dest_ref")])),
+    let in_func = gen_func_item(ast::Func {
+        name: gen_name("in"),
+        params: gen_comma_sep([gen_single_decl("dest_ref")]),
         proc: Arc::new(ast::Proc {
-            idents: Arc::new(Vec::from([declare_var("answer")])),
-            body: Arc::new(Vec::from([
-                Arc::new(ast::BodyItem::Statement(Arc::new(ast::Statement::Native(Arc::new(
-                    ast::NativeOperation::In { dest_ident: var("answer") },
-                ))))),
-                Arc::new(ast::BodyItem::Statement(Arc::new(ast::Statement::Assign(Arc::new(
-                    ast::Assign {
-                        loc: Arc::new(ast::MemLoc::Deref {
-                            addr: Arc::new(ast::Expr::Ident(var("dest_ref"))),
-                        }),
-                        expr: Arc::new(ast::AssignExpr::Expr(Arc::new(ast::Expr::Ident(var(
-                            "answer",
-                        ))))),
-                    },
-                ))))),
-            ])),
+            idents: gen_comma_sep([gen_single_decl("answer")]),
+            body: gen_body([
+                gen_statement_item(ast::Statement::Native(Arc::new(ast::NativeOperation::In {
+                    dest_ident: gen_ident("answer"),
+                }))),
+                gen_statement_item(ast::Statement::Assign(Arc::new(ast::Assign {
+                    loc: gen_deref(Arc::new(ast::Expr::Place(gen_ident("dest_ref")))),
+                    expr: Arc::new(ast::AssignExpr::Expr(Arc::new(ast::Expr::Place(gen_ident(
+                        "answer",
+                    ))))),
+                }))),
+            ]),
         }),
-    };
+    });
 
-    ast.push(Arc::new(ast::TopItem::Func(Arc::new(in_func))));
+    let top_items = chain!(ast.items.iter().cloned(), [out_func, in_func]).collect_vec();
 
     // parse user top items
     let mut procs = Vec::<Arc<Proc>>::new();
 
-    for top_item in ast.iter().map(AsRef::as_ref) {
+    for top_item in top_items.iter().map(AsRef::as_ref) {
         let (proc_kind, ast_proc) = match top_item {
             ast::TopItem::Main(main) => (ProcKind::Main, Arc::clone(&main.proc)),
             ast::TopItem::Func(func) => (
@@ -100,7 +136,7 @@ pub fn link(mut ast: Vec<Arc<ast::TopItem>>) -> anyhow::Result<Vec<Arc<Proc>>> {
             ),
         };
 
-        let mut body_items = ast_proc.body.iter().map(AsRef::as_ref).peekable();
+        let mut body_items = ast_proc.body.items.elements.iter().map(AsRef::as_ref).peekable();
 
         let create_sub_proc_res =
             create_sub_proc(&mut body_items, matches!(proc_kind, ProcKind::Main), None);
@@ -152,28 +188,28 @@ fn create_sub_proc<'a>(
 
     while let Some(body_item) = body_items.next() {
         match body_item {
-            ast::BodyItem::If { cond_pipeline, then_body, else_body } => {
+            ast::BodyItem::If(if_item) => {
                 let pop_sp = next_sp!(body_items, pop_sub_proc);
 
                 let then_sp = next_sp!(
-                    &mut then_body.iter().map(AsRef::as_ref).peekable(),
+                    &mut if_item.then_body.items.elements.iter().map(AsRef::as_ref).peekable(),
                     Some(pop_sp.uuid)
                 );
 
-                let call = match else_body {
+                let call = match &if_item.else_item {
                     None => Call::IfElseBranch {
-                        cond_expr: Arc::clone(cond_pipeline),
+                        cond_expr: Arc::clone(&if_item.condition),
                         then_sub_proc: then_sp.uuid,
                         else_sub_proc: pop_sp.uuid,
                     },
-                    Some(else_body) => {
+                    Some(else_item) => {
                         let else_sp = next_sp!(
-                            &mut else_body.iter().map(AsRef::as_ref).peekable(),
+                            &mut else_item.body.items.elements.iter().map(AsRef::as_ref).peekable(),
                             Some(pop_sp.uuid)
                         );
 
                         Call::IfElseBranch {
-                            cond_expr: Arc::clone(cond_pipeline),
+                            cond_expr: Arc::clone(&if_item.condition),
                             then_sub_proc: then_sp.uuid,
                             else_sub_proc: else_sp.uuid,
                         }
@@ -182,7 +218,7 @@ fn create_sub_proc<'a>(
 
                 next_call = Some(call);
             },
-            ast::BodyItem::While { cond_pipeline, body } => {
+            ast::BodyItem::While(while_item) => {
                 // where to go after exiting the loop
                 let pop_sp = next_sp!(body_items, pop_sub_proc);
 
@@ -190,7 +226,7 @@ fn create_sub_proc<'a>(
 
                 // body of the while loop
                 let then_sp = next_sp!(
-                    &mut body.iter().map(AsRef::as_ref).peekable(),
+                    &mut while_item.body.items.elements.iter().map(AsRef::as_ref).peekable(),
                     // tell the body to go back to the check condition once done
                     Some(check_uuid),
                 );
@@ -200,7 +236,7 @@ fn create_sub_proc<'a>(
                     uuid: check_uuid,
                     statements: Arc::new(Vec::new()),
                     next_call: Arc::new(Call::IfElseBranch {
-                        cond_expr: Arc::clone(cond_pipeline),
+                        cond_expr: Arc::clone(&while_item.condition),
                         then_sub_proc: then_sp.uuid,
                         else_sub_proc: pop_sp.uuid,
                     }),
@@ -222,12 +258,12 @@ fn create_sub_proc<'a>(
                 ast::Statement::Native(native) => {
                     statements.push(Arc::new(Statement::Native(Arc::clone(native))));
                 },
-                ast::Statement::Call { func_name, param_exprs } => {
+                ast::Statement::Call(call) => {
                     let return_sp = next_sp!(body_items, pop_sub_proc);
 
                     next_call = Some(Call::Func {
-                        name: Arc::clone(func_name),
-                        param_exprs: Arc::clone(param_exprs),
+                        name: Arc::clone(&call.func_name),
+                        param_exprs: Arc::clone(&call.param_exprs),
                         return_sub_proc: return_sp.uuid,
                     });
                 },

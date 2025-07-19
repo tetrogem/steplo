@@ -1,47 +1,47 @@
 main |rect1[2], rect2[2]| {
-    Rect_new(ref rect1, 4, 4);
-    Rect_new(ref rect2, 5, 8);
+    Rect_new(&rect1, 4, 4);
+    Rect_new(&rect2, 5, 8);
 
-    Rect_print_info(ref rect1, "Rect 1");
-    Rect_print_info(ref rect2, "Rect 2");
+    Rect_print_info(&rect1, "Rect 1");
+    Rect_print_info(&rect2, "Rect 2");
 
     out("Done!");
 }
 
 func Rect_new(ret_ref, width, height) || {
-    deref ret_ref = [width, height];
+    *ret_ref = [width, height];
 }
 
 func Rect_width(ret_ref, self_ref) || {
-    deref ret_ref = self_ref | deref;
+    *ret_ref = (*self_ref)[0];
 }
 
 func Rect_height(ret_ref, self_ref) || {
-    deref ret_ref = self_ref | add 1 | deref;
+    *ret_ref = (*self_ref)[1];
 }
 
 func Rect_area(ret_ref, self_ref) |width, height| {
-    Rect_width(ref width, self_ref);
-    Rect_height(ref height, self_ref);
-    deref ret_ref = width | mul height;
+    Rect_width(&width, self_ref);
+    Rect_height(&height, self_ref);
+    *ret_ref = (width * height);
 }
 
 func Rect_perimeter(ret_ref, self_ref) |width, height| {
-    Rect_width(ref width, self_ref);
-    Rect_height(ref height, self_ref);
-    width = width | mul 2;
-    height = height | mul 2;
-    deref ret_ref = width | add height;
+    Rect_width(&width, self_ref);
+    Rect_height(&height, self_ref);
+    width = (width * 2);
+    height = (height * 2);
+    *ret_ref = (width + height);
 }
 
 func Rect_print_info(self_ref, name) |a, b| {
-    Rect_width(ref a, self_ref);
-    Rect_height(ref b, self_ref);
-    out(name | join " dimensions: " | join a | join " x " | join b);
+    Rect_width(&a, self_ref);
+    Rect_height(&b, self_ref);
+    out(((((name ~ " dimensions: ") ~ a) ~ " x ") ~ b));
 
-    Rect_perimeter(ref a, self_ref);
-    out(name | join " perimeter: " | join a);
+    Rect_perimeter(&a, self_ref);
+    out(((name ~ " perimeter: ") ~ a));
 
-    Rect_area(ref a, self_ref);
-    out(name | join " area: " | join a);
+    Rect_area(&a, self_ref);
+    out(((name ~ " area: ") ~ a));
 }

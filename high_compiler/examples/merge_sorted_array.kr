@@ -1,71 +1,71 @@
 // https://leetcode.com/problems/merge-sorted-array
 
 main |arr1[13], vec1[2], arr2[6], vec2[2], temp| {
-    set arr1 = ["-3","-2",0,0,0,6,7,0,0,0,0,0,0];
-    set arr2 = ["-1",1,1,1,2,3];
+    arr1 = ["-3","-2",0,0,0,6,7,0,0,0,0,0,0];
+    arr2 = ["-1",1,1,1,2,3];
 
-    call Vector_new(&vec1, &arr1, 13);
-    call Vector_new(&vec2, &arr2, 6);
-    call Vector_to_string(&temp, &vec1);
-    call out(temp);
-    call Vector_to_string(&temp, &vec2);
-    call out(temp);
+    Vector_new(&vec1, &arr1, 13);
+    Vector_new(&vec2, &arr2, 6);
+    Vector_to_string(&temp, &vec1);
+    out(temp);
+    Vector_to_string(&temp, &vec2);
+    out(temp);
 
-    call merge_sorted_vecs(&vec1, 7, &vec2, 6);
-    call Vector_to_string(&temp, &vec1);
-    call out(("Merged: " ~ temp));
+    merge_sorted_vecs(&vec1, 7, &vec2, 6);
+    Vector_to_string(&temp, &vec1);
+    out(("Merged: " ~ temp));
 }
 
-func Vector_new(ret_ref, vals_ref, len) || {
-    set *ret_ref = [vals_ref, len];
+func Vector_new(ret_r, vals_r, len) || {
+    *ret_r = [vals_r, len];
 }
 
-func Vector_vals_ref(ret_ref, self_ref) || {
-    set *ret_ref = (*self_ref)[0];
+func Vector_vals_r(ret_r, self_r) || {
+    *ret_r = (*self_r)[0];
 }
 
-func Vector_len(ret_ref, self_ref) || {
-    set *ret_ref = (*self_ref)[1];
+func Vector_len(ret_r, self_r) || {
+    *ret_r = (*self_r)[1];
 }
 
-func Vector_to_string(ret_ref, self_ref) |str, i, vals_ref, len, val| {
-    call Vector_vals_ref(&vals_ref, self_ref);
-    call Vector_len(&len, self_ref);
+func Vector_to_string(ret_r, self_r) |str, i, vals_r, len, val| {
+    Vector_vals_r(&vals_r, self_r);
+    Vector_len(&len, self_r);
 
-    set str = "[";
-    set i = 0;
+    str = "[";
+    i = 0;
     while (i < len) {
-        set val = (*(vals_ref + i));
-        set str = (str ~ val);
+        val = (*vals_r)[i];
+        str = (str ~ val);
 
         if ((i + 1) < len) {
-            set str = (str ~ ", ");
-        }
+            str = (str ~ ", ");
+        };
 
-        set i = (i + 1);
-    }
+        i = (i + 1);
+    };
 
-    set str = (str ~ "]");
-    set *ret_ref = str;
+    str = (str ~ "]");
+    *ret_r = str;
 }
 
-func merge_sorted_vecs(vec1_ref, m, vec2_ref, n) |i, nums1_vals_ref, nums2_vals_ref, num1, num2| {
-    call Vector_vals_ref(&nums1_vals_ref, vec1_ref);
-    call Vector_vals_ref(&nums2_vals_ref, vec2_ref);
+func merge_sorted_vecs(vec1_r, m, vec2_r, n) |i, nums1_vals_r, nums2_vals_r, num1, num2| {
+    Vector_vals_r(&nums1_vals_r, vec1_r);
+    Vector_vals_r(&nums2_vals_r, vec2_r);
 
-    set i = ((m + n) - 1);
+    i = ((m + n) - 1);
     while (i >= 0) {
-        set num1 = (*nums1_vals_ref)[(m - 1)];
-        set num2 = (*nums2_vals_ref)[(n - 1)];
+        num1 = (*nums1_vals_r)[(m - 1)];
+        num2 = (*nums2_vals_r)[(n - 1)];
 
         if ((n <= 0) || (num1 >= num2)) {
-            set (*nums1_vals_ref)[i] = num1;
-            set m = (m - 1);
+            (*nums1_vals_r)[i] = num1;
+            m = (m - 1);
         } else {
-            set (*nums1_vals_ref)[i] = num2;
-            set n = (n - 1);
-        }
+            (*nums1_vals_r)[i] = num2;
+            n = (n - 1);
+        };
 
-        set i = (i - 1);
-    }
+        i = (i - 1);
+    };
 }

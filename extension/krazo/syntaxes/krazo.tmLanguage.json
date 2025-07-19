@@ -48,7 +48,7 @@
       "patterns": [
         {
           "name": "keyword.operator.krazo",
-          "match": "\\b(deref|add|sub|mul|div|mod|eq|neq|gt|lt|gte|lte|and|or|xor|not|join)\\b"
+          "match": "(\\*|\\+|-|\\/|%|!|>|<|&|~)"
         }
       ]
     },

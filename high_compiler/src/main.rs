@@ -1,5 +1,5 @@
 use std::{
-    env,
+    env::{self},
     fs::{self, File},
     io::Read,
     path::Path,
@@ -8,17 +8,25 @@ use std::{
 use ast::parse;
 use compile::compile;
 use link::link;
-use shared::{time, write_json};
+use shared::{time, time_total, write_json};
 use token::tokenize;
 
 mod ast;
+mod ast_parse;
 mod compile;
 mod link;
 mod token;
+mod token_feed;
 
 fn main() -> anyhow::Result<()> {
     println!("KRAZO COMPILER");
 
+    time_total("Total compile time:", compile_all)?;
+
+    Ok(())
+}
+
+fn compile_all() -> anyhow::Result<()> {
     let mut args = env::args();
     let Some(_current_path) = args.next() else { panic!("Cannot get current dir") };
     let Some(in_path) = args.next() else { panic!("No input file given") };
@@ -40,9 +48,9 @@ fn main() -> anyhow::Result<()> {
 
     let tokens = time("Tokenizing...", || tokenize(&input))?;
     // dbg!(&tokens);
-    let ast = time("Parsing...", || parse(tokens))?;
+    let ast = time("Parsing...", || parse(tokens.into()))?;
     // dbg!(&ast);
-    let linked = time("Linking...", || link(ast))?;
+    let linked = time("Linking...", || link(&ast))?;
     // dbg!(&linked);
     let mem_opt_ast = time("Compiling high-level to designation IR...", || compile(linked))?;
 
