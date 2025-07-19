@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::token_feed::TokenFeed;
+use crate::{ast_error::AstErrorSet, token_feed::TokenFeed};
 
 #[derive(Debug)]
 pub enum TopItem {
@@ -295,6 +295,6 @@ pub struct CommaSeparated<T> {
     pub elements: Arc<Vec<Arc<T>>>,
 }
 
-pub fn parse(mut tokens: TokenFeed) -> anyhow::Result<Program> {
-    tokens.parse()
+pub fn parse(mut tokens: TokenFeed) -> Result<Program, AstErrorSet> {
+    tokens.parse().res
 }

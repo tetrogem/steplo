@@ -11,10 +11,14 @@ use link::link;
 use shared::{time, time_total, write_json};
 use token::tokenize;
 
+use crate::ast_error::report_ast_errors;
+
 mod ast;
+mod ast_error;
 mod ast_parse;
 mod compile;
 mod link;
+mod src_pos;
 mod token;
 mod token_feed;
 
@@ -48,7 +52,14 @@ fn compile_all() -> anyhow::Result<()> {
 
     let tokens = time("Tokenizing...", || tokenize(&input))?;
     // dbg!(&tokens);
-    let ast = time("Parsing...", || parse(tokens.into()))?;
+    let ast = match time("Parsing...", || parse(tokens.into())) {
+        Ok(ast) => ast,
+        Err(err) => {
+            report_ast_errors(&input, err);
+            return Ok(());
+        },
+    };
+
     // dbg!(&ast);
     let linked = time("Linking...", || link(&ast))?;
     // dbg!(&linked);
