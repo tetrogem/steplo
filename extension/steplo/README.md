@@ -1,4 +1,4 @@
-# krazo README
+# steplo README
 
 WIP
 

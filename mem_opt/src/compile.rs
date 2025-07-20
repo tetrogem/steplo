@@ -49,7 +49,18 @@ pub fn compile<'a>(procs: impl Iterator<Item = &'a Proc<RMemLoc>>) -> ez::Progra
     };
 
     let stages = Vec::from([Arc::new(stage)]);
-    ez::Program { monitors: Arc::new(Vec::new()), stages: Arc::new(stages) }
+    ez::Program {
+        monitors: Arc::new(Vec::from([Arc::new(ez::Monitor {
+            uuid: Uuid::new_v4(),
+            list: compile_m.stdout_list.clone(),
+            width: 480.,
+            height: 360.,
+            x: 0.,
+            y: 0.,
+            visible: true,
+        })])),
+        stages: Arc::new(stages),
+    }
 }
 
 struct CompileManager {

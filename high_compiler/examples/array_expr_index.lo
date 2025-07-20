@@ -1,0 +1,7 @@
+main |arr: [vec; 5]| {
+    arr[0] = "Hello";
+    out(arr[0]);
+
+    arr[(0 + 1)] = "World!";
+    out(arr[(2 - 1)]);
+}

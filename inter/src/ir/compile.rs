@@ -20,7 +20,7 @@ impl Program {
             "meta": {
                 "semver": "3.0.0",
                 "vm": "2.3.4",
-                "agent": "ScratchASM/0.3.0-indev"
+                "agent": "Steplo-indev" // TODO: put version number of language back here in the future
             }
         })
     }
@@ -32,14 +32,14 @@ impl Monitor {
             "id": self.uuid.to_string(),
             "mode": "list",
             "opcode": "data_listcontents",
-            "params": { "LIST": self.name.to_string() },
+            "params": { "LIST": self.list.name.to_string() },
             "spriteName": null,
             "value": ["Hello world!", "1", "1"],
-            "width": 404,
-            "height": 299,
-            "x": 5,
-            "y": 5,
-            "visible": true
+            "width": self.width,
+            "height": self.height,
+            "x": self.x,
+            "y": self.y,
+            "visible": self.visible,
         })
     }
 }

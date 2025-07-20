@@ -1,7 +1,7 @@
 {
-  "name": "krazo",
-  "displayName": "krazo",
-  "description": "Support for the Krazo programming language",
+  "name": "steplo",
+  "displayName": "steplo",
+  "description": "Support for the Steplo programming language",
   "version": "0.0.1",
   "scripts": {
     "package": "npx vsce package"
@@ -15,22 +15,22 @@
   "contributes": {
     "languages": [
       {
-        "id": "krazo",
+        "id": "steplo",
         "aliases": [
-          "Krazo",
-          "krazo"
+          "Steplo",
+          "steplo"
         ],
         "extensions": [
-          ".kr"
+          ".lo"
         ],
         "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
       {
-        "language": "krazo",
-        "scopeName": "source.krazo",
-        "path": "./syntaxes/krazo.tmLanguage.json"
+        "language": "steplo",
+        "scopeName": "source.steplo",
+        "path": "./syntaxes/steplo.tmLanguage.json"
       }
     ]
   }

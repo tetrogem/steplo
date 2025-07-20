@@ -21,7 +21,15 @@ impl Program {
 
 impl Monitor {
     pub fn compile(&self) -> ir::Monitor {
-        ir::Monitor { uuid: self.uuid, name: Arc::clone(&self.name) }
+        ir::Monitor {
+            uuid: self.uuid,
+            list: Arc::new(self.list.compile()),
+            width: self.width,
+            height: self.height,
+            x: self.x,
+            y: self.y,
+            visible: self.visible,
+        }
     }
 }
 

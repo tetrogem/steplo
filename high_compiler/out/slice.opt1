@@ -1,43 +1,43 @@
 main {
-    proc #c6 {
+    proc #67 {
         $sp = "-1";
-        jump #69;
+        jump #66;
     }
 }
 
 func main {
-    proc #69 {
+    proc #66 {
         $sp = ($sp + "7");
         stack[($sp + "2")] = "111";
         stack[($sp + "3")] = "222";
         stack[($sp + "4")] = "333";
-        stack[($sp + "1")] = #ad;
-        jump #74;
+        stack[($sp + "1")] = #84;
+        jump #6d;
     }
 
-    proc #ad {
+    proc #84 {
         stack[($sp - "5")] = "123";
         stack[(($sp - "5") + "1")] = "456";
         stack[(($sp - "5") + "2")] = "789";
         stack[($sp + "2")] = stack[($sp - "5")];
         stack[($sp + "3")] = stack[(($sp - "5") + "1")];
         stack[($sp + "4")] = stack[(($sp - "5") + "2")];
-        stack[($sp + "1")] = #a9;
-        jump #74;
+        stack[($sp + "1")] = #6f;
+        jump #6d;
     }
 
-    proc #a9 {
+    proc #6f {
         stack[($sp - "2")] = stack[($sp - "5")];
         stack[(($sp - "2") + "1")] = stack[(($sp - "5") + "1")];
         stack[(($sp - "2") + "2")] = stack[(($sp - "5") + "2")];
         stack[($sp + "2")] = stack[($sp - "2")];
         stack[($sp + "3")] = stack[(($sp - "2") + "1")];
         stack[($sp + "4")] = stack[(($sp - "2") + "2")];
-        stack[($sp + "1")] = #e4;
-        jump #74;
+        stack[($sp + "1")] = #70;
+        jump #6d;
     }
 
-    proc #e4 {
+    proc #70 {
         stack[($sp - "2")] = "111";
         stack[(($sp - "2") + "1")] = "222";
         stack[(($sp - "2") + "2")] = "333";
@@ -45,48 +45,48 @@ func main {
         stack[(($sp - "2") + "1")] = stack[(($sp - "2") + "1")];
         stack[(($sp - "2") + "2")] = (stack[(($sp - "5") + "2")] + "50");
         stack[($sp + "2")] = "Refs:";
-        stack[($sp + "1")] = #9b;
-        jump #40;
+        stack[($sp + "1")] = #f7;
+        jump #52;
     }
 
-    proc #9b {
+    proc #f7 {
         stack[($sp + "2")] = ($sp - "5");
-        stack[($sp + "1")] = #e7;
-        jump #a2;
+        stack[($sp + "1")] = #bf;
+        jump #b5;
     }
 
-    proc #e7 {
+    proc #bf {
         stack[($sp + "2")] = ($sp - "2");
-        stack[($sp + "1")] = #ea;
-        jump #a2;
+        stack[($sp + "1")] = #25;
+        jump #b5;
     }
 
-    proc #ea {
+    proc #25 {
         exit;
     }
 }
 
 func func.print_arr3 {
-    proc #74 {
+    proc #6d {
         $sp = ($sp + "4");
         stack[($sp + "2")] = stack[($sp - "2")];
-        stack[($sp + "1")] = #0e;
-        jump #40;
+        stack[($sp + "1")] = #e8;
+        jump #52;
     }
 
-    proc #0e {
+    proc #e8 {
         stack[($sp + "2")] = stack[(($sp - "2") + "1")];
-        stack[($sp + "1")] = #4d;
-        jump #40;
+        stack[($sp + "1")] = #b2;
+        jump #52;
     }
 
-    proc #4d {
+    proc #b2 {
         stack[($sp + "2")] = stack[(($sp - "2") + "2")];
-        stack[($sp + "1")] = #45;
-        jump #40;
+        stack[($sp + "1")] = #5d;
+        jump #52;
     }
 
-    proc #45 {
+    proc #5d {
         stack[($sp - "2")] = "0";
         stack[(($sp - "2") + "1")] = "0";
         stack[(($sp - "2") + "2")] = "0";
@@ -96,26 +96,26 @@ func func.print_arr3 {
 }
 
 func func.print_arr3_r {
-    proc #a2 {
+    proc #b5 {
         $sp = ($sp + "2");
         stack[($sp + "2")] = stack[stack[$sp]];
-        stack[($sp + "1")] = #5f;
-        jump #40;
+        stack[($sp + "1")] = #5a;
+        jump #52;
     }
 
-    proc #5f {
+    proc #5a {
         stack[($sp + "2")] = stack[(stack[$sp] + "1")];
-        stack[($sp + "1")] = #39;
-        jump #40;
+        stack[($sp + "1")] = #f0;
+        jump #52;
     }
 
-    proc #39 {
+    proc #f0 {
         stack[($sp + "2")] = stack[(stack[$sp] + "2")];
-        stack[($sp + "1")] = #53;
-        jump #40;
+        stack[($sp + "1")] = #f4;
+        jump #52;
     }
 
-    proc #53 {
+    proc #f4 {
         stack[$sp] = "0";
         $sp = ($sp - "2");
         jump stack[($sp + "1")];
@@ -123,7 +123,7 @@ func func.print_arr3_r {
 }
 
 func func.out {
-    proc #40 {
+    proc #52 {
         $sp = ($sp + "2");
         out stack[$sp];
         $sp = ($sp - "2");

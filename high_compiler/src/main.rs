@@ -23,7 +23,7 @@ mod token;
 mod token_feed;
 
 fn main() -> anyhow::Result<()> {
-    println!("KRAZO COMPILER");
+    println!("STEPLO COMPILER");
 
     time_total("Total compile time:", compile_all)?;
 
@@ -39,8 +39,8 @@ fn compile_all() -> anyhow::Result<()> {
 
     let in_path = Path::new(&in_path);
     assert!(
-        in_path.extension().and_then(|x| x.to_str()) == Some("kr"),
-        "input file must be a .kr file"
+        in_path.extension().and_then(|x| x.to_str()) == Some("lo"),
+        "input file must be a steplo source code (.lo) file"
     );
 
     let mut in_file = File::open(in_path).expect("input file should open");

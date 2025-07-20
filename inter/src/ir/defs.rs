@@ -11,7 +11,12 @@ pub struct Program {
 #[derive(Debug)]
 pub struct Monitor {
     pub uuid: Uuid,
-    pub name: Arc<str>,
+    pub list: Arc<List>,
+    pub width: f64,
+    pub height: f64,
+    pub x: f64,
+    pub y: f64,
+    pub visible: bool,
 }
 
 #[derive(Debug)]
