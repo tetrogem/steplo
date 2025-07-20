@@ -29,7 +29,7 @@ impl PartialOrd for SrcPos {
 //     pub char: usize,
 // }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct SrcRange {
     pub start: SrcPos,
     pub end: SrcPos,

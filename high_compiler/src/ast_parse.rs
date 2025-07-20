@@ -1,5 +1,7 @@
 use std::{ops::Not, sync::Arc};
 
+use asm_compiler::token;
+
 use crate::{
     ast::{
         AddOp, AndOp, ArrayType, Assign, AssignExpr, BaseType, BinaryParenExpr, BinaryParenExprOp,
@@ -9,28 +11,31 @@ use crate::{
         Program, RefExpr, RefType, SemiSeparated, Slice, Span, Statement, SubOp, TopItem, Type,
         UnaryParenExpr, UnaryParenExprOp, WhileItem,
     },
-    ast_error::AstErrorSet,
+    ast_error::{AstErrorKind, AstErrorSet},
     src_pos::SrcRange,
-    token::Token,
+    token::{Token, TokenKind},
     token_feed::{Parse, TokenFeed},
 };
 
 macro_rules! token {
-    ($token_pat:pat => $token_use:expr, $expected:expr) => {
+    ($token_pat:pat => $token_use:expr, $expected:expr) => {{
         |cell| match cell.res {
             Some(t) => match &t.token {
                 $token_pat => Ok($token_use),
                 token => Err(AstErrorSet::new_error(
                     t.range,
-                    format!("{}, found: {:?}", $expected, token),
+                    AstErrorKind::MismatchedTokenString {
+                        expected: $expected.into(),
+                        found: token.into(),
+                    },
                 )),
             },
             None => Err(AstErrorSet::new_error(
-                SrcRange::new_zero_len(cell.pos),
-                format!("{}, found end of document", $expected),
+                cell.range,
+                AstErrorKind::ExpectedTokenString { expected: $expected.into() },
             )),
         }
-    };
+    }};
 }
 
 macro_rules! parse_alt {
@@ -71,9 +76,9 @@ macro_rules! parse_optional_parens {
         }
 
         let wrapped_res = tokens.try_match(|tokens| {
-            tokens.try_next(token!(Token::LeftParen => (), "Expected opening parenthesis"))?;
+            tokens.try_next(token!(Token::LeftParen => (), [TokenKind::LeftParen]))?;
             let place = tokens.parse().res?;
-            tokens.try_next(token!(Token::RightParen => (), "Expected closing parenthesis"))?;
+            tokens.try_next(token!(Token::RightParen => (), [TokenKind::RightParen]))?;
             Ok(place)
         });
 
@@ -100,8 +105,8 @@ impl Parse for Program {
                 },
                 Err(e) => {
                     return Err(e.merge(AstErrorSet::new_error(
-                        SrcRange::new_zero_len(item_cell.pos),
-                        "Expected top item",
+                        item_cell.range,
+                        AstErrorKind::ExpectedTopItem,
                     )));
                 },
             }
@@ -116,7 +121,7 @@ impl Parse for Comment {
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
         let text = tokens
-            .try_next(token!(Token::Comment(text) => text.as_str().into(), "Expected comment"))?;
+            .try_next(token!(Token::Comment(text) => text.as_str().into(), [TokenKind::Comment]))?;
         Ok(Self { text })
     }
 }
@@ -140,7 +145,7 @@ impl Parse for Main {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Main => (), "Expected `main`"))?;
+        tokens.try_next(token!(Token::Main => (), [TokenKind::Main]))?;
         let proc = tokens.parse::<Proc>().res?;
         Ok(Self { proc: Arc::new(proc) })
     }
@@ -150,15 +155,15 @@ impl Parse for Func {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Func => (), "Expected `func`"))?;
+        tokens.try_next(token!(Token::Func => (), [TokenKind::Func]))?;
 
         let name = tokens.parse().res?;
 
-        tokens.try_next(token!(Token::LeftParen => (), "Expected opening parenthesis"))?;
+        tokens.try_next(token!(Token::LeftParen => (), [TokenKind::LeftParen]))?;
         let params_res = tokens.parse::<ZeroOrManyParseResult<_>>().res?;
 
         let proc: Proc = (|| {
-            tokens.try_next(token!(Token::RightParen => (), "Expected closing parenthesis"))?;
+            tokens.try_next(token!(Token::RightParen => (), [TokenKind::RightParen]))?;
             tokens.parse().res
         })()
         .map_err(|e: AstErrorSet| e.merge(params_res.last_err))?;
@@ -175,8 +180,8 @@ impl Parse for Name {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        let str =
-            tokens.try_next(token!(Token::Name(name) => name.as_str().into(), "Expected name"))?;
+        let str = tokens
+            .try_next(token!(Token::Name(name) => name.as_str().into(), [TokenKind::Name]))?;
         Ok(Self { str })
     }
 }
@@ -186,7 +191,7 @@ impl Parse for IdentDeclaration {
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
         let name = tokens.parse().res?;
-        tokens.try_next(token!(Token::Colon => (), "Expected colon"))?;
+        tokens.try_next(token!(Token::Colon => (), [TokenKind::Colon]))?;
         let ty = tokens.parse().res?;
         Ok(Self { name: Arc::new(name), ty: Arc::new(ty) })
     }
@@ -221,7 +226,7 @@ impl Parse for RefType {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Ampersand => (), "Expected &"))?;
+        tokens.try_next(token!(Token::Ampersand => (), [TokenKind::Ampersand]))?;
         let ty = tokens.parse().res?;
         Ok(Self { ty: Arc::new(ty) })
     }
@@ -231,18 +236,15 @@ impl Parse for ArrayType {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::LeftBracket => (), "Expected opening bracket"))?;
+        tokens.try_next(token!(Token::LeftBracket => (), [TokenKind::LeftBracket]))?;
         let ty = tokens.parse().res?;
-        tokens.try_next(token!(Token::Semi => (), "Expected semicolon"))?;
+        tokens.try_next(token!(Token::Semi => (), [TokenKind::Semi]))?;
         let len_token = tokens.parse::<Literal>();
         let len = len_token.res?.str.parse().map_err(|_| {
-            AstErrorSet::new_error(
-                SrcRange::new_zero_len(len_token.pos),
-                "Array length should be a positive integer",
-            )
+            AstErrorSet::new_error(len_token.range, AstErrorKind::InvalidArrayLength)
         })?;
 
-        tokens.try_next(token!(Token::RightBracket => (), "Expected closing bracket"))?;
+        tokens.try_next(token!(Token::RightBracket => (), [TokenKind::RightBracket]))?;
         Ok(Self { ty: Arc::new(ty), len })
     }
 }
@@ -252,7 +254,7 @@ impl Parse for Literal {
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
         let str = tokens
-            .try_next(token!(Token::Literal(str) => str.as_str().into(), "Expected literal"))?;
+            .try_next(token!(Token::Literal(str) => str.as_str().into(), [TokenKind::Literal]))?;
         Ok(Self { str })
     }
 }
@@ -261,11 +263,11 @@ impl Parse for Proc {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Pipe => (), "Expected opening pipe"))?;
+        tokens.try_next(token!(Token::Pipe => (), [TokenKind::Pipe]))?;
         let idents_res = tokens.parse::<ZeroOrManyParseResult<_>>().res?;
 
         let body: Body = (|| {
-            tokens.try_next(token!(Token::Pipe => (), "Expected closing pipe"))?;
+            tokens.try_next(token!(Token::Pipe => (), [TokenKind::Pipe]))?;
             tokens.parse().res
         })()
         .map_err(|e: AstErrorSet| e.merge(idents_res.last_err))?;
@@ -278,12 +280,12 @@ impl Parse for Body {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::LeftBrace => (), "Expected opening brace"))?;
+        tokens.try_next(token!(Token::LeftBrace => (), [TokenKind::LeftBrace]))?;
 
         let res = tokens.parse::<ZeroOrManyParseResult<_>>().res?;
 
         tokens
-            .try_next(token!(Token::RightBrace => (), "Expected closing brace"))
+            .try_next(token!(Token::RightBrace => (), [TokenKind::RightBrace]))
             .map_err(|e| e.merge(res.last_err))?;
 
         let items = res.zero_or_many;
@@ -311,7 +313,7 @@ where
             };
 
             elements.push(Arc::new(element));
-            if let Err(err) = tokens.try_next(token!(Token::Semi => (), "Expected semicolon")) {
+            if let Err(err) = tokens.try_next(token!(Token::Semi => (), [TokenKind::Semi])) {
                 break err;
             }
         };
@@ -337,7 +339,7 @@ where
             };
 
             elements.push(Arc::new(element));
-            if let Err(err) = tokens.try_next(token!(Token::Comma => (), "Expected comma")) {
+            if let Err(err) = tokens.try_next(token!(Token::Comma => (), [TokenKind::Comma])) {
                 break err;
             }
         };
@@ -368,7 +370,7 @@ impl Parse for IfItem {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::If => (), "Expected `if`"))?;
+        tokens.try_next(token!(Token::If => (), [TokenKind::If]))?;
         let condition = tokens.parse().res?;
         let then_body = tokens.parse().res?;
         let else_item = tokens.parse().res.ok();
@@ -384,7 +386,7 @@ impl Parse for ElseItem {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Else => (), "Expected `else`"))?;
+        tokens.try_next(token!(Token::Else => (), [TokenKind::Else]))?;
         let body = tokens.parse().res?;
         Ok(Self { body: Arc::new(body) })
     }
@@ -394,7 +396,7 @@ impl Parse for WhileItem {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::While => (), "Expected `while`"))?;
+        tokens.try_next(token!(Token::While => (), [TokenKind::While]))?;
         let condition = tokens.parse().res?;
         let body = tokens.parse().res?;
 
@@ -422,7 +424,7 @@ impl Parse for Assign {
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
         let loc = tokens.parse().res?;
-        tokens.try_next(token!(Token::Eq => (), "Expected ="))?;
+        tokens.try_next(token!(Token::Eq => (), [TokenKind::Eq]))?;
         let expr = tokens.parse().res?;
         Ok(Self { loc: Arc::new(loc), expr: Arc::new(expr) })
     }
@@ -433,11 +435,11 @@ impl Parse for FunctionCall {
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
         let func_name = tokens.parse().res?;
-        tokens.try_next(token!(Token::LeftParen => (), "Expected opening parenthesis"))?;
+        tokens.try_next(token!(Token::LeftParen => (), [TokenKind::LeftParen]))?;
         let param_exprs_res = tokens.parse::<ZeroOrManyParseResult<_>>().res?;
 
         tokens
-            .try_next(token!(Token::RightParen => (), "Expected closing parenthesis"))
+            .try_next(token!(Token::RightParen => (), [TokenKind::RightParen]))
             .map_err(|e| e.merge(param_exprs_res.last_err))?;
 
         Ok(Self {
@@ -478,9 +480,9 @@ impl Parse for Offset {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::LeftBracket => (), "Expected opening bracket"))?;
+        tokens.try_next(token!(Token::LeftBracket => (), [TokenKind::LeftBracket]))?;
         let expr = tokens.parse().res?;
-        tokens.try_next(token!(Token::RightBracket => (), "Expected closing bracket"))?;
+        tokens.try_next(token!(Token::RightBracket => (), [TokenKind::RightBracket]))?;
         Ok(Self { expr: Arc::new(expr) })
     }
 }
@@ -501,7 +503,7 @@ impl Parse for Deref {
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
         parse_optional_parens! { tokens => |tokens: &mut TokenFeed| {
-            tokens.try_next(token!(Token::Asterisk => (), "Expected *"))?;
+            tokens.try_next(token!(Token::Asterisk => (), [TokenKind::Asterisk]))?;
             let addr = tokens.parse().res?;
             Ok(Self { addr: Arc::new(addr) })
         }}
@@ -514,9 +516,9 @@ impl Parse for AssignExpr {
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
         parse_alt! {
             parse tokens => x {
-                Self::Expr(Arc::new(x)),
-                Self::Span(Arc::new(x)),
                 Self::Slice(Arc::new(x)),
+                Self::Span(Arc::new(x)),
+                Self::Expr(Arc::new(x)),
             } else {
                 "Expected assign expression"
             }
@@ -528,10 +530,10 @@ impl Parse for Span {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::LeftBracket => (), "Expected opening bracket"))?;
+        tokens.try_next(token!(Token::LeftBracket => (), [TokenKind::LeftBracket]))?;
         let elements_res = tokens.parse::<ZeroOrManyParseResult<_>>().res?;
         tokens
-            .try_next(token!(Token::RightBracket => (), "Expected closing bracket"))
+            .try_next(token!(Token::RightBracket => (), [TokenKind::RightBracket]))
             .map_err(|e| e.merge(elements_res.last_err))?;
 
         Ok(Self { elements: Arc::new(elements_res.zero_or_many) })
@@ -544,26 +546,36 @@ impl Parse for Slice {
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
         let place = tokens.parse().res?;
 
+        tokens.try_next(token!(Token::LeftBracket => (), [TokenKind::LeftBracket]))?;
+
         let start_in_cell = tokens.parse::<Literal>();
-        let start_in = start_in_cell.res?;
-        let Ok(start_in) = start_in.str.parse() else {
-            return Err(AstErrorSet::new_error(
-                SrcRange::new_zero_len(start_in_cell.pos),
-                "Inclusive start of range must be a positive integer",
-            ));
+
+        let start_in = match start_in_cell.res {
+            Err(_) => 0,
+            Ok(start_in) => match start_in.str.parse() {
+                Ok(start_in) => start_in,
+                Err(_) => {
+                    return Err(AstErrorSet::new_error(
+                        start_in_cell.range,
+                        AstErrorKind::InvalidInclRangeStart,
+                    ))
+                },
+            },
         };
 
-        tokens.try_next(token!(Token::Period => (), "Expected .."))?;
-        tokens.try_next(token!(Token::Period => (), "Expected .."))?;
+        tokens.try_next(token!(Token::Period => (), [TokenKind::Period, TokenKind::Period]))?;
+        tokens.try_next(token!(Token::Period => (), [TokenKind::Period, TokenKind::Period]))?;
 
         let end_ex_cell = tokens.parse::<Literal>();
         let end_ex = end_ex_cell.res?;
         let Ok(end_ex) = end_ex.str.parse() else {
             return Err(AstErrorSet::new_error(
-                SrcRange::new_zero_len(end_ex_cell.pos),
-                "Exclusive end of range must be a positive integer",
+                end_ex_cell.range,
+                AstErrorKind::InvalidExclRangeEnd,
             ));
         };
+
+        tokens.try_next(token!(Token::RightBracket => (), [TokenKind::RightBracket]))?;
 
         Ok(Self { place: Arc::new(place), start_in, end_ex })
     }
@@ -590,7 +602,7 @@ impl Parse for RefExpr {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Ampersand => (), "Expected &"))?;
+        tokens.try_next(token!(Token::Ampersand => (), [TokenKind::Ampersand]))?;
         let place = tokens.parse().res?;
         Ok(Self { place: Arc::new(place) })
     }
@@ -615,10 +627,10 @@ impl Parse for UnaryParenExpr {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::LeftParen => (), "Expected opening parenthesis"))?;
+        tokens.try_next(token!(Token::LeftParen => (), [TokenKind::LeftParen]))?;
         let op = tokens.parse().res?;
         let operand = tokens.parse().res?;
-        tokens.try_next(token!(Token::RightParen => (), "Expected closing parenthesis"))?;
+        tokens.try_next(token!(Token::RightParen => (), [TokenKind::RightParen]))?;
         Ok(Self { op, operand: Arc::new(operand) })
     }
 }
@@ -627,11 +639,11 @@ impl Parse for BinaryParenExpr {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::LeftParen => (), "Expected opening parenthesis"))?;
+        tokens.try_next(token!(Token::LeftParen => (), [TokenKind::LeftParen]))?;
         let left = tokens.parse().res?;
         let op = tokens.parse().res?;
         let right = tokens.parse().res?;
-        tokens.try_next(token!(Token::RightParen => (), "Expected closing parenthesis"))?;
+        tokens.try_next(token!(Token::RightParen => (), [TokenKind::RightParen]))?;
         Ok(Self { op, left: Arc::new(left), right: Arc::new(right) })
     }
 }
@@ -654,7 +666,7 @@ impl Parse for NotOp {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Bang => (), "Expected !"))?;
+        tokens.try_next(token!(Token::Bang => (), [TokenKind::Bang]))?;
         Ok(Self)
     }
 }
@@ -700,7 +712,7 @@ impl Parse for AddOp {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Plus => (), "Expected +"))?;
+        tokens.try_next(token!(Token::Plus => (), [TokenKind::Plus]))?;
         Ok(Self)
     }
 }
@@ -709,7 +721,7 @@ impl Parse for SubOp {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Dash => (), "Expected -"))?;
+        tokens.try_next(token!(Token::Dash => (), [TokenKind::Dash]))?;
         Ok(Self)
     }
 }
@@ -718,7 +730,7 @@ impl Parse for MulOp {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Asterisk => (), "Expected *"))?;
+        tokens.try_next(token!(Token::Asterisk => (), [TokenKind::Asterisk]))?;
         Ok(Self)
     }
 }
@@ -727,7 +739,7 @@ impl Parse for DivOp {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Slash => (), "Expected /"))?;
+        tokens.try_next(token!(Token::Slash => (), [TokenKind::Slash]))?;
         Ok(Self)
     }
 }
@@ -736,7 +748,7 @@ impl Parse for ModOp {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Percent => (), "Expected %"))?;
+        tokens.try_next(token!(Token::Percent => (), [TokenKind::Percent]))?;
         Ok(Self)
     }
 }
@@ -745,8 +757,8 @@ impl Parse for EqOp {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Eq => (), "Expected =="))?;
-        tokens.try_next(token!(Token::Eq => (), "Expected =="))?;
+        tokens.try_next(token!(Token::Eq => (), [TokenKind::Eq, TokenKind::Eq]))?;
+        tokens.try_next(token!(Token::Eq => (), [TokenKind::Eq, TokenKind::Eq]))?;
         Ok(Self)
     }
 }
@@ -755,8 +767,8 @@ impl Parse for NeqOp {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Bang => (), "Expected !="))?;
-        tokens.try_next(token!(Token::Eq => (), "Expected !="))?;
+        tokens.try_next(token!(Token::Bang => (), [TokenKind::Bang, TokenKind::Eq]))?;
+        tokens.try_next(token!(Token::Eq => (), [TokenKind::Bang, TokenKind::Eq]))?;
         Ok(Self)
     }
 }
@@ -765,7 +777,7 @@ impl Parse for GtOp {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::RightAngle => (), "Expected >"))?;
+        tokens.try_next(token!(Token::RightAngle => (), [TokenKind::RightAngle]))?;
         Ok(Self)
     }
 }
@@ -774,7 +786,7 @@ impl Parse for LtOp {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::LeftAngle => (), "Expected <"))?;
+        tokens.try_next(token!(Token::LeftAngle => (), [TokenKind::LeftAngle]))?;
         Ok(Self)
     }
 }
@@ -783,8 +795,8 @@ impl Parse for GteOp {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::RightAngle => (), "Expected >="))?;
-        tokens.try_next(token!(Token::Eq => (), "Expected >="))?;
+        tokens.try_next(token!(Token::RightAngle => (), [TokenKind::RightAngle, TokenKind::Eq]))?;
+        tokens.try_next(token!(Token::Eq => (), [TokenKind::RightAngle, TokenKind::Eq]))?;
         Ok(Self)
     }
 }
@@ -793,8 +805,8 @@ impl Parse for LteOp {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::LeftAngle => (), "Expected <="))?;
-        tokens.try_next(token!(Token::Eq => (), "Expected <="))?;
+        tokens.try_next(token!(Token::LeftAngle => (), [TokenKind::LeftAngle, TokenKind::Eq]))?;
+        tokens.try_next(token!(Token::Eq => (), [TokenKind::LeftAngle, TokenKind::Eq]))?;
         Ok(Self)
     }
 }
@@ -803,8 +815,12 @@ impl Parse for AndOp {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Ampersand => (), "Expected &&"))?;
-        tokens.try_next(token!(Token::Ampersand => (), "Expected &&"))?;
+        tokens.try_next(
+            token!(Token::Ampersand => (), [TokenKind::Ampersand, TokenKind::Ampersand]),
+        )?;
+        tokens.try_next(
+            token!(Token::Ampersand => (), [TokenKind::Ampersand, TokenKind::Ampersand]),
+        )?;
         Ok(Self)
     }
 }
@@ -813,8 +829,8 @@ impl Parse for OrOp {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Pipe => (), "Expected ||"))?;
-        tokens.try_next(token!(Token::Pipe => (), "Expected ||"))?;
+        tokens.try_next(token!(Token::Pipe => (), [TokenKind::Pipe, TokenKind::Pipe]))?;
+        tokens.try_next(token!(Token::Pipe => (), [TokenKind::Pipe, TokenKind::Pipe]))?;
         Ok(Self)
     }
 }
@@ -823,7 +839,7 @@ impl Parse for JoinOp {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Tilde => (), "Expected ~"))?;
+        tokens.try_next(token!(Token::Tilde => (), [TokenKind::Tilde]))?;
         Ok(Self)
     }
 }

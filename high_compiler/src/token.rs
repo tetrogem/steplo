@@ -1,11 +1,10 @@
-use std::str::FromStr;
-
 use anyhow::bail;
 use itertools::{Itertools, MultiPeek};
 
 use crate::src_pos::{SrcPos, SrcRange};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, strum::EnumDiscriminants)]
+#[strum_discriminants(name(TokenKind), derive(Hash))]
 pub enum Token {
     Name(String),
     Eq,
@@ -24,7 +23,6 @@ pub enum Token {
     While,
     LeftBracket,
     RightBracket,
-    Slice,
     Period,
     Comment(String),
     Asterisk,
@@ -37,8 +35,6 @@ pub enum Token {
     RightAngle,
     Percent,
     Ampersand,
-    Set,
-    Call,
     Colon,
 }
 
@@ -114,9 +110,6 @@ fn consume_word(chars: &mut MultiPeek<impl Iterator<Item = SrcChar>>) -> anyhow:
         "if" => Token::If,
         "else" => Token::Else,
         "while" => Token::While,
-        "slice" => Token::Slice,
-        "set" => Token::Set,
-        "call" => Token::Call,
         _ => {
             if word.is_empty() {
                 bail!("Word is empty");

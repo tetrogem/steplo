@@ -1,12 +1,12 @@
 main {
-    proc #6a {
+    proc #10 {
         $sp = "-1";
-        jump #46;
+        jump #0b;
     }
 }
 
 func main {
-    proc #46 {
+    proc #0b {
         $sp = ($sp + "12");
         stack[($sp - "10")] = "98";
         stack[(($sp - "10") + "1")] = "76";
@@ -17,38 +17,38 @@ func main {
         stack[(($sp - "10") + "6")] = "70";
         stack[(($sp - "10") + "7")] = "60";
         stack[(($sp - "10") + "8")] = "50";
-        stack[(($sp - "10") + "9")] = "40what";
+        stack[(($sp - "10") + "9")] = "40";
         stack[$sp] = ($sp - "10");
         stack[($sp + "2")] = stack[(($sp - "10") + "1")];
-        stack[($sp + "1")] = #23;
-        jump #39;
+        stack[($sp + "1")] = #b4;
+        jump #cb;
     }
 
-    proc #23 {
+    proc #b4 {
         stack[($sp + "2")] = stack[(($sp - "10") + "1")];
-        stack[($sp + "1")] = #6d;
-        jump #39;
+        stack[($sp + "1")] = #0e;
+        jump #cb;
     }
 
-    proc #6d {
+    proc #0e {
         stack[($sp + "2")] = stack[(stack[$sp] + "1")];
-        stack[($sp + "1")] = #2e;
-        jump #39;
+        stack[($sp + "1")] = #93;
+        jump #cb;
     }
 
-    proc #2e {
+    proc #93 {
         stack[($sp + "2")] = stack[(stack[$sp] + "1")];
-        stack[($sp + "1")] = #3c;
-        jump #39;
+        stack[($sp + "1")] = #aa;
+        jump #cb;
     }
 
-    proc #3c {
+    proc #aa {
         exit;
     }
 }
 
 func func.out {
-    proc #39 {
+    proc #cb {
         $sp = ($sp + "2");
         out stack[$sp];
         $sp = ($sp - "2");

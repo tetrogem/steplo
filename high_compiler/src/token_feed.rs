@@ -1,7 +1,7 @@
 use std::ops::Not;
 
 use crate::{
-    src_pos::SrcPos,
+    src_pos::{SrcPos, SrcRange},
     token::{SrcToken, Token},
     token_feed::cursor::Cursor,
 };
@@ -12,12 +12,15 @@ pub struct TokenFeed {
 }
 
 mod cursor {
-    use crate::{src_pos::SrcPos, token::SrcToken};
+    use crate::{
+        src_pos::{SrcPos, SrcRange},
+        token::SrcToken,
+    };
 
     #[derive(Clone, Copy, Default)]
     pub struct Cursor {
         index: usize,
-        pos: SrcPos,
+        range: SrcRange,
     }
 
     impl Cursor {
@@ -25,17 +28,19 @@ mod cursor {
             self.index
         }
 
-        pub fn pos(&self) -> SrcPos {
-            self.pos
+        pub fn range(&self) -> SrcRange {
+            self.range
         }
 
         pub fn increment(self, last_token: Option<&SrcToken>) -> Self {
-            let pos = match last_token {
-                Some(t) => t.range.end,
-                None => SrcPos { col: self.pos.col + 1, ..self.pos },
+            let range = match last_token {
+                Some(t) => t.range,
+                None => {
+                    SrcRange::new_zero_len(SrcPos { col: self.range.end.col + 1, ..self.range.end })
+                },
             };
 
-            Self { index: self.index + 1, pos }
+            Self { index: self.index + 1, range }
         }
     }
 }
@@ -56,7 +61,7 @@ impl TokenFeed {
     fn next(&mut self) -> FeedCell<Option<&SrcToken>> {
         let token = self.tokens.get(self.cursor.index());
         self.cursor = self.cursor.increment(token);
-        FeedCell { res: token, pos: self.cursor.pos() }
+        FeedCell { res: token, range: self.cursor.range() }
     }
 
     pub fn try_match<T, E>(
@@ -86,7 +91,7 @@ impl TokenFeed {
 
     pub fn parse<T: Parse>(&mut self) -> FeedCell<Result<T, T::Error>> {
         let res = self.try_match(T::parse);
-        FeedCell { res, pos: self.cursor.pos() }
+        FeedCell { res, range: self.cursor.range() }
     }
 }
 
@@ -99,5 +104,5 @@ pub trait Parse: Sized {
 #[derive(Clone, Copy, Debug)]
 pub struct FeedCell<T> {
     pub res: T,
-    pub pos: SrcPos,
+    pub range: SrcRange,
 }
