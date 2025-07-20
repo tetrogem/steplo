@@ -373,7 +373,7 @@ impl Parse for IfItem {
         tokens.try_next(token!(Token::If => (), [TokenKind::If]))?;
         let condition = tokens.parse().res?;
         let then_body = tokens.parse().res?;
-        let else_item = tokens.parse().res.ok();
+        let else_item: Option<ElseItem> = tokens.parse().res?;
         Ok(Self {
             condition: Arc::new(condition),
             then_body: Arc::new(then_body),
@@ -382,13 +382,22 @@ impl Parse for IfItem {
     }
 }
 
-impl Parse for ElseItem {
+impl Parse for Option<ElseItem> {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Else => (), [TokenKind::Else]))?;
-        let body = tokens.parse().res?;
-        Ok(Self { body: Arc::new(body) })
+        let Ok(_) = tokens.try_next(token!(Token::Else => (), [TokenKind::Else])) else {
+            return Ok(None);
+        };
+
+        parse_alt! {
+            parse tokens => x {
+                Some(ElseItem { body: Arc::new(Body { items: Arc::new(SemiSeparated { elements: Arc::new(Vec::from([Arc::new(BodyItem::If(Arc::new(x)))])) }) }) }),
+                Some(ElseItem { body: Arc::new(x) })
+            } else {
+                "Expected else item"
+            }
+        }
     }
 }
 

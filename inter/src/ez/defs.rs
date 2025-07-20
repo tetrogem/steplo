@@ -10,7 +10,6 @@ pub struct Program {
 
 #[derive(Debug)]
 pub struct Monitor {
-    pub uuid: Uuid,
     pub list: Arc<List>,
     pub width: f64,
     pub height: f64,

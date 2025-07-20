@@ -1,0 +1,47 @@
+main |rect1: [val; 2], rect2: [val; 2]| {
+    Rect_new(&rect1, 4, 4);
+    Rect_new(&rect2, 5, 8);
+
+    Rect_print_info(&rect1, "Rect 1");
+    Rect_print_info(&rect2, "Rect 2");
+
+    out("Done!");
+}
+
+func Rect_new(ret_r: &[val; 2], width: val, height: val) || {
+    *ret_r = [width, height];
+}
+
+func Rect_width(ret_r: &val, self_r: &[val; 2]) || {
+    *ret_r = (*self_r)[0];
+}
+
+func Rect_height(ret_r: &val, self_r: &[val; 2]) || {
+    *ret_r = (*self_r)[1];
+}
+
+func Rect_area(ret_r: &val, self_r: &[val; 2]) |width: val, height: val| {
+    Rect_width(&width, self_r);
+    Rect_height(&height, self_r);
+    *ret_r = (width * height);
+}
+
+func Rect_perimeter(ret_r: &val, self_r: &[val; 2]) |width: val, height: val| {
+    Rect_width(&width, self_r);
+    Rect_height(&height, self_r);
+    width = (width * 2);
+    height = (height * 2);
+    *ret_r = (width + height);
+}
+
+func Rect_print_info(self_r: &[val; 2], name: val) |a: val, b: val| {
+    Rect_width(&a, self_r);
+    Rect_height(&b, self_r);
+    out(((((name ~ " dimensions: ") ~ a) ~ " x ") ~ b));
+
+    Rect_perimeter(&a, self_r);
+    out(((name ~ " perimeter: ") ~ a));
+
+    Rect_area(&a, self_r);
+    out(((name ~ " area: ") ~ a));
+}

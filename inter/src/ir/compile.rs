@@ -29,12 +29,12 @@ impl Program {
 impl Monitor {
     pub fn compile(&self) -> JsVal {
         json!({
-            "id": self.uuid.to_string(),
+            "id": self.list.uuid.to_string(),
             "mode": "list",
             "opcode": "data_listcontents",
             "params": { "LIST": self.list.name.to_string() },
             "spriteName": null,
-            "value": ["Hello world!", "1", "1"],
+            "value": [],
             "width": self.width,
             "height": self.height,
             "x": self.x,

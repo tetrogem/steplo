@@ -1,4 +1,4 @@
-main |i, nums| {
+main |i: val, nums: val| {
     out("Enter how many iterations to perform:");
     in(&nums);
 
@@ -12,10 +12,10 @@ main |i, nums| {
             out("Buzz");
         } else {
             out(i);
-        }
+        };
 
         i = (i + 1);
-    }
+    };
 
     out("Done!");
 }

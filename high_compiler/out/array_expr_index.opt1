@@ -1,33 +1,33 @@
 main {
-    proc #da {
+    proc #0e {
         $sp = "-1";
-        jump #ad;
+        jump #13;
     }
 }
 
 func main {
-    proc #ad {
+    proc #13 {
         $sp = ($sp + "6");
         stack[($sp - "4")] = "Hello";
         stack[($sp + "2")] = stack[($sp - "4")];
-        stack[($sp + "1")] = #5c;
-        jump #de;
+        stack[($sp + "1")] = #7f;
+        jump #d0;
     }
 
-    proc #5c {
+    proc #7f {
         stack[(($sp - "4") + "1")] = "World!";
         stack[($sp + "2")] = stack[(($sp - "4") + ("2" - "1"))];
-        stack[($sp + "1")] = #a1;
-        jump #de;
+        stack[($sp + "1")] = #95;
+        jump #d0;
     }
 
-    proc #a1 {
+    proc #95 {
         exit;
     }
 }
 
 func func.out {
-    proc #de {
+    proc #d0 {
         $sp = ($sp + "2");
         out stack[$sp];
         $sp = ($sp - "2");

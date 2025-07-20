@@ -9,7 +9,15 @@ use crate::{
     designate::{RMemLoc, Register},
 };
 
-pub fn compile<'a>(procs: impl Iterator<Item = &'a Proc<RMemLoc>>) -> ez::Program {
+#[derive(Clone, Copy)]
+pub struct CompileOptions {
+    pub stack_monitoring: bool,
+}
+
+pub fn compile<'a>(
+    procs: impl Iterator<Item = &'a Proc<RMemLoc>>,
+    opt: CompileOptions,
+) -> ez::Program {
     let procs = procs.collect_vec();
 
     let mut sp_uuid_to_broadcast = BTreeMap::new();
@@ -49,18 +57,38 @@ pub fn compile<'a>(procs: impl Iterator<Item = &'a Proc<RMemLoc>>) -> ez::Progra
     };
 
     let stages = Vec::from([Arc::new(stage)]);
-    ez::Program {
-        monitors: Arc::new(Vec::from([Arc::new(ez::Monitor {
-            uuid: Uuid::new_v4(),
+
+    let monitors = if opt.stack_monitoring {
+        Vec::from([
+            Arc::new(ez::Monitor {
+                list: compile_m.stdout_list.clone(),
+                width: 360.,
+                height: 360.,
+                x: 0.,
+                y: 0.,
+                visible: true,
+            }),
+            Arc::new(ez::Monitor {
+                list: compile_m.stack_list.clone(),
+                width: 120.,
+                height: 360.,
+                x: 360.,
+                y: 0.,
+                visible: true,
+            }),
+        ])
+    } else {
+        Vec::from([Arc::new(ez::Monitor {
             list: compile_m.stdout_list.clone(),
             width: 480.,
             height: 360.,
             x: 0.,
             y: 0.,
             visible: true,
-        })])),
-        stages: Arc::new(stages),
-    }
+        })])
+    };
+
+    ez::Program { monitors: Arc::new(monitors), stages: Arc::new(stages) }
 }
 
 struct CompileManager {
