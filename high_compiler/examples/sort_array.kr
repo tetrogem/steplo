@@ -1,0 +1,93 @@
+main |arr[99], vec[3]| {
+    arr = [0, 10, "a", "-5", 283, 2, 6, 4, "what", "-1", 20, 7, 8, 2];
+    Vec_new(&vec, &arr, 99, 14);
+    Vec_print(&vec);
+
+    Vec_sort(&vec);
+    Vec_print(&vec);
+
+    Vec_push(&vec, "12.5");
+    Vec_sort(&vec);
+    Vec_print(&vec);
+}
+
+func Vec_new(ret_r, arr_r, cap, len) || {
+    *ret_r = [arr_r, cap, len];
+}
+
+func Vec_entry(ret_r, self_r, i) || {
+    *ret_r = &((*(*self_r)[0])[i]);
+}
+
+func Vec_cap(ret_r, self_r) || {
+    *ret_r = (*self_r)[1];
+}
+
+func Vec_len_r(ret_r, self_r) || {
+    *ret_r = &((*self_r)[2]);
+}
+
+func Vec_len(ret_r, self_r) |len_r| {
+    Vec_len_r(&len_r, self_r);
+    *ret_r = *len_r;
+}
+
+func Vec_push(self_r, val) |cap, len, entry_r, len_r| {
+    Vec_cap(&cap, self_r);
+    Vec_len(&len, self_r);
+    if (len < cap) {
+        Vec_entry(&entry_r, self_r, len);
+        *entry_r = val;
+        Vec_len_r(&len_r, self_r);
+        *len_r = (len + 1);
+    }
+}
+
+func Vec_print(self_r) |i, len, val_r, str| {
+    i = 0;
+    str = "Vec (";
+    Vec_len(&len, self_r);
+    str = (str ~ len);
+    str = (str ~ ") ");
+
+    while (i < len) {
+        if (i != 0) {
+            str = (str ~ ", ");
+        };
+
+        Vec_entry(&val_r, self_r, i);
+        str = (str ~ *val_r);
+        i = (i + 1);
+    };
+
+    out(str);
+}
+
+func Vec_sort(self_r) |i, j, len, a_r, b_r, a, b| {
+    i = 0;
+    Vec_len(&len, self_r);
+
+    while (i < len) {
+        j = i;
+        while (j < len) {
+            Vec_entry(&a_r, self_r, i);
+            Vec_entry(&b_r, self_r, j);
+            a = *a_r;
+            b = *b_r;
+
+            if (b < a) {
+                swap(a_r, b_r);
+            };
+
+            j = (j + 1);
+        };
+
+        i = (i + 1);
+    };
+}
+
+func swap(a_r, b_r) |temp| {
+    temp = *a_r;
+    *a_r = *b_r;
+    *b_r = temp;
+}

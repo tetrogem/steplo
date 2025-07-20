@@ -59,7 +59,10 @@ impl TokenFeed {
         FeedCell { res: token, pos: self.cursor.pos() }
     }
 
-    fn try_match<T, E>(&mut self, parser: impl FnOnce(&mut Self) -> Result<T, E>) -> Result<T, E> {
+    pub fn try_match<T, E>(
+        &mut self,
+        parser: impl FnOnce(&mut Self) -> Result<T, E>,
+    ) -> Result<T, E> {
         let prev_cursor = self.cursor;
         let res = parser(self);
 

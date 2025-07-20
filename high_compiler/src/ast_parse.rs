@@ -54,6 +54,38 @@ macro_rules! parse_alt {
     };
 }
 
+macro_rules! parse_optional_parens {
+    ($tokens:expr => $code:expr) => {
+        let tokens = $tokens;
+
+        let mut errors = AstErrorSet::new();
+
+        // we need to check unwrapped first, otherwise some valid trees will error
+        let unwrapped_res = tokens.try_match(|tokens| {
+            $code(tokens)
+        });
+
+        match unwrapped_res {
+            Ok(value) => return Ok(value),
+            Err(e) => errors = errors.merge(e),
+        }
+
+        let wrapped_res = tokens.try_match(|tokens| {
+            tokens.try_next(token!(Token::LeftParen => (), "Expected opening parenthesis"))?;
+            let place = tokens.parse().res?;
+            tokens.try_next(token!(Token::RightParen => (), "Expected closing parenthesis"))?;
+            Ok(place)
+        });
+
+        match wrapped_res {
+            Ok(value) => return Ok(value),
+            Err(e) => errors = errors.merge(e),
+        }
+
+        Err(errors)
+    };
+}
+
 impl Parse for Program {
     type Error = AstErrorSet;
 
@@ -376,9 +408,11 @@ impl Parse for Place {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        let head = tokens.parse().res?;
-        let offset = tokens.parse().res.ok();
-        Ok(Self { head: Arc::new(head), offset: offset.map(Arc::new) })
+        parse_optional_parens! { tokens => |tokens: &mut TokenFeed| {
+            let head = tokens.parse().res?;
+            let offset = tokens.parse().res.ok();
+            Ok(Self { head: Arc::new(head), offset: offset.map(Arc::new) })
+        }}
     }
 }
 
@@ -412,17 +446,10 @@ impl Parse for Ident {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        match tokens.try_next(token!(Token::LeftParen => (), "Expected opening parenthesis")) {
-            Ok(_) => {
-                let ident = tokens.parse().res?;
-                tokens.try_next(token!(Token::RightParen => (), "Expected closing parenthesis"))?;
-                Ok(ident)
-            },
-            Err(_) => {
-                let name = tokens.parse().res?;
-                Ok(Self { name: Arc::new(name) })
-            },
-        }
+        parse_optional_parens! { tokens => |tokens: &mut TokenFeed| {
+            let name = tokens.parse().res?;
+            Ok(Self { name: Arc::new(name) })
+        }}
     }
 }
 
@@ -430,18 +457,11 @@ impl Parse for Deref {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        match tokens.try_next(token!(Token::LeftParen => (), "Expected opening parenthesis")) {
-            Ok(_) => {
-                let deref = tokens.parse().res?;
-                tokens.try_next(token!(Token::RightParen => (), "Expected closing parenthesis"))?;
-                Ok(deref)
-            },
-            Err(_) => {
-                tokens.try_next(token!(Token::Asterisk => (), "Expected *"))?;
-                let addr = tokens.parse().res?;
-                Ok(Self { addr: Arc::new(addr) })
-            },
-        }
+        parse_optional_parens! { tokens => |tokens: &mut TokenFeed| {
+            tokens.try_next(token!(Token::Asterisk => (), "Expected *"))?;
+            let addr = tokens.parse().res?;
+            Ok(Self { addr: Arc::new(addr) })
+        }}
     }
 }
 
