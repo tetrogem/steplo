@@ -11,3 +11,4 @@ mem_opt = { path = "../mem_opt" }
 itertools = "0.14.0"
 uuid = "1.13.1"
 nom = "8.0.0"
+colored = "3.0.0"

@@ -55,7 +55,7 @@ fn compile_all() -> anyhow::Result<()> {
     let ast = match time("Parsing...", || parse(tokens.into())) {
         Ok(ast) => ast,
         Err(err) => {
-            report_ast_errors(&input, err);
+            report_ast_errors(&input, in_path, err);
             return Ok(());
         },
     };

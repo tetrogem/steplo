@@ -24,12 +24,6 @@ impl PartialOrd for SrcPos {
     }
 }
 
-impl Display for SrcPos {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.line, self.col)
-    }
-}
-
 // #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 // pub struct SrcPos {
 //     pub char: usize,
