@@ -2,12 +2,12 @@ use std::{ops::Not, sync::Arc};
 
 use crate::{
     ast::{
-        AddOp, AndOp, Assign, AssignExpr, BinaryParenExpr, BinaryParenExprOp, Body, BodyItem,
-        CommaSeparated, Comment, Deref, DivOp, ElseItem, EqOp, Expr, Func, FunctionCall, GtOp,
-        GteOp, Ident, IdentDeclaration, IfItem, JoinOp, Literal, LtOp, LteOp, Main, ModOp, MulOp,
-        Name, NeqOp, NotOp, Offset, OrOp, ParenExpr, Place, PlaceHead, Proc, Program, RefExpr,
-        SemiSeparated, SingleIdentDeclaration, Slice, Span, SpanIdentDeclaration, Statement, SubOp,
-        TopItem, UnaryParenExpr, UnaryParenExprOp, WhileItem,
+        AddOp, AndOp, ArrayType, Assign, AssignExpr, BaseType, BinaryParenExpr, BinaryParenExprOp,
+        Body, BodyItem, CommaSeparated, Comment, Deref, DivOp, ElseItem, EqOp, Expr, Func,
+        FunctionCall, GtOp, GteOp, Ident, IdentDeclaration, IfItem, JoinOp, Literal, LtOp, LteOp,
+        Main, ModOp, MulOp, Name, NeqOp, NotOp, Offset, OrOp, ParenExpr, Place, PlaceHead, Proc,
+        Program, RefExpr, RefType, SemiSeparated, Slice, Span, Statement, SubOp, TopItem, Type,
+        UnaryParenExpr, UnaryParenExprOp, WhileItem,
     },
     ast_error::AstErrorSet,
     src_pos::SrcRange,
@@ -155,12 +155,19 @@ impl Parse for Func {
         let name = tokens.parse().res?;
 
         tokens.try_next(token!(Token::LeftParen => (), "Expected opening parenthesis"))?;
-        let params = tokens.parse().res?;
-        tokens.try_next(token!(Token::RightParen => (), "Expected closing parenthesis"))?;
+        let params_res = tokens.parse::<ZeroOrManyParseResult<_>>().res?;
 
-        let proc = tokens.parse().res?;
+        let proc: Proc = (|| {
+            tokens.try_next(token!(Token::RightParen => (), "Expected closing parenthesis"))?;
+            tokens.parse().res
+        })()
+        .map_err(|e: AstErrorSet| e.merge(params_res.last_err))?;
 
-        Ok(Self { name: Arc::new(name), params: Arc::new(params), proc: Arc::new(proc) })
+        Ok(Self {
+            name: Arc::new(name),
+            params: Arc::new(params_res.zero_or_many),
+            proc: Arc::new(proc),
+        })
     }
 }
 
@@ -174,45 +181,34 @@ impl Parse for Name {
     }
 }
 
-impl<T: Parse> Parse for CommaSeparated<T>
-where
-    AstErrorSet: From<T::Error>,
-{
+impl Parse for IdentDeclaration {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        let mut elements = Vec::new();
-
-        loop {
-            let Ok(element) = tokens.parse().res else { break };
-
-            elements.push(Arc::new(element));
-
-            if tokens.try_next(token!(Token::Comma => (), "Expected comma")).is_err() {
-                break;
-            }
-        }
-
-        Ok(Self { elements: Arc::new(elements) })
+        let name = tokens.parse().res?;
+        tokens.try_next(token!(Token::Colon => (), "Expected colon"))?;
+        let ty = tokens.parse().res?;
+        Ok(Self { name: Arc::new(name), ty: Arc::new(ty) })
     }
 }
 
-impl Parse for IdentDeclaration {
+impl Parse for Type {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
         parse_alt! {
             parse tokens => x {
-                Self::Span(Arc::new(x)),
-                Self::Single(Arc::new(x)),
+                Self::Base(Arc::new(x)),
+                Self::Ref(Arc::new(x)),
+                Self::Array(Arc::new(x)),
             } else {
-                "Expected identifier declaration"
+                "Expected type"
             }
         }
     }
 }
 
-impl Parse for SingleIdentDeclaration {
+impl Parse for BaseType {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
@@ -221,24 +217,33 @@ impl Parse for SingleIdentDeclaration {
     }
 }
 
-impl Parse for SpanIdentDeclaration {
+impl Parse for RefType {
     type Error = AstErrorSet;
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        let name = tokens.parse().res?;
-        tokens.try_next(token!(Token::LeftBracket => (), "Expected opening bracket"))?;
+        tokens.try_next(token!(Token::Ampersand => (), "Expected &"))?;
+        let ty = tokens.parse().res?;
+        Ok(Self { ty: Arc::new(ty) })
+    }
+}
 
-        let size_cell = tokens.parse::<Literal>();
-        let size = size_cell.res?;
-        let Ok(size) = size.str.parse() else {
-            return Err(AstErrorSet::new_error(
-                SrcRange::new_zero_len(size_cell.pos),
-                "Span identifier size must be a positive integer",
-            ));
-        };
+impl Parse for ArrayType {
+    type Error = AstErrorSet;
+
+    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
+        tokens.try_next(token!(Token::LeftBracket => (), "Expected opening bracket"))?;
+        let ty = tokens.parse().res?;
+        tokens.try_next(token!(Token::Semi => (), "Expected semicolon"))?;
+        let len_token = tokens.parse::<Literal>();
+        let len = len_token.res?.str.parse().map_err(|_| {
+            AstErrorSet::new_error(
+                SrcRange::new_zero_len(len_token.pos),
+                "Array length should be a positive integer",
+            )
+        })?;
 
         tokens.try_next(token!(Token::RightBracket => (), "Expected closing bracket"))?;
-        Ok(Self { name: Arc::new(name), size })
+        Ok(Self { ty: Arc::new(ty), len })
     }
 }
 
@@ -257,10 +262,15 @@ impl Parse for Proc {
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
         tokens.try_next(token!(Token::Pipe => (), "Expected opening pipe"))?;
-        let idents = tokens.parse().res?;
-        tokens.try_next(token!(Token::Pipe => (), "Expected closing pipe"))?;
-        let body = tokens.parse().res?;
-        Ok(Self { idents: Arc::new(idents), body: Arc::new(body) })
+        let idents_res = tokens.parse::<ZeroOrManyParseResult<_>>().res?;
+
+        let body: Body = (|| {
+            tokens.try_next(token!(Token::Pipe => (), "Expected closing pipe"))?;
+            tokens.parse().res
+        })()
+        .map_err(|e: AstErrorSet| e.merge(idents_res.last_err))?;
+
+        Ok(Self { idents: Arc::new(idents_res.zero_or_many), body: Arc::new(body) })
     }
 }
 
@@ -270,23 +280,23 @@ impl Parse for Body {
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
         tokens.try_next(token!(Token::LeftBrace => (), "Expected opening brace"))?;
 
-        let res = tokens.parse::<SemiSeparatedParseResult<_>>().res?;
+        let res = tokens.parse::<ZeroOrManyParseResult<_>>().res?;
 
         tokens
             .try_next(token!(Token::RightBrace => (), "Expected closing brace"))
             .map_err(|e| e.merge(res.last_err))?;
 
-        let items = res.semi_separated;
+        let items = res.zero_or_many;
         Ok(Self { items: Arc::new(items) })
     }
 }
 
-struct SemiSeparatedParseResult<T> {
-    semi_separated: SemiSeparated<T>,
+struct ZeroOrManyParseResult<T> {
+    zero_or_many: T,
     last_err: AstErrorSet,
 }
 
-impl<T: Parse> Parse for SemiSeparatedParseResult<T>
+impl<T: Parse> Parse for ZeroOrManyParseResult<SemiSeparated<T>>
 where
     AstErrorSet: From<T::Error>,
 {
@@ -308,7 +318,33 @@ where
 
         let semi_separated = SemiSeparated { elements: Arc::new(elements) };
 
-        Ok(Self { semi_separated, last_err })
+        Ok(Self { zero_or_many: semi_separated, last_err })
+    }
+}
+
+impl<T: Parse> Parse for ZeroOrManyParseResult<CommaSeparated<T>>
+where
+    AstErrorSet: From<T::Error>,
+{
+    type Error = AstErrorSet;
+
+    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
+        let mut elements = Vec::new();
+        let last_err = loop {
+            let element = match tokens.parse().res {
+                Ok(element) => element,
+                Err(err) => break AstErrorSet::from(err),
+            };
+
+            elements.push(Arc::new(element));
+            if let Err(err) = tokens.try_next(token!(Token::Comma => (), "Expected comma")) {
+                break err;
+            }
+        };
+
+        let comma_separated = CommaSeparated { elements: Arc::new(elements) };
+
+        Ok(Self { zero_or_many: comma_separated, last_err })
     }
 }
 
@@ -398,9 +434,16 @@ impl Parse for FunctionCall {
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
         let func_name = tokens.parse().res?;
         tokens.try_next(token!(Token::LeftParen => (), "Expected opening parenthesis"))?;
-        let param_exprs = tokens.parse().res?;
-        tokens.try_next(token!(Token::RightParen => (), "Expected closing parenthesis"))?;
-        Ok(Self { func_name: Arc::new(func_name), param_exprs: Arc::new(param_exprs) })
+        let param_exprs_res = tokens.parse::<ZeroOrManyParseResult<_>>().res?;
+
+        tokens
+            .try_next(token!(Token::RightParen => (), "Expected closing parenthesis"))
+            .map_err(|e| e.merge(param_exprs_res.last_err))?;
+
+        Ok(Self {
+            func_name: Arc::new(func_name),
+            param_exprs: Arc::new(param_exprs_res.zero_or_many),
+        })
     }
 }
 
@@ -486,9 +529,12 @@ impl Parse for Span {
 
     fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
         tokens.try_next(token!(Token::LeftBracket => (), "Expected opening bracket"))?;
-        let elements = tokens.parse().res?;
-        tokens.try_next(token!(Token::RightBracket => (), "Expected closing bracket"))?;
-        Ok(Self { elements: Arc::new(elements) })
+        let elements_res = tokens.parse::<ZeroOrManyParseResult<_>>().res?;
+        tokens
+            .try_next(token!(Token::RightBracket => (), "Expected closing bracket"))
+            .map_err(|e| e.merge(elements_res.last_err))?;
+
+        Ok(Self { elements: Arc::new(elements_res.zero_or_many) })
     }
 }
 

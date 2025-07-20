@@ -39,6 +39,7 @@ pub enum Token {
     Ampersand,
     Set,
     Call,
+    Colon,
 }
 
 #[derive(Debug, Clone)]
@@ -212,6 +213,7 @@ pub fn tokenize(code: &str) -> anyhow::Result<Vec<SrcToken>> {
             '>' => consume_char(&mut chars, Some(Token::RightAngle))?,
             '%' => consume_char(&mut chars, Some(Token::Percent))?,
             '&' => consume_char(&mut chars, Some(Token::Ampersand))?,
+            ':' => consume_char(&mut chars, Some(Token::Colon))?,
             '"' => Some(consume_literal(&mut chars)?),
             '/' => match chars.peek().map(|c| c.char) {
                 Some('/') => Some(consume_comment(&mut chars)?),

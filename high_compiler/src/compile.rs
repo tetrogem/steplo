@@ -14,8 +14,8 @@ struct StackFrame {
 }
 
 struct StackVarInfo {
-    offset: usize,
-    size: usize,
+    offset: u32,
+    size: u32,
 }
 
 impl StackFrame {
@@ -24,11 +24,11 @@ impl StackFrame {
         let mut total_offset = 0;
 
         for ident in idents.iter().rev() {
-            let size = ident.size();
+            let size = ident.ty.size();
             total_offset += size;
             let info = StackVarInfo { size, offset: total_offset - 1 };
 
-            ident_name_to_info.insert(ident.name().clone(), Arc::new(info));
+            ident_name_to_info.insert(ident.name.clone(), Arc::new(info));
         }
 
         Self { ident_name_to_info }
@@ -42,9 +42,9 @@ impl StackFrame {
         Ok(info)
     }
 
-    fn size(&self) -> usize {
+    fn size(&self) -> u32 {
         let return_addr_size = 1;
-        let vars_size = self.ident_name_to_info.values().map(|i| i.size).sum::<usize>();
+        let vars_size = self.ident_name_to_info.values().map(|i| i.size).sum::<u32>();
         return_addr_size + vars_size
     }
 }
@@ -282,7 +282,7 @@ fn compile_call(
     let compiled = match call {
         link::Call::Func { name, param_exprs, return_sub_proc } => {
             let param_idents = func_manager.get_params(name)?;
-            let mut param_stack_offset = 0;
+            let mut param_stack_offset: u32 = 0;
             let mut param_setup_commands = Vec::new();
             for (ident, expr) in param_idents.iter().zip(param_exprs.elements.as_ref()) {
                 let elements = compile_assign_expr_elements(stack_frame, expr)?;
@@ -296,7 +296,7 @@ fn compile_call(
                     let assign_commands = [
                         Arc::new(opt::Command::SetMemLoc {
                             mem_loc: param_offset_loc.clone(),
-                            val: literal((param_stack_offset + i + 2) as f64),
+                            val: literal((param_stack_offset + i as u32 + 2) as f64),
                         }),
                         Arc::new(opt::Command::SetMemLoc {
                             mem_loc: param_addr_loc.clone(),
@@ -314,7 +314,7 @@ fn compile_call(
                     param_setup_commands.extend(assign_commands);
                 }
 
-                param_stack_offset += ident.size();
+                param_stack_offset += ident.ty.size();
             }
 
             let return_setup_commands = {

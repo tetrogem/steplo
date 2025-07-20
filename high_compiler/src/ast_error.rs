@@ -1,6 +1,6 @@
 use itertools::Itertools;
 
-use crate::src_pos::{SrcPos, SrcRange};
+use crate::src_pos::SrcRange;
 
 pub struct AstErrorSet {
     errors: Vec<AstError>,
@@ -37,7 +37,7 @@ pub fn report_ast_errors(code: &str, set: AstErrorSet) {
     let nearby_lines = code
         .lines()
         .skip(range.start.line.saturating_sub(2).saturating_sub(1))
-        .take(3)
+        .take(range.start.line.min(3))
         .collect_vec();
 
     for line in nearby_lines {

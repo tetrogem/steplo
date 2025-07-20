@@ -6,6 +6,9 @@
       "include": "#comments"
     },
     {
+      "include": "#types"
+    },
+    {
       "include": "#keywords"
     },
     {
@@ -40,7 +43,7 @@
       "patterns": [
         {
           "name": "punctuation.krazo",
-          "match": "(=|;|\\(|\\)|{|}|\\[|\\]|\\||,|\\.)"
+          "match": "(=|;|\\(|\\)|{|}|\\[|\\]|\\||,|\\.|:)"
         }
       ]
     },
@@ -65,6 +68,27 @@
         {
           "name": "constant.numeric.krazo",
           "match": "\\b([0-9]+)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "match": "(:\\W*)([a-zA-Z_][a-zA-Z0-9_]*)(\\W*)([,=]?)",
+          "captures": {
+            "1": {
+              "name": "keyword.operator.krazo"
+            },
+            "2": {
+              "name": "meta.type.krazo"
+            },
+            "3": {
+              "name": "keyword.operator.krazo"
+            },
+            "4": {
+              "name": "punctuation.krazo"
+            }
+          }
         }
       ]
     },

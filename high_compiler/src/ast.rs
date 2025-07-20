@@ -26,36 +26,42 @@ pub struct Name {
 }
 
 #[derive(Debug)]
-pub enum IdentDeclaration {
-    Single(Arc<SingleIdentDeclaration>),
-    Span(Arc<SpanIdentDeclaration>),
+pub enum Type {
+    Ref(Arc<RefType>),
+    Array(Arc<ArrayType>),
+    Base(Arc<BaseType>),
+}
+
+impl Type {
+    pub fn size(&self) -> u32 {
+        match self {
+            Self::Ref(_) => 1,
+            Self::Base(_) => 1,
+            Self::Array(arr) => &arr.ty.size() * arr.len,
+        }
+    }
 }
 
 #[derive(Debug)]
-pub struct SingleIdentDeclaration {
+pub struct RefType {
+    pub ty: Arc<Type>,
+}
+
+#[derive(Debug)]
+pub struct ArrayType {
+    pub ty: Arc<Type>,
+    pub len: u32,
+}
+
+#[derive(Debug)]
+pub struct BaseType {
     pub name: Arc<Name>,
 }
 
 #[derive(Debug)]
-pub struct SpanIdentDeclaration {
+pub struct IdentDeclaration {
     pub name: Arc<Name>,
-    pub size: usize,
-}
-
-impl IdentDeclaration {
-    pub fn name(&self) -> &Arc<Name> {
-        match self {
-            Self::Single(single) => &single.name,
-            Self::Span(span) => &span.name,
-        }
-    }
-
-    pub fn size(&self) -> usize {
-        match self {
-            Self::Single(_) => 1,
-            Self::Span(span) => span.size,
-        }
-    }
+    pub ty: Arc<Type>,
 }
 
 #[derive(Debug)]
@@ -178,8 +184,8 @@ pub struct Span {
 #[derive(Debug)]
 pub struct Slice {
     pub place: Arc<Place>,
-    pub start_in: usize,
-    pub end_ex: usize,
+    pub start_in: u32,
+    pub end_ex: u32,
 }
 
 #[derive(Debug)]
@@ -287,6 +293,7 @@ pub struct Program {
 
 #[derive(Debug)]
 pub struct Comment {
+    #[expect(unused)]
     pub text: Arc<str>,
 }
 

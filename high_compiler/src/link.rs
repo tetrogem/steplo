@@ -49,10 +49,11 @@ pub enum Statement {
 }
 
 pub fn link(ast: &ast::Program) -> anyhow::Result<Vec<Arc<Proc>>> {
-    fn gen_single_decl(name: &str) -> Arc<ast::IdentDeclaration> {
-        Arc::new(ast::IdentDeclaration::Single(Arc::new(ast::SingleIdentDeclaration {
+    fn gen_decl(name: &str, ty: ast::Type) -> Arc<ast::IdentDeclaration> {
+        Arc::new(ast::IdentDeclaration {
             name: Arc::new(ast::Name { str: name.into() }),
-        })))
+            ty: Arc::new(ty),
+        })
     }
 
     fn gen_ident(name: &str) -> Arc<ast::Place> {
@@ -91,10 +92,18 @@ pub fn link(ast: &ast::Program) -> anyhow::Result<Vec<Arc<Proc>>> {
         Arc::new(ast::TopItem::Func(Arc::new(func)))
     }
 
+    fn gen_base_ty(name: &str) -> Arc<ast::BaseType> {
+        Arc::new(ast::BaseType { name: gen_name(name) })
+    }
+
+    fn gen_ref_ty(ty: ast::Type) -> Arc<ast::RefType> {
+        Arc::new(ast::RefType { ty: Arc::new(ty) })
+    }
+
     // add built-in native functions
     let out_func = gen_func_item(ast::Func {
         name: gen_name("out"),
-        params: gen_comma_sep([gen_single_decl("val")]),
+        params: gen_comma_sep([gen_decl("val", ast::Type::Base(gen_base_ty("any")))]),
         proc: Arc::new(ast::Proc {
             idents: gen_comma_sep([]),
             body: gen_body([gen_statement_item(ast::Statement::Native(Arc::new(
@@ -105,9 +114,12 @@ pub fn link(ast: &ast::Program) -> anyhow::Result<Vec<Arc<Proc>>> {
 
     let in_func = gen_func_item(ast::Func {
         name: gen_name("in"),
-        params: gen_comma_sep([gen_single_decl("dest_ref")]),
+        params: gen_comma_sep([gen_decl(
+            "dest_ref",
+            ast::Type::Ref(gen_ref_ty(ast::Type::Base(gen_base_ty("val")))),
+        )]),
         proc: Arc::new(ast::Proc {
-            idents: gen_comma_sep([gen_single_decl("answer")]),
+            idents: gen_comma_sep([gen_decl("answer", ast::Type::Base(gen_base_ty("val")))]),
             body: gen_body([
                 gen_statement_item(ast::Statement::Native(Arc::new(ast::NativeOperation::In {
                     dest_ident: gen_ident("answer"),

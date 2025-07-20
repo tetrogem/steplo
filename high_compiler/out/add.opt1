@@ -1,49 +1,49 @@
 main {
-    proc #cd {
+    proc #9c {
         $sp = "-1";
-        jump #71;
+        jump #59;
     }
 }
 
 func main {
-    proc #71 {
+    proc #59 {
         $sp = ($sp + "5");
         stack[($sp - "3")] = "10";
         stack[($sp - "2")] = "15";
         stack[($sp - "1")] = "50";
         stack[$sp] = (stack[($sp - "3")] + stack[($sp - "2")]);
         stack[($sp + "2")] = stack[$sp];
-        stack[($sp + "1")] = #47;
-        jump #76;
+        stack[($sp + "1")] = #50;
+        jump #c3;
     }
 
-    proc #47 {
+    proc #50 {
         stack[$sp] = (stack[($sp - "2")] + stack[($sp - "1")]);
         stack[($sp + "2")] = stack[$sp];
-        stack[($sp + "1")] = #bd;
-        jump #76;
+        stack[($sp + "1")] = #06;
+        jump #c3;
     }
 
-    proc #bd {
+    proc #06 {
         stack[$sp] = ("100" + "200");
         stack[($sp + "2")] = stack[$sp];
-        stack[($sp + "1")] = #16;
-        jump #76;
+        stack[($sp + "1")] = #5b;
+        jump #c3;
     }
 
-    proc #16 {
+    proc #5b {
         stack[($sp + "2")] = ("500" + "75");
-        stack[($sp + "1")] = #44;
-        jump #76;
+        stack[($sp + "1")] = #ae;
+        jump #c3;
     }
 
-    proc #44 {
+    proc #ae {
         exit;
     }
 }
 
 func func.out {
-    proc #76 {
+    proc #c3 {
         $sp = ($sp + "2");
         out stack[$sp];
         $sp = ($sp - "2");
