@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{ast_error::AstErrorSet, token_feed::TokenFeed};
+use crate::{ast_error::AstErrorSet, ast_parse::parse_ast, token_feed::TokenFeed};
 
 #[derive(Debug)]
 pub enum TopItem {
@@ -16,7 +16,7 @@ pub struct Main {
 #[derive(Debug)]
 pub struct Func {
     pub name: Arc<Name>,
-    pub params: Arc<CommaSeparated<IdentDeclaration>>,
+    pub params: Arc<CommaList<IdentDeclaration>>,
     pub proc: Arc<Proc>,
 }
 
@@ -32,16 +32,6 @@ pub enum Type {
     Base(Arc<BaseType>),
 }
 
-impl Type {
-    pub fn size(&self) -> u32 {
-        match self {
-            Self::Ref(_) => 1,
-            Self::Base(_) => 1,
-            Self::Array(arr) => &arr.ty.size() * arr.len,
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct RefType {
     pub ty: Arc<Type>,
@@ -50,7 +40,7 @@ pub struct RefType {
 #[derive(Debug)]
 pub struct ArrayType {
     pub ty: Arc<Type>,
-    pub len: u32,
+    pub len: Arc<Literal>,
 }
 
 #[derive(Debug)]
@@ -66,8 +56,25 @@ pub struct IdentDeclaration {
 
 #[derive(Debug)]
 pub struct Place {
-    pub head: Arc<PlaceHead>,
-    pub offset: Option<Arc<Offset>>,
+    pub head: Arc<ParensNest<PlaceHead>>,
+    pub offset: Arc<Maybe<Offset>>,
+}
+
+#[derive(Debug)]
+pub enum ParensNest<T> {
+    Root(Arc<T>),
+    Wrapped(Arc<ParensWrapped<ParensNest<T>>>),
+}
+
+#[derive(Debug)]
+pub struct ParensWrapped<T> {
+    pub item: Arc<T>,
+}
+
+#[derive(Debug)]
+pub enum Maybe<T> {
+    Item(Arc<T>),
+    Empty(Arc<Empty>),
 }
 
 #[derive(Debug)]
@@ -93,18 +100,13 @@ pub struct Deref {
 
 #[derive(Debug)]
 pub struct Proc {
-    pub idents: Arc<CommaSeparated<IdentDeclaration>>,
+    pub idents: Arc<CommaList<IdentDeclaration>>,
     pub body: Arc<Body>,
 }
 
 #[derive(Debug)]
 pub struct Body {
-    pub items: Arc<SemiSeparated<BodyItem>>,
-}
-
-#[derive(Debug)]
-pub struct SemiSeparated<T> {
-    pub elements: Arc<Vec<Arc<T>>>,
+    pub items: Arc<SemiList<BodyItem>>,
 }
 
 #[derive(Debug)]
@@ -118,12 +120,14 @@ pub enum BodyItem {
 pub struct IfItem {
     pub condition: Arc<Expr>,
     pub then_body: Arc<Body>,
-    pub else_item: Option<Arc<ElseItem>>,
+    pub else_item: Arc<ElseItem>,
 }
 
 #[derive(Debug)]
-pub struct ElseItem {
-    pub body: Arc<Body>,
+pub enum ElseItem {
+    Body(Arc<Body>),
+    If(Arc<IfItem>),
+    Empty(Arc<Empty>),
 }
 
 #[derive(Debug)]
@@ -136,18 +140,17 @@ pub struct WhileItem {
 pub enum Statement {
     Assign(Arc<Assign>),
     Call(Arc<FunctionCall>),
-    Native(Arc<NativeOperation>), // not compiled to by source code, internal/built-ins only
 }
 
 #[derive(Debug)]
 pub struct FunctionCall {
     pub func_name: Arc<Name>,
-    pub param_exprs: Arc<CommaSeparated<AssignExpr>>,
+    pub param_exprs: Arc<CommaList<AssignExpr>>,
 }
 
 #[derive(Debug)]
 pub struct Assign {
-    pub loc: Arc<Place>,
+    pub place: Arc<Place>,
     pub expr: Arc<AssignExpr>,
 }
 
@@ -178,14 +181,14 @@ pub struct Literal {
 
 #[derive(Debug)]
 pub struct Span {
-    pub elements: Arc<CommaSeparated<Expr>>,
+    pub elements: Arc<CommaList<Expr>>,
 }
 
 #[derive(Debug)]
 pub struct Slice {
     pub place: Arc<Place>,
-    pub start_in: u32,
-    pub end_ex: u32,
+    pub start_in: Arc<Maybe<Literal>>,
+    pub end_ex: Arc<Literal>,
 }
 
 #[derive(Debug)]
@@ -288,20 +291,63 @@ pub enum NativeOperation {
 
 #[derive(Debug)]
 pub struct Program {
-    pub items: Arc<Vec<Arc<TopItem>>>,
+    pub items: Arc<List<TopItem>>,
 }
 
 #[derive(Debug)]
 pub struct Comment {
-    #[expect(unused)]
     pub text: Arc<str>,
 }
 
 #[derive(Debug)]
-pub struct CommaSeparated<T> {
-    pub elements: Arc<Vec<Arc<T>>>,
+pub struct Empty;
+
+#[derive(Debug)]
+pub enum CommaList<T> {
+    // <item>,
+    Link(Arc<CommaListLink<T>>),
+    // <item>
+    Tail(Arc<T>),
+    //
+    Empty(Arc<Empty>),
+}
+
+#[derive(Debug)]
+pub struct CommaListLink<T> {
+    pub item: Arc<T>,
+    pub next: Arc<CommaList<T>>,
+}
+
+#[derive(Debug)]
+pub enum SemiList<T> {
+    // <item>,
+    Link(Arc<SemiListLink<T>>),
+    // <item>
+    Tail(Arc<T>),
+    //
+    Empty(Arc<Empty>),
+}
+
+#[derive(Debug)]
+pub struct SemiListLink<T> {
+    pub item: Arc<T>,
+    pub next: Arc<SemiList<T>>,
+}
+
+#[derive(Debug)]
+pub enum List<T> {
+    // <item>
+    Link(Arc<ListLink<T>>),
+    //
+    Empty(Arc<Empty>),
+}
+
+#[derive(Debug)]
+pub struct ListLink<T> {
+    pub item: Arc<T>,
+    pub next: Arc<List<T>>,
 }
 
 pub fn parse(mut tokens: TokenFeed) -> Result<Program, AstErrorSet> {
-    tokens.parse().res
+    parse_ast(&mut tokens)
 }

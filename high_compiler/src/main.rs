@@ -4,20 +4,22 @@ use std::{
     path::Path,
 };
 
-use ast::parse;
 use clap::Parser;
 use compile::compile;
+use grammar_ast::parse;
 use link::link;
 use shared::{time, time_total, write_json};
 use token::tokenize;
 
 use crate::ast_error::report_ast_errors;
 
-mod ast;
 mod ast_error;
 mod ast_parse;
 mod compile;
+pub mod grammar_ast;
+mod grammar_to_logic;
 mod link;
+mod logic_ast;
 mod src_pos;
 mod token;
 mod token_feed;
@@ -62,13 +64,15 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
 
     let tokens = time("Tokenizing...", || tokenize(&input))?;
     // dbg!(&tokens);
-    let ast = match time("Parsing...", || parse(tokens.into())) {
+    let ast = match time("Parsing grammar...", || parse(tokens.into())) {
         Ok(ast) => ast,
         Err(err) => {
             report_ast_errors(&input, src_path, err);
             return Ok(());
         },
     };
+
+    let ast = time("Converting grammar...", || logic_ast::Program::try_from(&ast))?;
 
     // dbg!(&ast);
     let linked = time("Linking...", || link(&ast))?;

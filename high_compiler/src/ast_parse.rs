@@ -1,21 +1,29 @@
-use std::{ops::Not, sync::Arc};
-
-use asm_compiler::token;
+use std::sync::Arc;
 
 use crate::{
-    ast::{
+    ast_error::{AstErrorKind, AstErrorSet},
+    grammar_ast::{
         AddOp, AndOp, ArrayType, Assign, AssignExpr, BaseType, BinaryParenExpr, BinaryParenExprOp,
-        Body, BodyItem, CommaSeparated, Comment, Deref, DivOp, ElseItem, EqOp, Expr, Func,
-        FunctionCall, GtOp, GteOp, Ident, IdentDeclaration, IfItem, JoinOp, Literal, LtOp, LteOp,
-        Main, ModOp, MulOp, Name, NeqOp, NotOp, Offset, OrOp, ParenExpr, Place, PlaceHead, Proc,
-        Program, RefExpr, RefType, SemiSeparated, Slice, Span, Statement, SubOp, TopItem, Type,
+        Body, BodyItem, CommaList, CommaListLink, Comment, Deref, DivOp, ElseItem, Empty, EqOp,
+        Expr, Func, FunctionCall, GtOp, GteOp, Ident, IdentDeclaration, IfItem, JoinOp, List,
+        ListLink, Literal, LtOp, LteOp, Main, Maybe, ModOp, MulOp, Name, NeqOp, NotOp, Offset,
+        OrOp, ParenExpr, ParensNest, ParensWrapped, Place, PlaceHead, Proc, Program, RefExpr,
+        RefType, SemiList, SemiListLink, Slice, Span, Statement, SubOp, TopItem, Type,
         UnaryParenExpr, UnaryParenExprOp, WhileItem,
     },
-    ast_error::{AstErrorKind, AstErrorSet},
-    src_pos::SrcRange,
     token::{Token, TokenKind},
-    token_feed::{Parse, TokenFeed},
+    token_feed::TokenFeed,
 };
+
+trait AstParse: Sized {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self>;
+}
+
+#[derive(Debug)]
+struct AstParseRes<T> {
+    item: Result<T, ()>,
+    errors: AstErrorSet,
+}
 
 macro_rules! token {
     ($token_pat:pat => $token_use:expr, $expected:expr) => {{
@@ -38,99 +46,115 @@ macro_rules! token {
     }};
 }
 
-macro_rules! parse_alt {
+macro_rules! parse_enum {
     {
-        parse $tokens:expr => $x:ident {
+        parse $tokens:ident => $x:ident {
             $(
                 $parser:expr
             ),* $(,)?
         } else $else_msg:expr
     } => {
-        let mut error = AstErrorSet::new();
+        let (item, errors) = match $tokens.try_match(|tokens| {
+            let mut errors = AstErrorSet::new();
 
-        $(
-            match $tokens.parse().res {
-                Ok($x) => return Ok($parser),
-                Err(e) => error = error.merge(e),
-            }
-        )*
+            $(
+                let res = <_ as AstParse>::parse(tokens);
+                errors = errors.merge(res.errors);
+                if let Ok($x) = res.item {
+                    return Ok(($parser, errors));
+                }
+            )*
 
-        Err(error)
+            Err(errors)
+        }) {
+            Ok((item, errors)) => (Ok(item), errors),
+            Err(errors) => (Err(()), errors),
+        };
+
+        AstParseRes { item, errors }
     };
 }
 
-macro_rules! parse_optional_parens {
-    ($tokens:expr => $code:expr) => {
-        let tokens = $tokens;
-
-        let mut errors = AstErrorSet::new();
-
-        // we need to check unwrapped first, otherwise some valid trees will error
-        let unwrapped_res = tokens.try_match(|tokens| {
-            $code(tokens)
-        });
-
-        match unwrapped_res {
-            Ok(value) => return Ok(value),
-            Err(e) => errors = errors.merge(e),
-        }
-
-        let wrapped_res = tokens.try_match(|tokens| {
-            tokens.try_next(token!(Token::LeftParen => (), [TokenKind::LeftParen]))?;
-            let place = tokens.parse().res?;
-            tokens.try_next(token!(Token::RightParen => (), [TokenKind::RightParen]))?;
-            Ok(place)
-        });
-
-        match wrapped_res {
-            Ok(value) => return Ok(value),
-            Err(e) => errors = errors.merge(e),
-        }
-
-        Err(errors)
+macro_rules! parse_helper {
+    ([$tokens:ident, $errors:ident] struct $ident:ident) => {
+        let $ident = {
+            let res = <_ as AstParse>::parse($tokens);
+            $errors = $errors.merge(res.errors);
+            match res.item {
+                Ok(val) => val,
+                Err(()) => return Err($errors),
+            }
+        };
+    };
+    ([$tokens:ident, $errors:ident] match $ident:pat = $token_pat:pat => $token_use:expr; as $expected:expr) => {
+        #[allow(clippy::let_unit_value)]
+        let $ident = {
+            match $tokens.try_next(token!($token_pat => $token_use, $expected)) {
+                Ok(val) => val,
+                Err(errors) => {
+                    $errors = $errors.merge(errors);
+                    return Err($errors);
+                },
+            }
+        };
+    };
+    ([$tokens:ident, $errors:ident] return $expr:expr) => {
+        return Ok(($expr, $errors));
     };
 }
 
-impl Parse for Program {
-    type Error = AstErrorSet;
+macro_rules! parse_struct {
+    {
+        parse $tokens:ident;
+        $([$($stuff:tt)*]);* $(;)?
+    } => {
+        let (item, errors) = match $tokens.try_match(|tokens| {
+            let mut errors = AstErrorSet::new();
 
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        let mut items = Vec::new();
-        while tokens.is_finished().not() {
-            let item_cell = tokens.parse::<TopItem>();
-            match item_cell.res {
-                Ok(item) => {
-                    items.push(Arc::new(item));
-                    continue;
-                },
-                Err(e) => {
-                    return Err(e.merge(AstErrorSet::new_error(
-                        item_cell.range,
-                        AstErrorKind::ExpectedTopItem,
-                    )));
-                },
-            }
+            $(
+                parse_helper!([tokens, errors] $($stuff)*);
+            )*
+        }) {
+            Ok((item, errors)) => (Ok(item), errors),
+            Err(errors) => (Err(()), errors),
+        };
+
+        AstParseRes { item, errors }
+    };
+}
+
+pub fn parse_ast(tokens: &mut TokenFeed) -> Result<Program, AstErrorSet> {
+    let res = Program::parse(tokens);
+
+    match res.item {
+        Ok(item) if tokens.is_finished() => Ok(item),
+        _ => Err(res.errors),
+    }
+}
+
+impl AstParse for Program {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct items];
+            [return Self { items: Arc::new(items) }];
         }
-
-        Ok(Self { items: Arc::new(items) })
     }
 }
 
-impl Parse for Comment {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        let text = tokens
-            .try_next(token!(Token::Comment(text) => text.as_str().into(), [TokenKind::Comment]))?;
-        Ok(Self { text })
+impl AstParse for Comment {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match text = Token::Comment(text) => text.as_str().into(); as [TokenKind::Comment]];
+            [return Self { text }];
+        }
     }
 }
 
-impl Parse for TopItem {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        parse_alt! {
+impl AstParse for TopItem {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
             parse tokens => x {
                 Self::Main(Arc::new(x)),
                 Self::Func(Arc::new(x)),
@@ -141,67 +165,57 @@ impl Parse for TopItem {
     }
 }
 
-impl Parse for Main {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Main => (), [TokenKind::Main]))?;
-        let proc = tokens.parse::<Proc>().res?;
-        Ok(Self { proc: Arc::new(proc) })
+impl AstParse for Main {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Main => (); as [TokenKind::Main]];
+            [struct proc];
+            [return Self { proc: Arc::new(proc)} ];
+        }
     }
 }
 
-impl Parse for Func {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Func => (), [TokenKind::Func]))?;
-
-        let name = tokens.parse().res?;
-
-        tokens.try_next(token!(Token::LeftParen => (), [TokenKind::LeftParen]))?;
-        let params_res = tokens.parse::<ZeroOrManyParseResult<_>>().res?;
-
-        let proc: Proc = (|| {
-            tokens.try_next(token!(Token::RightParen => (), [TokenKind::RightParen]))?;
-            tokens.parse().res
-        })()
-        .map_err(|e: AstErrorSet| e.merge(params_res.last_err))?;
-
-        Ok(Self {
-            name: Arc::new(name),
-            params: Arc::new(params_res.zero_or_many),
-            proc: Arc::new(proc),
-        })
+impl AstParse for Func {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Func => (); as [TokenKind::Func]];
+            [struct name];
+            [match _ = Token::LeftParen => (); as [TokenKind::LeftParen]];
+            [struct params];
+            [match _ = Token::RightParen => (); as [TokenKind::RightParen]];
+            [struct proc];
+            [return Self { name: Arc::new(name), params: Arc::new(params), proc: Arc::new(proc) }];
+        }
     }
 }
 
-impl Parse for Name {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        let str = tokens
-            .try_next(token!(Token::Name(name) => name.as_str().into(), [TokenKind::Name]))?;
-        Ok(Self { str })
+impl AstParse for Name {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match str = Token::Name(name) => name.as_str().into(); as [TokenKind::Name]];
+            [return Self { str }]
+        }
     }
 }
 
-impl Parse for IdentDeclaration {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        let name = tokens.parse().res?;
-        tokens.try_next(token!(Token::Colon => (), [TokenKind::Colon]))?;
-        let ty = tokens.parse().res?;
-        Ok(Self { name: Arc::new(name), ty: Arc::new(ty) })
+impl AstParse for IdentDeclaration {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct name];
+            [match _ = Token::Colon => (); as [TokenKind::Colon]];
+            [struct ty];
+            [return Self { name: Arc::new(name), ty: Arc::new(ty) }];
+        }
     }
 }
 
-impl Parse for Type {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        parse_alt! {
+impl AstParse for Type {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
             parse tokens => x {
                 Self::Base(Arc::new(x)),
                 Self::Ref(Arc::new(x)),
@@ -213,148 +227,165 @@ impl Parse for Type {
     }
 }
 
-impl Parse for BaseType {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        let name = tokens.parse().res?;
-        Ok(Self { name: Arc::new(name) })
+impl AstParse for BaseType {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct name];
+            [return Self { name: Arc::new(name) }];
+        }
     }
 }
 
-impl Parse for RefType {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Ampersand => (), [TokenKind::Ampersand]))?;
-        let ty = tokens.parse().res?;
-        Ok(Self { ty: Arc::new(ty) })
+impl AstParse for RefType {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Ampersand => (); as [TokenKind::Ampersand]];
+            [struct ty];
+            [return Self { ty: Arc::new(ty) }];
+        }
     }
 }
 
-impl Parse for ArrayType {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::LeftBracket => (), [TokenKind::LeftBracket]))?;
-        let ty = tokens.parse().res?;
-        tokens.try_next(token!(Token::Semi => (), [TokenKind::Semi]))?;
-        let len_token = tokens.parse::<Literal>();
-        let len = len_token.res?.str.parse().map_err(|_| {
-            AstErrorSet::new_error(len_token.range, AstErrorKind::InvalidArrayLength)
-        })?;
-
-        tokens.try_next(token!(Token::RightBracket => (), [TokenKind::RightBracket]))?;
-        Ok(Self { ty: Arc::new(ty), len })
+impl AstParse for ArrayType {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::LeftBracket => (); as [TokenKind::LeftBracket]];
+            [struct ty];
+            [match _ = Token::Semi => (); as [TokenKind::Semi]];
+            [struct len];
+            [match _ = Token::RightBracket => (); as [TokenKind::RightBracket]];
+            [return Self { ty: Arc::new(ty), len: Arc::new(len) }];
+        }
     }
 }
 
-impl Parse for Literal {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        let str = tokens
-            .try_next(token!(Token::Literal(str) => str.as_str().into(), [TokenKind::Literal]))?;
-        Ok(Self { str })
+impl AstParse for Literal {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match str = Token::Literal(str) => str.as_str().into(); as [TokenKind::Literal]];
+            [return Self { str }];
+        }
     }
 }
 
-impl Parse for Proc {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Pipe => (), [TokenKind::Pipe]))?;
-        let idents_res = tokens.parse::<ZeroOrManyParseResult<_>>().res?;
-
-        let body: Body = (|| {
-            tokens.try_next(token!(Token::Pipe => (), [TokenKind::Pipe]))?;
-            tokens.parse().res
-        })()
-        .map_err(|e: AstErrorSet| e.merge(idents_res.last_err))?;
-
-        Ok(Self { idents: Arc::new(idents_res.zero_or_many), body: Arc::new(body) })
+impl AstParse for Proc {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Pipe => (); as [TokenKind::Pipe]];
+            [struct idents];
+            [match _ = Token::Pipe => (); as [TokenKind::Pipe]];
+            [struct body];
+            [return Self { idents: Arc::new(idents), body: Arc::new(body) }];
+        }
     }
 }
 
-impl Parse for Body {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::LeftBrace => (), [TokenKind::LeftBrace]))?;
-
-        let res = tokens.parse::<ZeroOrManyParseResult<_>>().res?;
-
-        tokens
-            .try_next(token!(Token::RightBrace => (), [TokenKind::RightBrace]))
-            .map_err(|e| e.merge(res.last_err))?;
-
-        let items = res.zero_or_many;
-        Ok(Self { items: Arc::new(items) })
+impl AstParse for Body {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::LeftBrace => (); as [TokenKind::LeftBrace]];
+            [struct items];
+            [match _ = Token::RightBrace => (); as [TokenKind::RightBrace]];
+            [return Self { items: Arc::new(items) }];
+        }
     }
 }
 
-struct ZeroOrManyParseResult<T> {
-    zero_or_many: T,
-    last_err: AstErrorSet,
-}
-
-impl<T: Parse> Parse for ZeroOrManyParseResult<SemiSeparated<T>>
-where
-    AstErrorSet: From<T::Error>,
-{
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        let mut elements = Vec::new();
-        let last_err = loop {
-            let element = match tokens.parse().res {
-                Ok(element) => element,
-                Err(err) => break AstErrorSet::from(err),
-            };
-
-            elements.push(Arc::new(element));
-            if let Err(err) = tokens.try_next(token!(Token::Semi => (), [TokenKind::Semi])) {
-                break err;
+impl<T: AstParse> AstParse for CommaList<T> {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
+            parse tokens => x {
+                Self::Link(Arc::new(x)),
+                Self::Tail(Arc::new(x)),
+                Self::Empty(Arc::new(x)),
+            } else {
+                "Expected comma list"
             }
-        };
-
-        let semi_separated = SemiSeparated { elements: Arc::new(elements) };
-
-        Ok(Self { zero_or_many: semi_separated, last_err })
+        }
     }
 }
 
-impl<T: Parse> Parse for ZeroOrManyParseResult<CommaSeparated<T>>
-where
-    AstErrorSet: From<T::Error>,
-{
-    type Error = AstErrorSet;
+impl<T: AstParse> AstParse for CommaListLink<T> {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct item];
+            [match _ = Token::Comma => (); as [TokenKind::Comma]];
+            [struct next];
+            [return Self { item: Arc::new(item), next: Arc::new(next) }];
+        }
+    }
+}
 
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        let mut elements = Vec::new();
-        let last_err = loop {
-            let element = match tokens.parse().res {
-                Ok(element) => element,
-                Err(err) => break AstErrorSet::from(err),
-            };
+impl AstParse for Empty {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        #![expect(unused_variables, unused_mut)]
+        parse_struct! {
+            parse tokens;
+            [return Self];
+        }
+    }
+}
 
-            elements.push(Arc::new(element));
-            if let Err(err) = tokens.try_next(token!(Token::Comma => (), [TokenKind::Comma])) {
-                break err;
+impl<T: AstParse> AstParse for SemiList<T> {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
+            parse tokens => x {
+                Self::Link(Arc::new(x)),
+                Self::Tail(Arc::new(x)),
+                Self::Empty(Arc::new(x)),
+            } else {
+                "Expected semi list"
             }
-        };
-
-        let comma_separated = CommaSeparated { elements: Arc::new(elements) };
-
-        Ok(Self { zero_or_many: comma_separated, last_err })
+        }
     }
 }
 
-impl Parse for BodyItem {
-    type Error = AstErrorSet;
+impl<T: AstParse> AstParse for SemiListLink<T> {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct item];
+            [match _ = Token::Semi => (); as [TokenKind::Semi]];
+            [struct next];
+            [return Self { item: Arc::new(item), next: Arc::new(next) }];
+        }
+    }
+}
 
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        parse_alt! {
+impl<T: AstParse> AstParse for List<T> {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
+            parse tokens => x {
+                Self::Link(Arc::new(x)),
+                Self::Empty(Arc::new(x)),
+            } else {
+                "Expected list"
+            }
+        }
+    }
+}
+
+impl<T: AstParse> AstParse for ListLink<T> {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct item];
+            [struct next];
+            [return Self { item: Arc::new(item), next: Arc::new(next) }];
+        }
+    }
+}
+
+impl AstParse for BodyItem {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
             parse tokens => x {
                 Self::Statement(Arc::new(x)),
                 Self::If(Arc::new(x)),
@@ -366,34 +397,30 @@ impl Parse for BodyItem {
     }
 }
 
-impl Parse for IfItem {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::If => (), [TokenKind::If]))?;
-        let condition = tokens.parse().res?;
-        let then_body = tokens.parse().res?;
-        let else_item: Option<ElseItem> = tokens.parse().res?;
-        Ok(Self {
-            condition: Arc::new(condition),
-            then_body: Arc::new(then_body),
-            else_item: else_item.map(Arc::new),
-        })
+impl AstParse for IfItem {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::If => (); as [TokenKind::If]];
+            [struct condition];
+            [struct then_body];
+            [struct else_item];
+            [return Self {
+                condition: Arc::new(condition),
+                then_body: Arc::new(then_body),
+                else_item: Arc::new(else_item),
+            }]
+        }
     }
 }
 
-impl Parse for Option<ElseItem> {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        let Ok(_) = tokens.try_next(token!(Token::Else => (), [TokenKind::Else])) else {
-            return Ok(None);
-        };
-
-        parse_alt! {
+impl AstParse for ElseItem {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
             parse tokens => x {
-                Some(ElseItem { body: Arc::new(Body { items: Arc::new(SemiSeparated { elements: Arc::new(Vec::from([Arc::new(BodyItem::If(Arc::new(x)))])) }) }) }),
-                Some(ElseItem { body: Arc::new(x) })
+                Self::Body(Arc::new(x)),
+                Self::If(Arc::new(x)),
+                Self::Empty(Arc::new(x)),
             } else {
                 "Expected else item"
             }
@@ -401,23 +428,21 @@ impl Parse for Option<ElseItem> {
     }
 }
 
-impl Parse for WhileItem {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::While => (), [TokenKind::While]))?;
-        let condition = tokens.parse().res?;
-        let body = tokens.parse().res?;
-
-        Ok(Self { condition: Arc::new(condition), body: Arc::new(body) })
+impl AstParse for WhileItem {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::While => (); as [TokenKind::While]];
+            [struct condition];
+            [struct body];
+            [return Self { condition: Arc::new(condition), body: Arc::new(body) }];
+        }
     }
 }
 
-impl Parse for Statement {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        parse_alt! {
+impl AstParse for Statement {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
             parse tokens => x {
                 Self::Assign(Arc::new(x)),
                 Self::Call(Arc::new(x)),
@@ -428,53 +453,70 @@ impl Parse for Statement {
     }
 }
 
-impl Parse for Assign {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        let loc = tokens.parse().res?;
-        tokens.try_next(token!(Token::Eq => (), [TokenKind::Eq]))?;
-        let expr = tokens.parse().res?;
-        Ok(Self { loc: Arc::new(loc), expr: Arc::new(expr) })
+impl AstParse for Assign {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct place];
+            [match _ = Token::Eq => (); as [TokenKind::Eq]];
+            [struct expr];
+            [return Self { place: Arc::new(place), expr: Arc::new(expr) }];
+        }
     }
 }
 
-impl Parse for FunctionCall {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        let func_name = tokens.parse().res?;
-        tokens.try_next(token!(Token::LeftParen => (), [TokenKind::LeftParen]))?;
-        let param_exprs_res = tokens.parse::<ZeroOrManyParseResult<_>>().res?;
-
-        tokens
-            .try_next(token!(Token::RightParen => (), [TokenKind::RightParen]))
-            .map_err(|e| e.merge(param_exprs_res.last_err))?;
-
-        Ok(Self {
-            func_name: Arc::new(func_name),
-            param_exprs: Arc::new(param_exprs_res.zero_or_many),
-        })
+impl AstParse for FunctionCall {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct func_name];
+            [match _ = Token::LeftParen => (); as [TokenKind::LeftParen]];
+            [struct param_exprs];
+            [match _ = Token::RightParen => (); as [TokenKind::RightParen]];
+            [return Self { func_name: Arc::new(func_name), param_exprs: Arc::new(param_exprs) }];
+        }
     }
 }
 
-impl Parse for Place {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        parse_optional_parens! { tokens => |tokens: &mut TokenFeed| {
-            let head = tokens.parse().res?;
-            let offset = tokens.parse().res.ok();
-            Ok(Self { head: Arc::new(head), offset: offset.map(Arc::new) })
-        }}
+impl AstParse for Place {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct head];
+            [struct offset];
+            [return Self { head: Arc::new(head), offset: Arc::new(offset) }];
+        }
     }
 }
 
-impl Parse for PlaceHead {
-    type Error = AstErrorSet;
+impl<T: AstParse> AstParse for ParensNest<T> {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
+            parse tokens => x {
+                Self::Root(Arc::new(x)),
+                Self::Wrapped(Arc::new(x)),
+            } else {
+                "Expected parentheses nest"
+            }
+        }
+    }
+}
 
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        parse_alt! {
+impl<T: AstParse> AstParse for ParensWrapped<T> {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::LeftParen => (); as [TokenKind::LeftParen]];
+            [struct item];
+            [match _ = Token::RightParen => (); as [TokenKind::RightParen]];
+            [return Self { item: Arc::new(item) }]
+        }
+    }
+}
+
+impl AstParse for PlaceHead {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
             parse tokens => x {
                 Self::Ident(Arc::new(x)),
                 Self::Deref(Arc::new(x)),
@@ -485,45 +527,55 @@ impl Parse for PlaceHead {
     }
 }
 
-impl Parse for Offset {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::LeftBracket => (), [TokenKind::LeftBracket]))?;
-        let expr = tokens.parse().res?;
-        tokens.try_next(token!(Token::RightBracket => (), [TokenKind::RightBracket]))?;
-        Ok(Self { expr: Arc::new(expr) })
+impl AstParse for Offset {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::LeftBracket => (); as [TokenKind::LeftBracket]];
+            [struct expr];
+            [match _ = Token::RightBracket => (); as [TokenKind::RightBracket]];
+            [return Self { expr: Arc::new(expr) }];
+        }
     }
 }
 
-impl Parse for Ident {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        parse_optional_parens! { tokens => |tokens: &mut TokenFeed| {
-            let name = tokens.parse().res?;
-            Ok(Self { name: Arc::new(name) })
-        }}
+impl<T: AstParse> AstParse for Maybe<T> {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
+            parse tokens => x {
+                Self::Item(Arc::new(x)),
+                Self::Empty(Arc::new(x)),
+            } else {
+                "Expected optional item"
+            }
+        }
     }
 }
 
-impl Parse for Deref {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        parse_optional_parens! { tokens => |tokens: &mut TokenFeed| {
-            tokens.try_next(token!(Token::Asterisk => (), [TokenKind::Asterisk]))?;
-            let addr = tokens.parse().res?;
-            Ok(Self { addr: Arc::new(addr) })
-        }}
+impl AstParse for Ident {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct name];
+            [return Self { name: Arc::new(name) }];
+        }
     }
 }
 
-impl Parse for AssignExpr {
-    type Error = AstErrorSet;
+impl AstParse for Deref {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Asterisk => (); as [TokenKind::Asterisk]];
+            [struct addr];
+            [return Self { addr: Arc::new(addr) }];
+        }
+    }
+}
 
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        parse_alt! {
+impl AstParse for AssignExpr {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
             parse tokens => x {
                 Self::Slice(Arc::new(x)),
                 Self::Span(Arc::new(x)),
@@ -535,66 +587,41 @@ impl Parse for AssignExpr {
     }
 }
 
-impl Parse for Span {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::LeftBracket => (), [TokenKind::LeftBracket]))?;
-        let elements_res = tokens.parse::<ZeroOrManyParseResult<_>>().res?;
-        tokens
-            .try_next(token!(Token::RightBracket => (), [TokenKind::RightBracket]))
-            .map_err(|e| e.merge(elements_res.last_err))?;
-
-        Ok(Self { elements: Arc::new(elements_res.zero_or_many) })
+impl AstParse for Span {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::LeftBracket => (); as [TokenKind::LeftBracket]];
+            [struct elements];
+            [match _ = Token::RightBracket => (); as [TokenKind::RightBracket]];
+            [return Self { elements: Arc::new(elements) }];
+        }
     }
 }
 
-impl Parse for Slice {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        let place = tokens.parse().res?;
-
-        tokens.try_next(token!(Token::LeftBracket => (), [TokenKind::LeftBracket]))?;
-
-        let start_in_cell = tokens.parse::<Literal>();
-
-        let start_in = match start_in_cell.res {
-            Err(_) => 0,
-            Ok(start_in) => match start_in.str.parse() {
-                Ok(start_in) => start_in,
-                Err(_) => {
-                    return Err(AstErrorSet::new_error(
-                        start_in_cell.range,
-                        AstErrorKind::InvalidInclRangeStart,
-                    ))
-                },
-            },
-        };
-
-        tokens.try_next(token!(Token::Period => (), [TokenKind::Period, TokenKind::Period]))?;
-        tokens.try_next(token!(Token::Period => (), [TokenKind::Period, TokenKind::Period]))?;
-
-        let end_ex_cell = tokens.parse::<Literal>();
-        let end_ex = end_ex_cell.res?;
-        let Ok(end_ex) = end_ex.str.parse() else {
-            return Err(AstErrorSet::new_error(
-                end_ex_cell.range,
-                AstErrorKind::InvalidExclRangeEnd,
-            ));
-        };
-
-        tokens.try_next(token!(Token::RightBracket => (), [TokenKind::RightBracket]))?;
-
-        Ok(Self { place: Arc::new(place), start_in, end_ex })
+impl AstParse for Slice {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct place];
+            [match _ = Token::LeftBracket => (); as [TokenKind::LeftBracket]];
+            [struct start_in];
+            [match _ = Token::Period => (); as [TokenKind::Period, TokenKind::Period]];
+            [match _ = Token::Period => (); as [TokenKind::Period, TokenKind::Period]];
+            [struct end_ex];
+            [match _ = Token::RightBracket => (); as [TokenKind::RightBracket]];
+            [return Self {
+                place: Arc::new(place),
+                start_in: Arc::new(start_in),
+                end_ex: Arc::new(end_ex)
+            }]
+        }
     }
 }
 
-impl Parse for Expr {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        parse_alt! {
+impl AstParse for Expr {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
             parse tokens => x {
                 Self::Paren(Arc::new(x)),
                 Self::Ref(Arc::new(x)),
@@ -607,21 +634,20 @@ impl Parse for Expr {
     }
 }
 
-impl Parse for RefExpr {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Ampersand => (), [TokenKind::Ampersand]))?;
-        let place = tokens.parse().res?;
-        Ok(Self { place: Arc::new(place) })
+impl AstParse for RefExpr {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Ampersand => (); as [TokenKind::Ampersand]];
+            [struct place];
+            [return Self { place: Arc::new(place) }];
+        }
     }
 }
 
-impl Parse for ParenExpr {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        parse_alt! {
+impl AstParse for ParenExpr {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
             parse tokens => x {
                 Self::Unary(Arc::new(x)),
                 Self::Binary(Arc::new(x))
@@ -632,36 +658,36 @@ impl Parse for ParenExpr {
     }
 }
 
-impl Parse for UnaryParenExpr {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::LeftParen => (), [TokenKind::LeftParen]))?;
-        let op = tokens.parse().res?;
-        let operand = tokens.parse().res?;
-        tokens.try_next(token!(Token::RightParen => (), [TokenKind::RightParen]))?;
-        Ok(Self { op, operand: Arc::new(operand) })
+impl AstParse for UnaryParenExpr {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::LeftParen => (); as [TokenKind::LeftParen]];
+            [struct op];
+            [struct operand];
+            [match _ = Token::RightParen => (); as [TokenKind::RightParen]];
+            [return Self { op, operand: Arc::new(operand) }];
+        }
     }
 }
 
-impl Parse for BinaryParenExpr {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::LeftParen => (), [TokenKind::LeftParen]))?;
-        let left = tokens.parse().res?;
-        let op = tokens.parse().res?;
-        let right = tokens.parse().res?;
-        tokens.try_next(token!(Token::RightParen => (), [TokenKind::RightParen]))?;
-        Ok(Self { op, left: Arc::new(left), right: Arc::new(right) })
+impl AstParse for BinaryParenExpr {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::LeftParen => (); as [TokenKind::LeftParen]];
+            [struct left];
+            [struct op];
+            [struct right];
+            [match _ = Token::RightParen => (); as [TokenKind::RightParen]];
+            [return Self { op, left: Arc::new(left), right: Arc::new(right) }];
+        }
     }
 }
 
-impl Parse for UnaryParenExprOp {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        parse_alt! {
+impl AstParse for UnaryParenExprOp {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
             parse tokens => x {
                 Self::Not(x),
             } else {
@@ -671,20 +697,19 @@ impl Parse for UnaryParenExprOp {
     }
 }
 
-impl Parse for NotOp {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Bang => (), [TokenKind::Bang]))?;
-        Ok(Self)
+impl AstParse for NotOp {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Bang => (); as [TokenKind::Bang]];
+            [return Self];
+        }
     }
 }
 
-impl Parse for BinaryParenExprOp {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        parse_alt! {
+impl AstParse for BinaryParenExprOp {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
             parse tokens => x {
                 // == two chars ==
 
@@ -717,138 +742,148 @@ impl Parse for BinaryParenExprOp {
     }
 }
 
-impl Parse for AddOp {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Plus => (), [TokenKind::Plus]))?;
-        Ok(Self)
+impl AstParse for AddOp {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Plus => (); as [TokenKind::Plus]];
+            [return Self];
+        }
     }
 }
 
-impl Parse for SubOp {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Dash => (), [TokenKind::Dash]))?;
-        Ok(Self)
+impl AstParse for SubOp {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Dash => (); as [TokenKind::Dash]];
+            [return Self];
+        }
     }
 }
 
-impl Parse for MulOp {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Asterisk => (), [TokenKind::Asterisk]))?;
-        Ok(Self)
+impl AstParse for MulOp {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Asterisk => (); as [TokenKind::Asterisk]];
+            [return Self];
+        }
     }
 }
 
-impl Parse for DivOp {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Slash => (), [TokenKind::Slash]))?;
-        Ok(Self)
+impl AstParse for DivOp {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Slash => (); as [TokenKind::Slash]];
+            [return Self];
+        }
     }
 }
 
-impl Parse for ModOp {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Percent => (), [TokenKind::Percent]))?;
-        Ok(Self)
+impl AstParse for ModOp {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Percent => (); as [TokenKind::Percent]];
+            [return Self];
+        }
     }
 }
 
-impl Parse for EqOp {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Eq => (), [TokenKind::Eq, TokenKind::Eq]))?;
-        tokens.try_next(token!(Token::Eq => (), [TokenKind::Eq, TokenKind::Eq]))?;
-        Ok(Self)
+impl AstParse for EqOp {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Eq => (); as [TokenKind::Eq, TokenKind::Eq]];
+            [match _ = Token::Eq => (); as [TokenKind::Eq, TokenKind::Eq]];
+            [return Self];
+        }
     }
 }
 
-impl Parse for NeqOp {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Bang => (), [TokenKind::Bang, TokenKind::Eq]))?;
-        tokens.try_next(token!(Token::Eq => (), [TokenKind::Bang, TokenKind::Eq]))?;
-        Ok(Self)
+impl AstParse for NeqOp {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Bang => (); as [TokenKind::Bang, TokenKind::Eq]];
+            [match _ = Token::Eq => (); as [TokenKind::Bang, TokenKind::Eq]];
+            [return Self];
+        }
     }
 }
 
-impl Parse for GtOp {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::RightAngle => (), [TokenKind::RightAngle]))?;
-        Ok(Self)
+impl AstParse for GtOp {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::RightAngle => (); as [TokenKind::RightAngle]];
+            [return Self];
+        }
     }
 }
 
-impl Parse for LtOp {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::LeftAngle => (), [TokenKind::LeftAngle]))?;
-        Ok(Self)
+impl AstParse for LtOp {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::LeftAngle => (); as [TokenKind::LeftAngle]];
+            [return Self];
+        }
     }
 }
 
-impl Parse for GteOp {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::RightAngle => (), [TokenKind::RightAngle, TokenKind::Eq]))?;
-        tokens.try_next(token!(Token::Eq => (), [TokenKind::RightAngle, TokenKind::Eq]))?;
-        Ok(Self)
+impl AstParse for GteOp {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::RightAngle => (); as [TokenKind::RightAngle, TokenKind::Eq]];
+            [match _ = Token::Eq => (); as [TokenKind::RightAngle, TokenKind::Eq]];
+            [return Self];
+        }
     }
 }
 
-impl Parse for LteOp {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::LeftAngle => (), [TokenKind::LeftAngle, TokenKind::Eq]))?;
-        tokens.try_next(token!(Token::Eq => (), [TokenKind::LeftAngle, TokenKind::Eq]))?;
-        Ok(Self)
+impl AstParse for LteOp {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::LeftAngle => (); as [TokenKind::LeftAngle, TokenKind::Eq]];
+            [match _ = Token::Eq => (); as [TokenKind::LeftAngle, TokenKind::Eq]];
+            [return Self];
+        }
     }
 }
 
-impl Parse for AndOp {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(
-            token!(Token::Ampersand => (), [TokenKind::Ampersand, TokenKind::Ampersand]),
-        )?;
-        tokens.try_next(
-            token!(Token::Ampersand => (), [TokenKind::Ampersand, TokenKind::Ampersand]),
-        )?;
-        Ok(Self)
+impl AstParse for AndOp {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Ampersand => (); as [TokenKind::Ampersand, TokenKind::Ampersand]];
+            [match _ = Token::Ampersand => (); as [TokenKind::Ampersand, TokenKind::Ampersand]];
+            [return Self];
+        }
     }
 }
 
-impl Parse for OrOp {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Pipe => (), [TokenKind::Pipe, TokenKind::Pipe]))?;
-        tokens.try_next(token!(Token::Pipe => (), [TokenKind::Pipe, TokenKind::Pipe]))?;
-        Ok(Self)
+impl AstParse for OrOp {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Pipe => (); as [TokenKind::Pipe, TokenKind::Pipe]];
+            [match _ = Token::Pipe => (); as [TokenKind::Pipe, TokenKind::Pipe]];
+            [return Self];
+        }
     }
 }
 
-impl Parse for JoinOp {
-    type Error = AstErrorSet;
-
-    fn parse(tokens: &mut TokenFeed) -> Result<Self, Self::Error> {
-        tokens.try_next(token!(Token::Tilde => (), [TokenKind::Tilde]))?;
-        Ok(Self)
+impl AstParse for JoinOp {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Tilde => (); as [TokenKind::Tilde]];
+            [return Self];
+        }
     }
 }

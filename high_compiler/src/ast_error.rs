@@ -9,15 +9,18 @@ use itertools::Itertools;
 
 use crate::{src_pos::SrcRange, token::TokenKind};
 
+#[derive(Debug, Default)]
 pub struct AstErrorSet {
     errors: Vec<AstError>,
 }
 
+#[derive(Debug)]
 pub struct AstError {
     kind: AstErrorKind,
     range: SrcRange,
 }
 
+#[derive(Debug)]
 pub enum AstErrorKind {
     MismatchedTokenString { expected: Arc<[TokenKind]>, found: TokenKind },
     ExpectedTokenString { expected: Arc<[TokenKind]> },
@@ -29,7 +32,7 @@ pub enum AstErrorKind {
 
 impl AstErrorSet {
     pub fn new() -> Self {
-        AstErrorSet { errors: Vec::new() }
+        Self::default()
     }
 
     pub fn new_error(range: SrcRange, kind: AstErrorKind) -> Self {
@@ -284,7 +287,7 @@ pub fn report_ast_errors(code: &str, code_path: &Path, set: AstErrorSet) {
         return;
     };
 
-    let line_numbers_width = max_line_number.len();
+    let line_numbers_width = max_line_number.len() + 1;
 
     let empty_sidebar = format!("{:>width$} |", "", width = line_numbers_width).blue().bold();
     println!("{}", empty_sidebar);

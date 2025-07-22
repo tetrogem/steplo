@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::ast as hast;
 use crate::link;
+use crate::logic_ast as hast;
 use anyhow::bail;
 use itertools::chain;
 use itertools::Itertools;
@@ -67,7 +67,7 @@ impl FuncManager {
             };
 
             name_to_head_uuid.insert(name.clone(), first_sp.uuid);
-            name_to_params.insert(name.clone(), params.elements.clone());
+            name_to_params.insert(name.clone(), params.clone());
         }
 
         Ok(Self { name_to_head_uuid, name_to_params })
@@ -203,11 +203,11 @@ fn compile_proc(
         link::ProcKind::Main => (opt::ProcKind::Func { name: "main".into() }, Vec::new()),
         link::ProcKind::Func { name, params } => (
             opt::ProcKind::Func { name: format!("func.{}", name.str).into() },
-            params.elements.iter().cloned().collect(),
+            params.iter().cloned().collect(),
         ),
     };
 
-    let stack_vars = proc.idents.elements.iter().cloned();
+    let stack_vars = proc.idents.iter().cloned();
     let stack_idents = chain!(stack_params, stack_vars).collect_vec();
 
     let stack_frame = StackFrame::new(&stack_idents);
@@ -284,7 +284,7 @@ fn compile_call(
             let param_idents = func_manager.get_params(name)?;
             let mut param_stack_offset: u32 = 0;
             let mut param_setup_commands = Vec::new();
-            for (ident, expr) in param_idents.iter().zip(param_exprs.elements.as_ref()) {
+            for (ident, expr) in param_idents.iter().zip(param_exprs.as_ref()) {
                 let elements = compile_assign_expr_elements(stack_frame, expr)?;
 
                 for (i, element) in elements.into_iter().enumerate() {
@@ -475,7 +475,7 @@ fn compile_statement(
             let mut element_assignments = Vec::new();
 
             for (i, element) in elements.into_iter().enumerate() {
-                let compiled_ident_addr = compile_place_to_addr(stack_frame, &assign.loc)?;
+                let compiled_ident_addr = compile_place_to_addr(stack_frame, &assign.place)?;
                 let compiled_offset = compile_expr(
                     stack_frame,
                     &hast::Expr::Literal(Arc::new(hast::Literal { str: i.to_string().into() })),
@@ -552,7 +552,6 @@ fn compile_assign_expr_elements(
     let compileds = match expr {
         hast::AssignExpr::Expr(expr) => Vec::from([compile_expr(stack_frame, expr)?]),
         hast::AssignExpr::Span(array) => array
-            .elements
             .elements
             .iter()
             .map(|expr| compile_expr(stack_frame, expr))
@@ -632,7 +631,7 @@ fn compile_unary_paren_expr(
     let operand_ops = compile_expr(stack_frame, &expr.operand)?;
 
     let expr_commands = match expr.op {
-        hast::UnaryParenExprOp::Not(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::UnaryParenExprOp::Not => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Not(mem_loc_expr(operand_ops.mem_loc))),
         })]),
@@ -653,91 +652,91 @@ fn compile_binary_paren_expr(
     let right_ops = compile_expr(stack_frame, &expr.right)?;
 
     let expr_commands = match expr.op {
-        hast::BinaryParenExprOp::Add(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Add => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Add(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Sub(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Sub => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Sub(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Mul(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Mul => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Mul(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Div(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Div => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Div(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Mod(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Mod => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Mod(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Eq(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Eq => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Eq(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Neq(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Neq => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Not(Arc::new(opt::Expr::Eq(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))))),
         })]),
-        hast::BinaryParenExprOp::Lt(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Lt => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Lt(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Gt(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Gt => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Gt(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Lte(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Lte => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Not(Arc::new(opt::Expr::Gt(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))))),
         })]),
-        hast::BinaryParenExprOp::Gte(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Gte => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Not(Arc::new(opt::Expr::Lt(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))))),
         })]),
-        hast::BinaryParenExprOp::Join(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Join => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Join(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        hast::BinaryParenExprOp::Or(_) => Vec::from([Arc::new(opt::Command::SetMemLoc {
+        hast::BinaryParenExprOp::Or => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Or(binary_args(
                 mem_loc_expr(left_ops.mem_loc),
