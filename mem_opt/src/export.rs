@@ -107,6 +107,7 @@ fn export_expr(name_m: &mut NameManager, expr: &Expr<UMemLoc>) -> String {
         Expr::Lt(args) => export_binary_op_expr(name_m, args, "<"),
         Expr::Not(expr) => format!("(!{})", export_expr(name_m, expr)),
         Expr::Or(args) => export_binary_op_expr(name_m, args, "||"),
+        Expr::And(args) => export_binary_op_expr(name_m, args, "&&"),
         Expr::InAnswer => "$answer".into(),
         Expr::Join(args) => export_binary_op_expr(name_m, args, "~"),
     }

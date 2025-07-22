@@ -120,14 +120,23 @@ pub enum BodyItem {
 pub struct IfItem {
     pub condition: Arc<Expr>,
     pub then_body: Arc<Body>,
-    pub else_item: Arc<ElseItem>,
+    pub else_item: Arc<Maybe<ElseItem>>,
 }
 
 #[derive(Debug)]
 pub enum ElseItem {
-    Body(Arc<Body>),
-    If(Arc<IfItem>),
-    Empty(Arc<Empty>),
+    Body(Arc<ElseBodyItem>),
+    If(Arc<ElseIfItem>),
+}
+
+#[derive(Debug)]
+pub struct ElseBodyItem {
+    pub body: Arc<Body>,
+}
+
+#[derive(Debug)]
+pub struct ElseIfItem {
+    pub if_item: Arc<IfItem>,
 }
 
 #[derive(Debug)]
@@ -171,7 +180,7 @@ pub enum Expr {
 
 #[derive(Debug)]
 pub struct RefExpr {
-    pub place: Arc<Place>,
+    pub place: Arc<ParensNest<Place>>,
 }
 
 #[derive(Debug)]

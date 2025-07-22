@@ -226,7 +226,10 @@ impl TryFrom<&g::IfItem> for l::IfItem {
         Ok(Self {
             condition: convert(&value.condition),
             then_body: try_convert(&value.then_body)?,
-            else_item: Option::<_>::try_from(value.else_item.as_ref())?.map(Arc::new),
+            else_item: match convert_maybe(&value.else_item) {
+                None => None,
+                Some(x) => Some(try_convert(x)?),
+            },
         })
     }
 }
@@ -274,18 +277,19 @@ impl From<&g::Expr> for l::Expr {
     }
 }
 
-impl TryFrom<&g::ElseItem> for Option<l::ElseItem> {
+impl TryFrom<&g::ElseItem> for l::ElseItem {
     type Error = anyhow::Error;
 
     fn try_from(value: &g::ElseItem) -> Result<Self, Self::Error> {
         Ok(match value {
-            g::ElseItem::Empty(_) => None,
-            g::ElseItem::Body(body) => Some(l::ElseItem { body: try_convert(&body)? }),
-            g::ElseItem::If(if_item) => Some(l::ElseItem {
+            g::ElseItem::Body(x) => l::ElseItem { body: try_convert(&x.body)? },
+            g::ElseItem::If(x) => l::ElseItem {
                 body: Arc::new(l::Body {
-                    items: Arc::new(Vec::from([Arc::new(l::BodyItem::If(try_convert(if_item)?))])),
+                    items: Arc::new(Vec::from([Arc::new(l::BodyItem::If(try_convert(
+                        &x.if_item,
+                    )?))])),
                 }),
-            }),
+            },
         })
     }
 }
@@ -319,7 +323,7 @@ impl From<&g::Literal> for l::Literal {
 
 impl From<&g::RefExpr> for l::RefExpr {
     fn from(value: &g::RefExpr) -> Self {
-        Self { place: convert(&value.place) }
+        Self { place: convert(unnest(&value.place)) }
     }
 }
 

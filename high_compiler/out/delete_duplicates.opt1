@@ -1,0 +1,172 @@
+main {
+    proc #51 {
+        $sp = "-1";
+        jump #73;
+    }
+}
+
+func main {
+    proc #73 {
+        $sp = ($sp + "13");
+        stack[($sp - "11")] = "1";
+        stack[(($sp - "11") + "1")] = "1";
+        stack[(($sp - "11") + "2")] = "2";
+        stack[(($sp - "11") + "3")] = "3";
+        stack[(($sp - "11") + "4")] = "3";
+        stack[(($sp - "11") + "5")] = "4";
+        stack[(($sp - "11") + "6")] = "5";
+        stack[(($sp - "11") + "7")] = "6";
+        stack[(($sp - "11") + "8")] = "6";
+        stack[(($sp - "11") + "9")] = "6";
+        stack[(($sp - "11") + "10")] = "7";
+        stack[($sp + "2")] = "With duplicates:";
+        stack[($sp + "1")] = #7f;
+        jump #22;
+    }
+
+    proc #7f {
+        stack[($sp + "2")] = ($sp - "11");
+        stack[($sp + "3")] = "11";
+        stack[($sp + "1")] = #cf;
+        jump #b6;
+    }
+
+    proc #cf {
+        stack[($sp + "2")] = $sp;
+        stack[($sp + "3")] = ($sp - "11");
+        stack[($sp + "1")] = #6d;
+        jump #85;
+    }
+
+    proc #6d {
+        stack[($sp + "2")] = "Without duplicates:";
+        stack[($sp + "1")] = #32;
+        jump #22;
+    }
+
+    proc #32 {
+        stack[($sp + "2")] = ($sp - "11");
+        stack[($sp + "3")] = stack[$sp];
+        stack[($sp + "1")] = #5c;
+        jump #b6;
+    }
+
+    proc #5c {
+        exit;
+    }
+}
+
+func func.delete_duplicates {
+    proc #85 {
+        $sp = ($sp + "6");
+        stack[($sp - "1")] = "0";
+        stack[$sp] = "11";
+        stack[($sp - "2")] = "0";
+        if (stack[($sp - "1")] < stack[$sp]) then jump #c1 else jump #14;
+    }
+
+    proc #14 {
+        stack[stack[($sp - "4")]] = stack[$sp];
+        $sp = ($sp - "6");
+        jump stack[($sp + "1")];
+    }
+
+    proc #c1 {
+        if ((stack[($sp - "1")] > "0") && (stack[(stack[($sp - "3")] + stack[($sp - "1")])] == stack[($sp - "2")])) then jump #b1 else jump #25;
+    }
+
+    proc #b5 {
+        stack[($sp - "1")] = (stack[($sp - "1")] + "1");
+        if (stack[($sp - "1")] < stack[$sp]) then jump #c1 else jump #14;
+    }
+
+    proc #b1 {
+        stack[($sp + "2")] = stack[($sp - "3")];
+        stack[($sp + "3")] = stack[($sp - "1")];
+        stack[($sp + "1")] = #21;
+        jump #cb;
+    }
+
+    proc #21 {
+        stack[($sp - "1")] = (stack[($sp - "1")] - "1");
+        stack[$sp] = (stack[$sp] - "1");
+        jump #b5;
+    }
+
+    proc #25 {
+        stack[($sp - "2")] = stack[(stack[($sp - "3")] + stack[($sp - "1")])];
+        jump #b5;
+    }
+}
+
+func func.delete_index {
+    proc #cb {
+        $sp = ($sp + "4");
+        stack[$sp] = "0";
+        if (stack[$sp] < "11") then jump #db else jump #df;
+    }
+
+    proc #df {
+        $sp = ($sp - "4");
+        jump stack[($sp + "1")];
+    }
+
+    proc #db {
+        if (stack[$sp] > stack[($sp - "1")]) then jump #64 else jump #b57;
+    }
+
+    proc #b57 {
+        stack[$sp] = (stack[$sp] + "1");
+        if (stack[$sp] < "11") then jump #db else jump #df;
+    }
+
+    proc #64 {
+        stack[(stack[($sp - "2")] + (stack[$sp] - "1"))] = stack[(stack[($sp - "2")] + stack[$sp])];
+        jump #b57;
+    }
+}
+
+func func.print_arr {
+    proc #b6 {
+        $sp = ($sp + "5");
+        stack[$sp] = "[";
+        stack[($sp - "1")] = "0";
+        if (stack[($sp - "1")] < stack[($sp - "2")]) then jump #8a else jump #88;
+    }
+
+    proc #88 {
+        stack[$sp] = (stack[$sp] ~ "]");
+        stack[($sp + "2")] = stack[$sp];
+        stack[($sp + "1")] = #b8;
+        jump #22;
+    }
+
+    proc #b8 {
+        $sp = ($sp - "5");
+        jump stack[($sp + "1")];
+    }
+
+    proc #8a {
+        stack[$sp] = (stack[$sp] ~ stack[(stack[($sp - "3")] + stack[($sp - "1")])]);
+        if (!(stack[($sp - "1")] == (stack[($sp - "2")] - "1"))) then jump #e1 else jump #36;
+    }
+
+    proc #36 {
+        stack[($sp - "1")] = (stack[($sp - "1")] + "1");
+        if (stack[($sp - "1")] < stack[($sp - "2")]) then jump #8a else jump #88;
+    }
+
+    proc #e1 {
+        stack[$sp] = (stack[$sp] ~ ", ");
+        jump #36;
+    }
+}
+
+func func.out {
+    proc #22 {
+        $sp = ($sp + "2");
+        out stack[$sp];
+        $sp = ($sp - "2");
+        jump stack[($sp + "1")];
+    }
+}

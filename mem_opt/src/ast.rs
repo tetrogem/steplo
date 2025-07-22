@@ -48,6 +48,7 @@ pub enum Expr<MemLoc> {
     Gt(Arc<BinaryArgs<MemLoc>>),
     Not(Arc<Expr<MemLoc>>),
     Or(Arc<BinaryArgs<MemLoc>>),
+    And(Arc<BinaryArgs<MemLoc>>),
     InAnswer,
     Join(Arc<BinaryArgs<MemLoc>>),
 }

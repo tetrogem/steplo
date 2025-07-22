@@ -1,11 +1,15 @@
 main |arr: [val; 99], vec: [val; 3]| {
     arr = [0, 10, "a", "-5", 283, 2, 6, 4, "what", "-1", 20, 7, 8, 2];
     Vec_new(&vec, &arr, 99, 14);
+
+    out("Unsorted:");
     Vec_print(&vec);
 
+    out("Sorted:");
     Vec_sort(&vec);
     Vec_print(&vec);
 
+    out("Pushing `12.5` then sorting again:");
     Vec_push(&vec, "12.5");
     Vec_sort(&vec);
     Vec_print(&vec);
@@ -36,7 +40,7 @@ func Vec_push(self_r: &[val; 3], val: val) |cap: val, len: val, entry_r: &val, l
     Vec_cap(&cap, self_r);
     Vec_len(&len, self_r);
     if (len < cap) {
-        Vec_entry(&entry_r, self_r, len)
+        Vec_entry(&entry_r, self_r, len);
         *entry_r = val;
         Vec_len_r(&len_r, self_r);
         *len_r = (len + 1);

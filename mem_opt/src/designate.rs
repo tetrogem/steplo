@@ -263,6 +263,7 @@ impl HasMemLocs for ast::Expr<ast::UMemLoc> {
             ast::Expr::Lt(args) => args.to_mem_locs(),
             ast::Expr::Not(expr) => expr.to_mem_locs(),
             ast::Expr::Or(args) => args.to_mem_locs(),
+            ast::Expr::And(args) => args.to_mem_locs(),
             ast::Expr::InAnswer => Default::default(),
             ast::Expr::Join(args) => args.to_mem_locs(),
         }
@@ -283,6 +284,7 @@ impl HasMemLocs for ast::Expr<ast::UMemLoc> {
             ast::Expr::Lt(args) => ast::Expr::Lt(args.to_rmem(temp_m)),
             ast::Expr::Not(expr) => ast::Expr::Not(expr.to_rmem(temp_m)),
             ast::Expr::Or(args) => ast::Expr::Or(args.to_rmem(temp_m)),
+            ast::Expr::And(args) => ast::Expr::And(args.to_rmem(temp_m)),
             ast::Expr::InAnswer => ast::Expr::InAnswer,
             ast::Expr::Join(args) => ast::Expr::Join(args.to_rmem(temp_m)),
         };

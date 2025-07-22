@@ -350,6 +350,10 @@ fn compile_expr(compile_m: &mut CompileManager, expr: &Expr<RMemLoc>) -> Arc<ez:
             operand_a: compile_expr(compile_m, &args.left),
             operand_b: compile_expr(compile_m, &args.right),
         }))),
+        Expr::And(args) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::And {
+            operand_a: compile_expr(compile_m, &args.left),
+            operand_b: compile_expr(compile_m, &args.right),
+        }))),
         Expr::InAnswer => ez::Expr::Derived(Arc::new(ez::Op::Sensing(ez::SensingOp::Answer))),
         Expr::Join(args) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::Join {
             string_a: compile_expr(compile_m, &args.left),

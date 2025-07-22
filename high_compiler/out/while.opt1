@@ -1,0 +1,68 @@
+main {
+    proc #61 {
+        $sp = "-1";
+        jump #f4;
+    }
+}
+
+func main {
+    proc #f4 {
+        $sp = ($sp + "3");
+        stack[($sp + "2")] = "Enter how many iterations to do:";
+        stack[($sp + "1")] = #00;
+        jump #e2;
+    }
+
+    proc #00 {
+        stack[($sp + "2")] = ($sp - "1");
+        stack[($sp + "1")] = #07;
+        jump #b7;
+    }
+
+    proc #07 {
+        stack[($sp + "2")] = "Start!";
+        stack[($sp + "1")] = #4b;
+        jump #e2;
+    }
+
+    proc #4b {
+        stack[$sp] = "true";
+        if stack[$sp] then jump #7d else jump #d8;
+    }
+
+    proc #d8 {
+        stack[($sp + "2")] = "End!";
+        stack[($sp + "1")] = #10;
+        jump #e2;
+    }
+
+    proc #10 {
+        exit;
+    }
+
+    proc #7d {
+        stack[($sp - "1")] = (stack[($sp - "1")] - "1");
+        stack[$sp] = (!(stack[($sp - "1")] == "0"));
+        if stack[$sp] then jump #7d else jump #d8;
+    }
+}
+
+func func.out {
+    proc #e2 {
+        $sp = ($sp + "2");
+        out stack[$sp];
+        $sp = ($sp - "2");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.in {
+    proc #b7 {
+        $sp = ($sp + "3");
+        in;
+        stack[$sp] = $answer;
+        stack[stack[($sp - "1")]] = stack[$sp];
+        $sp = ($sp - "3");
+        jump stack[($sp + "1")];
+    }
+}

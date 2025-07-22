@@ -743,7 +743,13 @@ fn compile_binary_paren_expr(
                 mem_loc_expr(right_ops.mem_loc),
             ))),
         })]),
-        _ => todo!(),
+        hast::BinaryParenExprOp::And => Vec::from([Arc::new(opt::Command::SetMemLoc {
+            mem_loc: res_loc.clone(),
+            val: Arc::new(opt::Expr::And(binary_args(
+                mem_loc_expr(left_ops.mem_loc),
+                mem_loc_expr(right_ops.mem_loc),
+            ))),
+        })]),
     };
 
     Ok(CompiledExpr {

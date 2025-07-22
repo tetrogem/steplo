@@ -4,12 +4,12 @@ use crate::{
     ast_error::{AstErrorKind, AstErrorSet},
     grammar_ast::{
         AddOp, AndOp, ArrayType, Assign, AssignExpr, BaseType, BinaryParenExpr, BinaryParenExprOp,
-        Body, BodyItem, CommaList, CommaListLink, Comment, Deref, DivOp, ElseItem, Empty, EqOp,
-        Expr, Func, FunctionCall, GtOp, GteOp, Ident, IdentDeclaration, IfItem, JoinOp, List,
-        ListLink, Literal, LtOp, LteOp, Main, Maybe, ModOp, MulOp, Name, NeqOp, NotOp, Offset,
-        OrOp, ParenExpr, ParensNest, ParensWrapped, Place, PlaceHead, Proc, Program, RefExpr,
-        RefType, SemiList, SemiListLink, Slice, Span, Statement, SubOp, TopItem, Type,
-        UnaryParenExpr, UnaryParenExprOp, WhileItem,
+        Body, BodyItem, CommaList, CommaListLink, Comment, Deref, DivOp, ElseBodyItem, ElseIfItem,
+        ElseItem, Empty, EqOp, Expr, Func, FunctionCall, GtOp, GteOp, Ident, IdentDeclaration,
+        IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, Maybe, ModOp, MulOp, Name,
+        NeqOp, NotOp, Offset, OrOp, ParenExpr, ParensNest, ParensWrapped, Place, PlaceHead, Proc,
+        Program, RefExpr, RefType, SemiList, SemiListLink, Slice, Span, Statement, SubOp, TopItem,
+        Type, UnaryParenExpr, UnaryParenExprOp, WhileItem,
     },
     token::{Token, TokenKind},
     token_feed::TokenFeed,
@@ -420,10 +420,31 @@ impl AstParse for ElseItem {
             parse tokens => x {
                 Self::Body(Arc::new(x)),
                 Self::If(Arc::new(x)),
-                Self::Empty(Arc::new(x)),
             } else {
                 "Expected else item"
             }
+        }
+    }
+}
+
+impl AstParse for ElseBodyItem {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Else => (); as [TokenKind::Else]];
+            [struct body];
+            [return Self { body: Arc::new(body) }];
+        }
+    }
+}
+
+impl AstParse for ElseIfItem {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Else => (); as [TokenKind::Else]];
+            [struct if_item];
+            [return Self { if_item: Arc::new(if_item) }];
         }
     }
 }
