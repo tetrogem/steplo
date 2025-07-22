@@ -1,12 +1,12 @@
 main {
-    proc #51 {
+    proc #89 {
         $sp = "-1";
-        jump #73;
+        jump #a1;
     }
 }
 
 func main {
-    proc #73 {
+    proc #a1 {
         $sp = ($sp + "13");
         stack[($sp - "11")] = "1";
         stack[(($sp - "11") + "1")] = "1";
@@ -20,150 +20,150 @@ func main {
         stack[(($sp - "11") + "9")] = "6";
         stack[(($sp - "11") + "10")] = "7";
         stack[($sp + "2")] = "With duplicates:";
-        stack[($sp + "1")] = #7f;
-        jump #22;
+        stack[($sp + "1")] = #a5;
+        jump #0c;
     }
 
-    proc #7f {
+    proc #a5 {
         stack[($sp + "2")] = ($sp - "11");
         stack[($sp + "3")] = "11";
-        stack[($sp + "1")] = #cf;
-        jump #b6;
+        stack[($sp + "1")] = #ac;
+        jump #88;
     }
 
-    proc #cf {
+    proc #ac {
         stack[($sp + "2")] = $sp;
         stack[($sp + "3")] = ($sp - "11");
-        stack[($sp + "1")] = #6d;
-        jump #85;
+        stack[($sp + "1")] = #4c;
+        jump #a6;
     }
 
-    proc #6d {
+    proc #4c {
         stack[($sp + "2")] = "Without duplicates:";
-        stack[($sp + "1")] = #32;
-        jump #22;
+        stack[($sp + "1")] = #3f;
+        jump #0c;
     }
 
-    proc #32 {
+    proc #3f {
         stack[($sp + "2")] = ($sp - "11");
         stack[($sp + "3")] = stack[$sp];
-        stack[($sp + "1")] = #5c;
-        jump #b6;
+        stack[($sp + "1")] = #c3;
+        jump #88;
     }
 
-    proc #5c {
+    proc #c3 {
         exit;
     }
 }
 
 func func.delete_duplicates {
-    proc #85 {
+    proc #a6 {
         $sp = ($sp + "6");
         stack[($sp - "1")] = "0";
         stack[$sp] = "11";
         stack[($sp - "2")] = "0";
-        if (stack[($sp - "1")] < stack[$sp]) then jump #c1 else jump #14;
+        if (stack[($sp - "1")] < stack[$sp]) then jump #42 else jump #bb;
     }
 
-    proc #14 {
+    proc #bb {
         stack[stack[($sp - "4")]] = stack[$sp];
         $sp = ($sp - "6");
         jump stack[($sp + "1")];
     }
 
-    proc #c1 {
-        if ((stack[($sp - "1")] > "0") && (stack[(stack[($sp - "3")] + stack[($sp - "1")])] == stack[($sp - "2")])) then jump #b1 else jump #25;
+    proc #42 {
+        if ((stack[($sp - "1")] > "0") && (stack[(stack[($sp - "3")] + stack[($sp - "1")])] == stack[($sp - "2")])) then jump #47 else jump #12;
     }
 
-    proc #b5 {
+    proc #50 {
         stack[($sp - "1")] = (stack[($sp - "1")] + "1");
-        if (stack[($sp - "1")] < stack[$sp]) then jump #c1 else jump #14;
+        if (stack[($sp - "1")] < stack[$sp]) then jump #42 else jump #bb;
     }
 
-    proc #b1 {
+    proc #47 {
         stack[($sp + "2")] = stack[($sp - "3")];
         stack[($sp + "3")] = stack[($sp - "1")];
-        stack[($sp + "1")] = #21;
-        jump #cb;
+        stack[($sp + "1")] = #0b;
+        jump #94;
     }
 
-    proc #21 {
+    proc #0b {
         stack[($sp - "1")] = (stack[($sp - "1")] - "1");
         stack[$sp] = (stack[$sp] - "1");
-        jump #b5;
+        jump #50;
     }
 
-    proc #25 {
+    proc #12 {
         stack[($sp - "2")] = stack[(stack[($sp - "3")] + stack[($sp - "1")])];
-        jump #b5;
+        jump #50;
     }
 }
 
 func func.delete_index {
-    proc #cb {
+    proc #94 {
         $sp = ($sp + "4");
         stack[$sp] = "0";
-        if (stack[$sp] < "11") then jump #db else jump #df;
+        if (stack[$sp] < "11") then jump #b0 else jump #9c;
     }
 
-    proc #df {
+    proc #9c {
         $sp = ($sp - "4");
         jump stack[($sp + "1")];
     }
 
-    proc #db {
-        if (stack[$sp] > stack[($sp - "1")]) then jump #64 else jump #b57;
+    proc #b0 {
+        if (stack[$sp] > stack[($sp - "1")]) then jump #c9 else jump #d9;
     }
 
-    proc #b57 {
+    proc #d9 {
         stack[$sp] = (stack[$sp] + "1");
-        if (stack[$sp] < "11") then jump #db else jump #df;
+        if (stack[$sp] < "11") then jump #b0 else jump #9c;
     }
 
-    proc #64 {
+    proc #c9 {
         stack[(stack[($sp - "2")] + (stack[$sp] - "1"))] = stack[(stack[($sp - "2")] + stack[$sp])];
-        jump #b57;
+        jump #d9;
     }
 }
 
 func func.print_arr {
-    proc #b6 {
+    proc #88 {
         $sp = ($sp + "5");
         stack[$sp] = "[";
         stack[($sp - "1")] = "0";
-        if (stack[($sp - "1")] < stack[($sp - "2")]) then jump #8a else jump #88;
+        if (stack[($sp - "1")] < stack[($sp - "2")]) then jump #66 else jump #97;
     }
 
-    proc #88 {
+    proc #97 {
         stack[$sp] = (stack[$sp] ~ "]");
         stack[($sp + "2")] = stack[$sp];
-        stack[($sp + "1")] = #b8;
-        jump #22;
+        stack[($sp + "1")] = #db;
+        jump #0c;
     }
 
-    proc #b8 {
+    proc #db {
         $sp = ($sp - "5");
         jump stack[($sp + "1")];
     }
 
-    proc #8a {
+    proc #66 {
         stack[$sp] = (stack[$sp] ~ stack[(stack[($sp - "3")] + stack[($sp - "1")])]);
-        if (!(stack[($sp - "1")] == (stack[($sp - "2")] - "1"))) then jump #e1 else jump #36;
+        if (!(stack[($sp - "1")] == (stack[($sp - "2")] - "1"))) then jump #f7 else jump #54;
     }
 
-    proc #36 {
+    proc #54 {
         stack[($sp - "1")] = (stack[($sp - "1")] + "1");
-        if (stack[($sp - "1")] < stack[($sp - "2")]) then jump #8a else jump #88;
+        if (stack[($sp - "1")] < stack[($sp - "2")]) then jump #66 else jump #97;
     }
 
-    proc #e1 {
+    proc #f7 {
         stack[$sp] = (stack[$sp] ~ ", ");
-        jump #36;
+        jump #54;
     }
 }
 
 func func.out {
-    proc #22 {
+    proc #0c {
         $sp = ($sp + "2");
         out stack[$sp];
         $sp = ($sp - "2");

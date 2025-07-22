@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     collections::{BTreeSet, HashSet},
     path::Path,
     sync::Arc,
@@ -12,6 +13,7 @@ use crate::{src_pos::SrcRange, token::TokenKind};
 #[derive(Debug, Default)]
 pub struct AstErrorSet {
     errors: Vec<AstError>,
+    range: Option<SrcRange>,
 }
 
 #[derive(Debug)]
@@ -37,11 +39,18 @@ impl AstErrorSet {
 
     pub fn new_error(range: SrcRange, kind: AstErrorKind) -> Self {
         let err = AstError { range, kind };
-        AstErrorSet { errors: Vec::from([err]) }
+        AstErrorSet { errors: Vec::from([err]), range: Some(range) }
     }
 
-    pub fn merge(self, other: AstErrorSet) -> Self {
-        Self { errors: self.errors.into_iter().chain(other.errors).collect() }
+    pub fn merge(mut self, other: AstErrorSet) -> Self {
+        match self.range.cmp(&other.range) {
+            Ordering::Less => other,
+            Ordering::Greater => self,
+            Ordering::Equal => {
+                self.errors.extend(other.errors);
+                self
+            },
+        }
     }
 }
 
@@ -258,8 +267,7 @@ fn collapse_errors(errors: Vec<AstError>) -> Option<CollapsedAstError> {
 }
 
 pub fn report_ast_errors(code: &str, code_path: &Path, set: AstErrorSet) {
-    let errors = set.errors.into_iter().max_set_by_key(|e| e.range);
-    let Some(error) = collapse_errors(errors) else { return };
+    let Some(error) = collapse_errors(set.errors) else { return };
 
     println!("{}", "Error!".red().bold());
 

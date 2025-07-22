@@ -1,0 +1,4 @@
+main |x: val| {
+    random(&x, 10, 20);
+    out(x);
+}
