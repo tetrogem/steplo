@@ -1,0 +1,46 @@
+main {
+    proc #ca {
+        $sp = "-1";
+        jump #74;
+    }
+}
+
+func main {
+    proc #74 {
+        $sp = ($sp + "2");
+        stack[($sp + "2")] = $sp;
+        stack[($sp + "3")] = "10";
+        stack[($sp + "4")] = "20";
+        stack[($sp + "1")] = #ba;
+        jump #d7;
+    }
+
+    proc #ba {
+        stack[($sp + "2")] = stack[$sp];
+        stack[($sp + "1")] = #ba0;
+        jump #ee;
+    }
+
+    proc #ba0 {
+        exit;
+    }
+}
+
+func func.out {
+    proc #ee {
+        $sp = ($sp + "2");
+        out stack[$sp];
+        $sp = ($sp - "2");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.random {
+    proc #d7 {
+        $sp = ($sp + "5");
+        stack[$sp] = (stack[($sp - "2")] <random> stack[($sp - "1")]);
+        stack[stack[($sp - "3")]] = stack[$sp];
+        $sp = ($sp - "5");
+        jump stack[($sp + "1")];
+    }
+}

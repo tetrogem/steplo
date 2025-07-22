@@ -266,6 +266,7 @@ impl HasMemLocs for ast::Expr<ast::UMemLoc> {
             ast::Expr::And(args) => args.to_mem_locs(),
             ast::Expr::InAnswer => Default::default(),
             ast::Expr::Join(args) => args.to_mem_locs(),
+            ast::Expr::Random(args) => args.to_mem_locs(),
         }
     }
 
@@ -287,6 +288,7 @@ impl HasMemLocs for ast::Expr<ast::UMemLoc> {
             ast::Expr::And(args) => ast::Expr::And(args.to_rmem(temp_m)),
             ast::Expr::InAnswer => ast::Expr::InAnswer,
             ast::Expr::Join(args) => ast::Expr::Join(args.to_rmem(temp_m)),
+            ast::Expr::Random(args) => ast::Expr::Random(args.to_rmem(temp_m)),
         };
 
         Arc::new(expr)

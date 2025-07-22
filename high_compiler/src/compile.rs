@@ -539,6 +539,25 @@ fn compile_statement(
                 )
                 .collect()
             },
+            hast::NativeOperation::Random { dest_ident, min, max } => {
+                let compiled_ident_addr = compile_place_to_addr(stack_frame, dest_ident)?;
+                let compiled_min = compile_expr(stack_frame, min)?;
+                let compiled_max = compile_expr(stack_frame, max)?;
+
+                chain!(
+                    compiled_ident_addr.commands,
+                    compiled_min.commands,
+                    compiled_max.commands,
+                    [Arc::new(opt::Command::SetStack {
+                        addr: mem_loc_expr(compiled_ident_addr.mem_loc),
+                        val: Arc::new(ast::Expr::Random(binary_args(
+                            mem_loc_expr(compiled_min.mem_loc),
+                            mem_loc_expr(compiled_max.mem_loc)
+                        ))),
+                    })]
+                )
+                .collect()
+            },
         },
     };
 

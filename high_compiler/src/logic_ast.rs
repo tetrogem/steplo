@@ -235,6 +235,7 @@ pub enum BinaryParenExprOp {
 pub enum NativeOperation {
     Out { ident: Arc<Place> },
     In { dest_ident: Arc<Place> },
+    Random { dest_ident: Arc<Place>, min: Arc<Expr>, max: Arc<Expr> },
 }
 
 #[derive(Debug)]

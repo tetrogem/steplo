@@ -1,0 +1,365 @@
+main {
+    proc #8c {
+        $sp = "-1";
+        jump #8f;
+    }
+}
+
+func main {
+    proc #8f {
+        $sp = ($sp + "103");
+        stack[($sp + "2")] = ($sp - "2");
+        stack[($sp + "3")] = ($sp - "101");
+        stack[($sp + "4")] = "99";
+        stack[($sp + "5")] = "0";
+        stack[($sp + "1")] = #4c;
+        jump #39;
+    }
+
+    proc #4c {
+        stack[($sp + "2")] = ($sp - "2");
+        stack[($sp + "3")] = "10";
+        stack[($sp + "4")] = "-100";
+        stack[($sp + "5")] = "100";
+        stack[($sp + "1")] = #d2;
+        jump #0f;
+    }
+
+    proc #d2 {
+        stack[($sp + "2")] = "Unsorted:";
+        stack[($sp + "1")] = #44;
+        jump #36;
+    }
+
+    proc #44 {
+        stack[($sp + "2")] = ($sp - "2");
+        stack[($sp + "1")] = #8fc;
+        jump #e5;
+    }
+
+    proc #8fc {
+        stack[($sp + "2")] = "Sorted:";
+        stack[($sp + "1")] = #50;
+        jump #36;
+    }
+
+    proc #50 {
+        stack[($sp + "2")] = ($sp - "2");
+        stack[($sp + "1")] = #a3;
+        jump #ad;
+    }
+
+    proc #a3 {
+        stack[($sp + "2")] = ($sp - "2");
+        stack[($sp + "1")] = #d0;
+        jump #e5;
+    }
+
+    proc #d0 {
+        stack[($sp + "2")] = "Pushing `12.5` then sorting again:";
+        stack[($sp + "1")] = #bc;
+        jump #36;
+    }
+
+    proc #bc {
+        stack[($sp + "2")] = ($sp - "2");
+        stack[($sp + "3")] = "12.5";
+        stack[($sp + "1")] = #c1;
+        jump #d7;
+    }
+
+    proc #c1 {
+        stack[($sp + "2")] = ($sp - "2");
+        stack[($sp + "1")] = #95;
+        jump #ad;
+    }
+
+    proc #95 {
+        stack[($sp + "2")] = ($sp - "2");
+        stack[($sp + "1")] = #91;
+        jump #e5;
+    }
+
+    proc #91 {
+        exit;
+    }
+}
+
+func func.Vec_new {
+    proc #39 {
+        $sp = ($sp + "5");
+        stack[stack[($sp - "3")]] = stack[($sp - "2")];
+        stack[(stack[($sp - "3")] + "1")] = stack[($sp - "1")];
+        stack[(stack[($sp - "3")] + "2")] = stack[$sp];
+        $sp = ($sp - "5");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.Vec_entry {
+    proc #80 {
+        $sp = ($sp + "4");
+        stack[stack[($sp - "2")]] = (stack[stack[($sp - "1")]] + stack[$sp]);
+        $sp = ($sp - "4");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.Vec_cap {
+    proc #ea {
+        $sp = ($sp + "3");
+        stack[stack[($sp - "1")]] = stack[(stack[$sp] + "1")];
+        $sp = ($sp - "3");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.Vec_len_r {
+    proc #2d {
+        $sp = ($sp + "3");
+        stack[stack[($sp - "1")]] = (stack[$sp] + "2");
+        $sp = ($sp - "3");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.Vec_len {
+    proc #03 {
+        $sp = ($sp + "4");
+        stack[($sp + "2")] = $sp;
+        stack[($sp + "3")] = stack[($sp - "1")];
+        stack[($sp + "1")] = #5f;
+        jump #2d;
+    }
+
+    proc #5f {
+        stack[stack[($sp - "2")]] = stack[stack[$sp]];
+        $sp = ($sp - "4");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.Vec_push {
+    proc #d7 {
+        $sp = ($sp + "7");
+        stack[($sp + "2")] = ($sp - "3");
+        stack[($sp + "3")] = stack[($sp - "5")];
+        stack[($sp + "1")] = #4e;
+        jump #ea;
+    }
+
+    proc #4e {
+        stack[($sp + "2")] = ($sp - "2");
+        stack[($sp + "3")] = stack[($sp - "5")];
+        stack[($sp + "1")] = #13;
+        jump #03;
+    }
+
+    proc #13 {
+        if (stack[($sp - "2")] < stack[($sp - "3")]) then jump #5b else jump #a1;
+    }
+
+    proc #a1 {
+        $sp = ($sp - "7");
+        jump stack[($sp + "1")];
+    }
+
+    proc #5b {
+        stack[($sp + "2")] = ($sp - "1");
+        stack[($sp + "3")] = stack[($sp - "5")];
+        stack[($sp + "4")] = stack[($sp - "2")];
+        stack[($sp + "1")] = #d4;
+        jump #80;
+    }
+
+    proc #d4 {
+        stack[stack[($sp - "1")]] = stack[($sp - "4")];
+        stack[($sp + "2")] = $sp;
+        stack[($sp + "3")] = stack[($sp - "5")];
+        stack[($sp + "1")] = #9a;
+        jump #2d;
+    }
+
+    proc #9a {
+        stack[stack[$sp]] = (stack[($sp - "2")] + "1");
+        jump #a1;
+    }
+}
+
+func func.Vec_print {
+    proc #e5 {
+        $sp = ($sp + "6");
+        stack[($sp - "3")] = "0";
+        stack[$sp] = "Vec (";
+        stack[($sp + "2")] = ($sp - "2");
+        stack[($sp + "3")] = stack[($sp - "4")];
+        stack[($sp + "1")] = #0f3;
+        jump #03;
+    }
+
+    proc #0f3 {
+        stack[$sp] = (stack[$sp] ~ stack[($sp - "2")]);
+        stack[$sp] = (stack[$sp] ~ ") ");
+        if (stack[($sp - "3")] < stack[($sp - "2")]) then jump #4e2 else jump #e9;
+    }
+
+    proc #e9 {
+        stack[($sp + "2")] = stack[$sp];
+        stack[($sp + "1")] = #f4;
+        jump #36;
+    }
+
+    proc #f4 {
+        $sp = ($sp - "6");
+        jump stack[($sp + "1")];
+    }
+
+    proc #4e2 {
+        if (!(stack[($sp - "3")] == "0")) then jump #cc else jump #48;
+    }
+
+    proc #48 {
+        stack[($sp + "2")] = ($sp - "1");
+        stack[($sp + "3")] = stack[($sp - "4")];
+        stack[($sp + "4")] = stack[($sp - "3")];
+        stack[($sp + "1")] = #08;
+        jump #80;
+    }
+
+    proc #08 {
+        stack[$sp] = (stack[$sp] ~ stack[stack[($sp - "1")]]);
+        stack[($sp - "3")] = (stack[($sp - "3")] + "1");
+        if (stack[($sp - "3")] < stack[($sp - "2")]) then jump #4e2 else jump #e9;
+    }
+
+    proc #cc {
+        stack[$sp] = (stack[$sp] ~ ", ");
+        jump #48;
+    }
+}
+
+func func.Vec_sort {
+    proc #ad {
+        $sp = ($sp + "9");
+        stack[($sp - "6")] = "0";
+        stack[($sp + "2")] = ($sp - "4");
+        stack[($sp + "3")] = stack[($sp - "7")];
+        stack[($sp + "1")] = #5e;
+        jump #03;
+    }
+
+    proc #5e {
+        if (stack[($sp - "6")] < stack[($sp - "4")]) then jump #a2 else jump #12;
+    }
+
+    proc #12 {
+        $sp = ($sp - "9");
+        jump stack[($sp + "1")];
+    }
+
+    proc #a2 {
+        stack[($sp - "5")] = stack[($sp - "6")];
+        if (stack[($sp - "5")] < stack[($sp - "4")]) then jump #79 else jump #67;
+    }
+
+    proc #67 {
+        stack[($sp - "6")] = (stack[($sp - "6")] + "1");
+        if (stack[($sp - "6")] < stack[($sp - "4")]) then jump #a2 else jump #12;
+    }
+
+    proc #79 {
+        stack[($sp + "2")] = ($sp - "3");
+        stack[($sp + "3")] = stack[($sp - "7")];
+        stack[($sp + "4")] = stack[($sp - "6")];
+        stack[($sp + "1")] = #3d;
+        jump #80;
+    }
+
+    proc #3d {
+        stack[($sp + "2")] = ($sp - "2");
+        stack[($sp + "3")] = stack[($sp - "7")];
+        stack[($sp + "4")] = stack[($sp - "5")];
+        stack[($sp + "1")] = #ba;
+        jump #80;
+    }
+
+    proc #ba {
+        stack[($sp - "1")] = stack[stack[($sp - "3")]];
+        stack[$sp] = stack[stack[($sp - "2")]];
+        if (stack[$sp] < stack[($sp - "1")]) then jump #01 else jump #6c;
+    }
+
+    proc #6c {
+        stack[($sp - "5")] = (stack[($sp - "5")] + "1");
+        if (stack[($sp - "5")] < stack[($sp - "4")]) then jump #79 else jump #67;
+    }
+
+    proc #01 {
+        stack[($sp + "2")] = stack[($sp - "3")];
+        stack[($sp + "3")] = stack[($sp - "2")];
+        stack[($sp + "1")] = #6c;
+        jump #03b;
+    }
+}
+
+func func.swap {
+    proc #03b {
+        $sp = ($sp + "4");
+        stack[$sp] = stack[stack[($sp - "2")]];
+        stack[stack[($sp - "2")]] = stack[stack[($sp - "1")]];
+        stack[stack[($sp - "1")]] = stack[$sp];
+        $sp = ($sp - "4");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.Vec_random_populate {
+    proc #0f {
+        $sp = ($sp + "7");
+        if (stack[($sp - "1")] < stack[($sp - "4")]) then jump #74 else jump #d1;
+    }
+
+    proc #d1 {
+        $sp = ($sp - "7");
+        jump stack[($sp + "1")];
+    }
+
+    proc #74 {
+        stack[($sp + "2")] = $sp;
+        stack[($sp + "3")] = stack[($sp - "3")];
+        stack[($sp + "4")] = stack[($sp - "2")];
+        stack[($sp + "1")] = #45;
+        jump #0a;
+    }
+
+    proc #45 {
+        stack[($sp + "2")] = stack[($sp - "5")];
+        stack[($sp + "3")] = stack[$sp];
+        stack[($sp + "1")] = #10;
+        jump #d7;
+    }
+
+    proc #10 {
+        stack[($sp - "1")] = (stack[($sp - "1")] + "1");
+        if (stack[($sp - "1")] < stack[($sp - "4")]) then jump #74 else jump #d1;
+    }
+}
+
+func func.out {
+    proc #36 {
+        $sp = ($sp + "2");
+        out stack[$sp];
+        $sp = ($sp - "2");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.random {
+    proc #0a {
+        $sp = ($sp + "5");
+        stack[$sp] = (stack[($sp - "2")] <random> stack[($sp - "1")]);
+        stack[stack[($sp - "3")]] = stack[$sp];
+        $sp = ($sp - "5");
+        jump stack[($sp + "1")];
+    }
+}

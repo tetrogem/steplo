@@ -51,6 +51,7 @@ pub enum Expr<MemLoc> {
     And(Arc<BinaryArgs<MemLoc>>),
     InAnswer,
     Join(Arc<BinaryArgs<MemLoc>>),
+    Random(Arc<BinaryArgs<MemLoc>>),
 }
 
 #[derive(Debug)]

@@ -359,6 +359,12 @@ fn compile_expr(compile_m: &mut CompileManager, expr: &Expr<RMemLoc>) -> Arc<ez:
             string_a: compile_expr(compile_m, &args.left),
             string_b: compile_expr(compile_m, &args.right),
         }))),
+        Expr::Random(args) => {
+            ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::Random {
+                from: compile_expr(compile_m, &args.left),
+                to: compile_expr(compile_m, &args.right),
+            })))
+        },
     };
 
     Arc::new(compiled_expr)

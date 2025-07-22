@@ -110,6 +110,7 @@ fn export_expr(name_m: &mut NameManager, expr: &Expr<UMemLoc>) -> String {
         Expr::And(args) => export_binary_op_expr(name_m, args, "&&"),
         Expr::InAnswer => "$answer".into(),
         Expr::Join(args) => export_binary_op_expr(name_m, args, "~"),
+        Expr::Random(args) => export_binary_op_expr(name_m, args, "<random>"),
     }
 }
 

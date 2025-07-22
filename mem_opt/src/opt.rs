@@ -245,6 +245,7 @@ fn optimize_expr(mut expr: Arc<Expr<UMemLoc>>) -> OptimizationReport<Arc<Expr<UM
             Expr::And(args) => Expr::And(tracker.record(optimize_binary_args(args.clone()))),
             Expr::InAnswer => Expr::InAnswer,
             Expr::Join(args) => Expr::Join(tracker.record(optimize_binary_args(args.clone()))),
+            Expr::Random(args) => Expr::Random(tracker.record(optimize_binary_args(args.clone()))),
         });
 
         expr = tracker.record(optimizer.optimize(expr));
@@ -586,6 +587,11 @@ fn optimization_inline_pure_redirect_labels(
                 rlabel_to_tlabel,
                 args,
             )),
+            Expr::Random(args) => Expr::Random(binary_args_replace_pure_redirect_labels(
+                optimized,
+                rlabel_to_tlabel,
+                args,
+            )),
         };
 
         Arc::new(expr)
@@ -747,6 +753,7 @@ fn optimization_remove_unused_sub_procs(
             Expr::And(args) => binary_args_find_used_labels(args),
             Expr::InAnswer => Default::default(),
             Expr::Join(args) => binary_args_find_used_labels(args),
+            Expr::Random(args) => binary_args_find_used_labels(args),
         }
     }
 
@@ -981,6 +988,9 @@ fn expr_replace_trivial_temps(
         Expr::Join(args) => {
             Arc::new(Expr::Join(binary_args_replace_trivial_temps(args, trivial_temp_to_expr)))
         },
+        Expr::Random(args) => {
+            Arc::new(Expr::Random(binary_args_replace_trivial_temps(args, trivial_temp_to_expr)))
+        },
     }
 }
 
@@ -1050,6 +1060,7 @@ fn expr_get_used_temps(expr: &Expr<UMemLoc>) -> BTreeSet<Arc<TempVar>> {
         Expr::And(args) => binary_args_get_used_temps(args),
         Expr::InAnswer => Default::default(),
         Expr::Join(args) => binary_args_get_used_temps(args),
+        Expr::Random(args) => binary_args_get_used_temps(args),
     }
 }
 
