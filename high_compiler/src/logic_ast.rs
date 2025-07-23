@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{ops::Not, sync::Arc};
 
 #[derive(Debug)]
 pub enum TopItem {
@@ -63,7 +63,18 @@ impl Type {
     }
 
     pub fn can_cast_to(&self, other: &Self) -> bool {
-        other.is_assignable_to(self)
+        // can always cast to current type
+        if self == other {
+            return true;
+        }
+
+        // cannot cast safely to refs, as they can write to memory with any original type
+        // breaking the original invariant of that memory location
+        if matches!(other, Self::Ref(_)) {
+            return false;
+        }
+
+        other.is_assignable_to(self) || self.is_assignable_to(other)
     }
 
     pub fn can_transmute_to(&self, other: &Self) -> bool {

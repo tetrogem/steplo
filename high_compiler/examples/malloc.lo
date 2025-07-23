@@ -1,0 +1,5 @@
+main |heap: [any; 100]| {
+
+}
+
+func malloc(ret_r: heap: &[any; 100])

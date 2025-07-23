@@ -20,7 +20,7 @@ func Vec_new(ret_r: &[any; 3], arr_r: &[num; 99], cap: uint, len: uint) || {
 }
 
 func Vec_entry(ret_r: &&num, self_r: &[any; 3], i: uint) || {
-    *ret_r = &((*<&[num; 99]>(*self_r)[0])[i]);
+    *ret_r = &((*<<&[num; 99]>>(*self_r)[0])[i]);
 }
 
 func Vec_cap(ret_r: &uint, self_r: &[any; 3]) || {
