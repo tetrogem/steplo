@@ -1,4 +1,8 @@
-main |x: val| {
-    random(&x, 10, 20);
-    out(x);
+main |num: num, int: int, uint: uint| {
+    random_num(&num, -10, 20);
+    random_int(&int, -10, 20);
+    random_uint(&uint, 10, 20);
+    out(num);
+    out(int);
+    out(uint);
 }

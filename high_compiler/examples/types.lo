@@ -1,6 +1,23 @@
-main |a: val, b: &val, c: &&val| {
+main |a: val, b: &val, c: &&val, val: val, num: num, int: int, uint: uint, bool: bool| {
     a = "Hello!";
     b = &a;
     c = &b;
-    in(c);
+    in(b);
+
+    val = "Hello world!";
+    val = 0;
+    num = 10.5;
+    num = -4.7;
+    num = 0;
+    int = -32;
+    int = 0;
+    uint = 88;
+    uint = 0;
+    bool = true;
+    bool = false;
+
+    uint = (uint + uint);
+    int = (uint + uint);
+    // uint = (int + int);
+    int = (uint + int);
 }

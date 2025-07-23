@@ -1,4 +1,4 @@
-main |a: val, b: val, c: val, sum: val| {
+main |a: num, b: num, c: num, sum: num| {
     a = 10;
     b = 15;
     c = 50;

@@ -4,12 +4,13 @@ use crate::{
     ast_error::{AstErrorKind, AstErrorSet},
     grammar_ast::{
         AddOp, AndOp, ArrayType, Assign, AssignExpr, BaseType, BinaryParenExpr, BinaryParenExprOp,
-        Body, BodyItem, CastExpr, CommaList, CommaListLink, Comment, Deref, DivOp, ElseBodyItem,
-        ElseIfItem, ElseItem, Empty, EqOp, Expr, Func, FunctionCall, GtOp, GteOp, Ident,
-        IdentDeclaration, IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, Maybe, ModOp,
-        MulOp, Name, NeqOp, NotOp, Offset, OrOp, ParenExpr, ParensNest, ParensWrapped, Place,
-        PlaceHead, Proc, Program, RefExpr, RefType, SemiList, SemiListLink, Slice, Span, Statement,
-        SubOp, TopItem, TransmuteExpr, Type, UnaryParenExpr, UnaryParenExprOp, WhileItem,
+        Body, BodyItem, BoolLiteral, CastExpr, CommaList, CommaListLink, Comment, Decimal, Deref,
+        Digits, DivOp, ElseBodyItem, ElseIfItem, ElseItem, Empty, EqOp, Expr, FalseLiteral, Func,
+        FunctionCall, GtOp, GteOp, Ident, IdentDeclaration, IfItem, JoinOp, List, ListLink,
+        Literal, LtOp, LteOp, Main, Maybe, ModOp, MulOp, Name, Negative, NeqOp, NotOp, NumLiteral,
+        Offset, OrOp, ParenExpr, ParensNest, ParensWrapped, Place, PlaceHead, Proc, Program,
+        RefExpr, RefType, SemiList, SemiListLink, Slice, Span, Statement, StrLiteral, SubOp,
+        TopItem, TransmuteExpr, TrueLiteral, Type, UnaryParenExpr, UnaryParenExprOp, WhileItem,
     },
     token::{Token, TokenKind},
     token_feed::TokenFeed,
@@ -264,10 +265,100 @@ impl AstParse for ArrayType {
 
 impl AstParse for Literal {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
+            parse tokens => x {
+                Self::Str(Arc::new(x)),
+                Self::Num(Arc::new(x)),
+                Self::Bool(Arc::new(x)),
+            } else {
+                "Expected literal"
+            }
+        }
+    }
+}
+
+impl AstParse for StrLiteral {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_struct! {
             parse tokens;
-            [match str = Token::Literal(str) => str.as_str().into(); as [TokenKind::Literal]];
+            [match str = Token::String(str) => str.as_str().into(); as [TokenKind::String]];
             [return Self { str }];
+        }
+    }
+}
+
+impl AstParse for NumLiteral {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct negative];
+            [struct int];
+            [struct dec];
+            [return Self { negative: Arc::new(negative), int: Arc::new(int), dec: Arc::new(dec) }];
+        }
+    }
+}
+
+impl AstParse for Decimal {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Period => (); as [TokenKind::Period]];
+            [struct digits];
+            [return Self { digits: Arc::new(digits) }];
+        }
+    }
+}
+
+impl AstParse for Digits {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match digits = Token::Digits(str) => str.as_str().into(); as [TokenKind::Digits]];
+            [return Self { digits }];
+        }
+    }
+}
+
+impl AstParse for Negative {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Dash => (); as [TokenKind::Dash]];
+            [return Self];
+        }
+    }
+}
+
+impl AstParse for BoolLiteral {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
+            parse tokens => x {
+                Self::True(Arc::new(x)),
+                Self::False(Arc::new(x))
+            } else {
+                "Expected bool"
+            }
+        }
+    }
+}
+
+impl AstParse for TrueLiteral {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::True => (); as [TokenKind::True]];
+            [return Self];
+        }
+    }
+}
+
+impl AstParse for FalseLiteral {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::False => (); as [TokenKind::False]];
+            [return Self];
         }
     }
 }

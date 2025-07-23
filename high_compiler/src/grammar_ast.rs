@@ -40,7 +40,7 @@ pub struct RefType {
 #[derive(Debug)]
 pub struct ArrayType {
     pub ty: Arc<Type>,
-    pub len: Arc<Literal>,
+    pub len: Arc<NumLiteral>,
 }
 
 #[derive(Debug)]
@@ -72,7 +72,7 @@ pub struct ParensWrapped<T> {
 }
 
 #[derive(Debug)]
-pub enum Maybe<T> {
+pub enum Maybe<T: ?Sized> {
     Item(Arc<T>),
     Empty(Arc<Empty>),
 }
@@ -198,8 +198,47 @@ pub struct RefExpr {
 }
 
 #[derive(Debug)]
-pub struct Literal {
+pub struct StrLiteral {
     pub str: Arc<str>,
+}
+
+#[derive(Debug)]
+pub struct NumLiteral {
+    pub negative: Arc<Maybe<Negative>>,
+    pub int: Arc<Digits>,
+    pub dec: Arc<Maybe<Decimal>>,
+}
+
+#[derive(Debug)]
+pub struct Decimal {
+    pub digits: Arc<Digits>,
+}
+
+#[derive(Debug)]
+pub struct Digits {
+    pub digits: Arc<str>,
+}
+
+#[derive(Debug)]
+pub struct Negative;
+
+#[derive(Debug)]
+pub enum BoolLiteral {
+    True(Arc<TrueLiteral>),
+    False(Arc<FalseLiteral>),
+}
+
+#[derive(Debug)]
+pub struct TrueLiteral;
+
+#[derive(Debug)]
+pub struct FalseLiteral;
+
+#[derive(Debug)]
+pub enum Literal {
+    Str(Arc<StrLiteral>),
+    Num(Arc<NumLiteral>),
+    Bool(Arc<BoolLiteral>),
 }
 
 #[derive(Debug)]
@@ -210,8 +249,8 @@ pub struct Span {
 #[derive(Debug)]
 pub struct Slice {
     pub place: Arc<Place>,
-    pub start_in: Arc<Maybe<Literal>>,
-    pub end_ex: Arc<Literal>,
+    pub start_in: Arc<Maybe<NumLiteral>>,
+    pub end_ex: Arc<NumLiteral>,
 }
 
 #[derive(Debug)]

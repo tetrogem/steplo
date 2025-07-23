@@ -117,9 +117,32 @@ trait ScratchLiteral {
     fn to_expr(&self) -> Arc<ast::Expr<opt::UMemLoc>>;
 }
 
-impl ScratchLiteral for f64 {
+impl ScratchLiteral for bool {
     fn to_expr(&self) -> Arc<ast::Expr<ast::UMemLoc>> {
-        Arc::new(ast::Expr::Value(Arc::new(ast::Value::Literal(self.to_string().into()))))
+        Arc::new(ast::Expr::Value(Arc::new(ast::Value::Literal(
+            match self {
+                true => "true",
+                false => "false",
+            }
+            .into(),
+        ))))
+    }
+}
+
+struct Int(f64);
+struct Float(f64);
+
+impl ScratchLiteral for Float {
+    fn to_expr(&self) -> Arc<ast::Expr<ast::UMemLoc>> {
+        // use debug format so that integer floats (e.g. 1, 0) output with decimals: (1.0, 0.0)
+        Arc::new(ast::Expr::Value(Arc::new(ast::Value::Literal(format!("{:?}", self.0).into()))))
+    }
+}
+
+impl ScratchLiteral for Int {
+    fn to_expr(&self) -> Arc<ast::Expr<ast::UMemLoc>> {
+        // use disp;ay format so that integer floats (e.g. 1, 0) output without decimals: (1, 0)
+        Arc::new(ast::Expr::Value(Arc::new(ast::Value::Literal(format!("{}", self.0).into()))))
     }
 }
 
@@ -131,7 +154,12 @@ impl ScratchLiteral for &str {
 
 impl ScratchLiteral for hast::Literal {
     fn to_expr(&self) -> Arc<ast::Expr<ast::UMemLoc>> {
-        self.str.as_ref().to_expr()
+        match self {
+            Self::Val(str) => str.as_ref().to_expr(),
+            Self::Int(num) | Self::Uint(num) => Int(*num).to_expr(),
+            Self::Num(num) => Float(*num).to_expr(),
+            Self::Bool(bool) => bool.to_expr(),
+        }
     }
 }
 
@@ -183,7 +211,10 @@ fn create_runner_proc(user_main_sp_uuid: Uuid) -> Arc<opt::Proc<opt::UMemLoc>> {
             commands: Arc::new(Vec::from([
                 // initialize stack pointer to point to -1
                 // (main func stack frame doesn't need return address)
-                Arc::new(opt::Command::SetMemLoc { mem_loc: stack_pointer(), val: literal(-1.0) }),
+                Arc::new(opt::Command::SetMemLoc {
+                    mem_loc: stack_pointer(),
+                    val: literal(Int(-1.)),
+                }),
                 // jump to user main
                 Arc::new(opt::Command::SetMemLoc {
                     mem_loc: jump_loc.clone(),
@@ -236,7 +267,7 @@ fn compile_sub_proc(
         Vec::from([
             Arc::new(opt::Command::SetMemLoc {
                 mem_loc: stack_frame_size_loc.clone(),
-                val: literal(stack_frame.size() as f64),
+                val: literal(Int(stack_frame.size() as f64)),
             }),
             Arc::new(opt::Command::SetMemLoc {
                 mem_loc: stack_pointer(),
@@ -296,7 +327,7 @@ fn compile_call(
                     let assign_commands = [
                         Arc::new(opt::Command::SetMemLoc {
                             mem_loc: param_offset_loc.clone(),
-                            val: literal((param_stack_offset + i as u32 + 2) as f64),
+                            val: literal(Int((param_stack_offset + i as u32 + 2) as f64)),
                         }),
                         Arc::new(opt::Command::SetMemLoc {
                             mem_loc: param_addr_loc.clone(),
@@ -325,7 +356,7 @@ fn compile_call(
                 [
                     Arc::new(opt::Command::SetMemLoc {
                         mem_loc: return_offset_loc.clone(),
-                        val: literal(1.0),
+                        val: literal(Int(1.)),
                     }),
                     Arc::new(opt::Command::SetMemLoc {
                         mem_loc: return_addr_loc.clone(),
@@ -412,7 +443,7 @@ fn compile_call(
                 [
                     Arc::new(opt::Command::SetMemLoc {
                         mem_loc: stack_frame_size_loc.clone(),
-                        val: literal(stack_frame.size() as f64),
+                        val: literal(Int(stack_frame.size() as f64)),
                     }),
                     Arc::new(opt::Command::SetMemLoc {
                         mem_loc: stack_pointer(),
@@ -434,7 +465,7 @@ fn compile_call(
                     [
                         Arc::new(opt::Command::SetMemLoc {
                             mem_loc: label_offset_loc.clone(),
-                            val: literal(1.0),
+                            val: literal(Int(1.)),
                         }),
                         Arc::new(opt::Command::SetMemLoc {
                             mem_loc: label_addr_loc.clone(),
@@ -478,7 +509,7 @@ fn compile_statement(
                 let compiled_ident_addr = compile_place_to_addr(stack_frame, &assign.place)?;
                 let compiled_offset = compile_expr(
                     stack_frame,
-                    &hast::Expr::Literal(Arc::new(hast::Literal { str: i.to_string().into() })),
+                    &hast::Expr::Literal(Arc::new(hast::Literal::Uint(i as f64))),
                 )?;
 
                 let compile_dest_addr =
@@ -581,7 +612,7 @@ fn compile_assign_expr_elements(
                 let ident_addr = compile_place_to_addr(stack_frame, place)?;
                 let offset = compile_expr(
                     stack_frame,
-                    &hast::Expr::Literal(Arc::new(hast::Literal { str: i.to_string().into() })),
+                    &hast::Expr::Literal(Arc::new(hast::Literal::Uint(f64::from(i)))),
                 )?;
 
                 let element_addr = compile_addr_offset(ident_addr.mem_loc, offset.mem_loc)?;
@@ -850,7 +881,7 @@ fn compile_ident_name_to_start_addr(
     let commands = Vec::from([
         Arc::new(opt::Command::SetMemLoc {
             mem_loc: stack_offset_loc.clone(),
-            val: literal(var_info.offset as f64),
+            val: literal(Int(var_info.offset as f64)),
         }),
         Arc::new(opt::Command::SetMemLoc {
             mem_loc: stack_addr_loc.clone(),

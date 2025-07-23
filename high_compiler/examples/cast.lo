@@ -1,4 +1,4 @@
-main |val: val, any: any, val_ref: &val, any_ref: &any| {
+main |val: val, any: any, val_ref: &val, any_ref: &any, num: num| {
     val = 10;
     any = "hello";
     any = val;
@@ -15,4 +15,8 @@ main |val: val, any: any, val_ref: &val, any_ref: &any| {
     // any is copied here, so casting it is safe (any will still be an any)
     val_ref = <&val>any;
     any_ref = <&any>any;
+
+    num = 10;
+    val = num;
+    num = <num>val;
 }

@@ -1,55 +1,55 @@
 main {
-    proc #c1 {
+    proc #95 {
         $sp = "-1";
-        jump #b2;
+        jump #ef;
     }
 }
 
 func main {
-    proc #b2 {
+    proc #ef {
         $sp = ($sp + "5");
         stack[($sp + "2")] = ($sp - "3");
         stack[($sp + "3")] = "4";
         stack[($sp + "4")] = "4";
-        stack[($sp + "1")] = #f4;
-        jump #b3;
+        stack[($sp + "1")] = #47;
+        jump #85;
     }
 
-    proc #f4 {
+    proc #47 {
         stack[($sp + "2")] = ($sp - "1");
         stack[($sp + "3")] = "5";
         stack[($sp + "4")] = "8";
-        stack[($sp + "1")] = #0b;
-        jump #b3;
+        stack[($sp + "1")] = #5a;
+        jump #85;
     }
 
-    proc #0b {
+    proc #5a {
         stack[($sp + "2")] = ($sp - "3");
         stack[($sp + "3")] = "Rect 1";
-        stack[($sp + "1")] = #75;
-        jump #12;
+        stack[($sp + "1")] = #62;
+        jump #1e;
     }
 
-    proc #75 {
+    proc #62 {
         stack[($sp + "2")] = ($sp - "1");
         stack[($sp + "3")] = "Rect 2";
-        stack[($sp + "1")] = #8e;
-        jump #12;
+        stack[($sp + "1")] = #c7;
+        jump #1e;
     }
 
-    proc #8e {
+    proc #c7 {
         stack[($sp + "2")] = "Done!";
-        stack[($sp + "1")] = #cb;
-        jump #fa;
+        stack[($sp + "1")] = #b4;
+        jump #81;
     }
 
-    proc #cb {
+    proc #b4 {
         exit;
     }
 }
 
 func func.Rect_new {
-    proc #b3 {
+    proc #85 {
         $sp = ($sp + "4");
         stack[stack[($sp - "2")]] = stack[($sp - "1")];
         stack[(stack[($sp - "2")] + "1")] = stack[$sp];
@@ -59,7 +59,7 @@ func func.Rect_new {
 }
 
 func func.Rect_width {
-    proc #ce {
+    proc #ed {
         $sp = ($sp + "3");
         stack[stack[($sp - "1")]] = stack[stack[$sp]];
         $sp = ($sp - "3");
@@ -68,7 +68,7 @@ func func.Rect_width {
 }
 
 func func.Rect_height {
-    proc #6e {
+    proc #f2 {
         $sp = ($sp + "3");
         stack[stack[($sp - "1")]] = stack[(stack[$sp] + "1")];
         $sp = ($sp - "3");
@@ -77,22 +77,22 @@ func func.Rect_height {
 }
 
 func func.Rect_area {
-    proc #73 {
+    proc #953 {
         $sp = ($sp + "5");
         stack[($sp + "2")] = ($sp - "1");
         stack[($sp + "3")] = stack[($sp - "2")];
-        stack[($sp + "1")] = #a3;
-        jump #ce;
+        stack[($sp + "1")] = #06;
+        jump #ed;
     }
 
-    proc #a3 {
+    proc #06 {
         stack[($sp + "2")] = $sp;
         stack[($sp + "3")] = stack[($sp - "2")];
-        stack[($sp + "1")] = #cc;
-        jump #6e;
+        stack[($sp + "1")] = #af;
+        jump #f2;
     }
 
-    proc #cc {
+    proc #af {
         stack[stack[($sp - "3")]] = (stack[($sp - "1")] * stack[$sp]);
         $sp = ($sp - "5");
         jump stack[($sp + "1")];
@@ -100,22 +100,22 @@ func func.Rect_area {
 }
 
 func func.Rect_perimeter {
-    proc #ec {
+    proc #9530 {
         $sp = ($sp + "5");
         stack[($sp + "2")] = ($sp - "1");
         stack[($sp + "3")] = stack[($sp - "2")];
-        stack[($sp + "1")] = #2d;
-        jump #ce;
+        stack[($sp + "1")] = #2a;
+        jump #ed;
     }
 
-    proc #2d {
+    proc #2a {
         stack[($sp + "2")] = $sp;
         stack[($sp + "3")] = stack[($sp - "2")];
-        stack[($sp + "1")] = #78;
-        jump #6e;
+        stack[($sp + "1")] = #a2;
+        jump #f2;
     }
 
-    proc #78 {
+    proc #a2 {
         stack[($sp - "1")] = (stack[($sp - "1")] * "2");
         stack[$sp] = (stack[$sp] * "2");
         stack[stack[($sp - "3")]] = (stack[($sp - "1")] + stack[$sp]);
@@ -125,61 +125,61 @@ func func.Rect_perimeter {
 }
 
 func func.Rect_print_info {
-    proc #12 {
+    proc #1e {
         $sp = ($sp + "5");
         stack[($sp + "2")] = ($sp - "1");
         stack[($sp + "3")] = stack[($sp - "3")];
+        stack[($sp + "1")] = #97;
+        jump #ed;
+    }
+
+    proc #97 {
+        stack[($sp + "2")] = $sp;
+        stack[($sp + "3")] = stack[($sp - "3")];
         stack[($sp + "1")] = #20;
-        jump #ce;
+        jump #f2;
     }
 
     proc #20 {
-        stack[($sp + "2")] = $sp;
-        stack[($sp + "3")] = stack[($sp - "3")];
-        stack[($sp + "1")] = #3e;
-        jump #6e;
-    }
-
-    proc #3e {
         stack[($sp + "2")] = ((((stack[($sp - "2")] ~ " dimensions: ") ~ stack[($sp - "1")]) ~ " x ") ~ stack[$sp]);
-        stack[($sp + "1")] = #63;
-        jump #fa;
+        stack[($sp + "1")] = #bf;
+        jump #81;
     }
 
-    proc #63 {
+    proc #bf {
         stack[($sp + "2")] = ($sp - "1");
         stack[($sp + "3")] = stack[($sp - "3")];
-        stack[($sp + "1")] = #b5;
-        jump #ec;
+        stack[($sp + "1")] = #0c;
+        jump #9530;
     }
 
-    proc #b5 {
+    proc #0c {
         stack[($sp + "2")] = ((stack[($sp - "2")] ~ " perimeter: ") ~ stack[($sp - "1")]);
-        stack[($sp + "1")] = #48;
-        jump #fa;
+        stack[($sp + "1")] = #66;
+        jump #81;
     }
 
-    proc #48 {
+    proc #66 {
         stack[($sp + "2")] = ($sp - "1");
         stack[($sp + "3")] = stack[($sp - "3")];
-        stack[($sp + "1")] = #8ec;
-        jump #73;
+        stack[($sp + "1")] = #dd;
+        jump #953;
     }
 
-    proc #8ec {
+    proc #dd {
         stack[($sp + "2")] = ((stack[($sp - "2")] ~ " area: ") ~ stack[($sp - "1")]);
-        stack[($sp + "1")] = #ba;
-        jump #fa;
+        stack[($sp + "1")] = #98;
+        jump #81;
     }
 
-    proc #ba {
+    proc #98 {
         $sp = ($sp - "5");
         jump stack[($sp + "1")];
     }
 }
 
 func func.out {
-    proc #fa {
+    proc #81 {
         $sp = ($sp + "2");
         out stack[$sp];
         $sp = ($sp - "2");

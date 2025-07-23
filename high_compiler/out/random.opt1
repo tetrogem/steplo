@@ -1,33 +1,61 @@
 main {
-    proc #ca {
+    proc #4b {
         $sp = "-1";
-        jump #74;
+        jump #ad;
     }
 }
 
 func main {
-    proc #74 {
-        $sp = ($sp + "2");
+    proc #ad {
+        $sp = ($sp + "4");
+        stack[($sp + "2")] = ($sp - "2");
+        stack[($sp + "3")] = "-10";
+        stack[($sp + "4")] = "20";
+        stack[($sp + "1")] = #eb;
+        jump #54;
+    }
+
+    proc #eb {
+        stack[($sp + "2")] = ($sp - "1");
+        stack[($sp + "3")] = "-10";
+        stack[($sp + "4")] = "20";
+        stack[($sp + "1")] = #8c;
+        jump #68;
+    }
+
+    proc #8c {
         stack[($sp + "2")] = $sp;
         stack[($sp + "3")] = "10";
         stack[($sp + "4")] = "20";
-        stack[($sp + "1")] = #ba;
-        jump #d7;
+        stack[($sp + "1")] = #c5;
+        jump #03;
     }
 
-    proc #ba {
+    proc #c5 {
+        stack[($sp + "2")] = stack[($sp - "2")];
+        stack[($sp + "1")] = #a2;
+        jump #16;
+    }
+
+    proc #a2 {
+        stack[($sp + "2")] = stack[($sp - "1")];
+        stack[($sp + "1")] = #38;
+        jump #16;
+    }
+
+    proc #38 {
         stack[($sp + "2")] = stack[$sp];
-        stack[($sp + "1")] = #ba0;
-        jump #ee;
+        stack[($sp + "1")] = #8f;
+        jump #16;
     }
 
-    proc #ba0 {
+    proc #8f {
         exit;
     }
 }
 
 func func.out {
-    proc #ee {
+    proc #16 {
         $sp = ($sp + "2");
         out stack[$sp];
         $sp = ($sp - "2");
@@ -35,8 +63,28 @@ func func.out {
     }
 }
 
-func func.random {
-    proc #d7 {
+func func.random_num {
+    proc #54 {
+        $sp = ($sp + "5");
+        stack[$sp] = ("0.0" <random> "1.0");
+        stack[stack[($sp - "3")]] = (stack[($sp - "2")] + (stack[$sp] * (stack[($sp - "1")] - stack[($sp - "2")])));
+        $sp = ($sp - "5");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.random_int {
+    proc #68 {
+        $sp = ($sp + "5");
+        stack[$sp] = (stack[($sp - "2")] <random> stack[($sp - "1")]);
+        stack[stack[($sp - "3")]] = stack[$sp];
+        $sp = ($sp - "5");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.random_uint {
+    proc #03 {
         $sp = ($sp + "5");
         stack[$sp] = (stack[($sp - "2")] <random> stack[($sp - "1")]);
         stack[stack[($sp - "3")]] = stack[$sp];

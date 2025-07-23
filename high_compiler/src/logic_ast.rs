@@ -46,10 +46,18 @@ impl Type {
             (Self::Array { ty: a, len: a_len }, Self::Array { ty: b, len: b_len }) => {
                 a_len == b_len && a.is_assignable_to(b) && b.is_assignable_to(a)
             },
-            (Self::Base(a), Self::Base(b)) => matches!(
-                (a.as_ref(), b.as_ref()),
-                (BaseType::Val, BaseType::Val | BaseType::Any) | (BaseType::Any, BaseType::Any)
-            ),
+            (Self::Base(a), Self::Base(b)) => {
+                use BaseType::*;
+                matches!(
+                    (a.as_ref(), b.as_ref()),
+                    (Any, Any)
+                        | (Val, Val | Any)
+                        | (Num, Num | Val | Any)
+                        | (Int, Int | Num | Val | Any)
+                        | (Uint, Uint | Int | Num | Val | Any)
+                        | (Bool, Bool | Val | Any)
+                )
+            },
             _ => false,
         }
     }
@@ -65,8 +73,12 @@ impl Type {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum BaseType {
-    Val,
     Any,
+    Val,
+    Num,
+    Int,
+    Uint,
+    Bool,
 }
 
 #[derive(Debug)]
@@ -175,8 +187,12 @@ pub enum Expr {
 }
 
 #[derive(Debug)]
-pub struct Literal {
-    pub str: Arc<str>,
+pub enum Literal {
+    Val(Arc<str>),
+    Num(f64),
+    Int(f64),
+    Uint(f64),
+    Bool(bool),
 }
 
 #[derive(Debug)]

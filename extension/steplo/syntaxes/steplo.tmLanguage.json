@@ -9,6 +9,9 @@
       "include": "#types"
     },
     {
+      "include": "#casts"
+    },
+    {
       "include": "#keywords"
     },
     {
@@ -74,7 +77,7 @@
     "types": {
       "patterns": [
         {
-          "match": "(:\\W*)([a-zA-Z_][a-zA-Z0-9_]*)(\\W*)([,=]?)",
+          "match": "(:\\W*)([a-zA-Z_][a-zA-Z0-9_]*)(\\W*)",
           "captures": {
             "1": {
               "name": "keyword.operator.steplo"
@@ -84,9 +87,21 @@
             },
             "3": {
               "name": "keyword.operator.steplo"
+            }
+          }
+        }
+      ]
+    },
+    "casts": {
+      "patterns": [
+        {
+          "match": "(<\\W*)([a-zA-Z_][a-zA-Z0-9_]*)\\b(?=.*>)",
+          "captures": {
+            "1": {
+              "name": "keyword.operator.steplo"
             },
-            "4": {
-              "name": "punctuation.steplo"
+            "2": {
+              "name": "meta.type.steplo"
             }
           }
         }

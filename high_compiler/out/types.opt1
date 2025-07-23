@@ -1,28 +1,42 @@
 main {
-    proc #47 {
+    proc #d9 {
         $sp = "-1";
-        jump #5e;
+        jump #5b;
     }
 }
 
 func main {
-    proc #5e {
-        $sp = ($sp + "4");
-        stack[($sp - "2")] = "Hello!";
-        stack[($sp - "1")] = ($sp - "2");
-        stack[$sp] = ($sp - "1");
-        stack[($sp + "2")] = ($sp - "2");
-        stack[($sp + "1")] = #8f;
-        jump #dc;
+    proc #5b {
+        $sp = ($sp + "9");
+        stack[($sp - "7")] = "Hello!";
+        stack[($sp - "6")] = ($sp - "7");
+        stack[($sp - "5")] = ($sp - "6");
+        stack[($sp + "2")] = stack[($sp - "6")];
+        stack[($sp + "1")] = #75;
+        jump #7d;
     }
 
-    proc #8f {
+    proc #75 {
+        stack[($sp - "4")] = "Hello world!";
+        stack[($sp - "4")] = "0";
+        stack[($sp - "3")] = "10.5";
+        stack[($sp - "3")] = "-4.7";
+        stack[($sp - "3")] = "0";
+        stack[($sp - "2")] = "-32";
+        stack[($sp - "2")] = "0";
+        stack[($sp - "1")] = "88";
+        stack[($sp - "1")] = "0";
+        stack[$sp] = "true";
+        stack[$sp] = "false";
+        stack[($sp - "1")] = (stack[($sp - "1")] + stack[($sp - "1")]);
+        stack[($sp - "2")] = (stack[($sp - "1")] + stack[($sp - "1")]);
+        stack[($sp - "2")] = (stack[($sp - "1")] + stack[($sp - "2")]);
         exit;
     }
 }
 
 func func.in {
-    proc #dc {
+    proc #7d {
         $sp = ($sp + "3");
         in;
         stack[$sp] = $answer;

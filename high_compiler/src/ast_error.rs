@@ -123,7 +123,7 @@ impl CollapsedAstErrorKind {
                     TokenKind::LeftBrace => TokenString::Punctuation("{"),
                     TokenKind::LeftBracket => TokenString::Punctuation("["),
                     TokenKind::LeftParen => TokenString::Punctuation("("),
-                    TokenKind::Literal => TokenString::Generic("literal"),
+                    TokenKind::String => TokenString::Generic("string"),
                     TokenKind::Main => TokenString::Keyword("main"),
                     TokenKind::Name => TokenString::Generic("name"),
                     TokenKind::Semi => TokenString::Punctuation(";"),
@@ -138,6 +138,9 @@ impl CollapsedAstErrorKind {
                     TokenKind::Tilde => TokenString::Punctuation("~"),
                     TokenKind::RightAngle => TokenString::Punctuation(">"),
                     TokenKind::Percent => TokenString::Punctuation("%"),
+                    TokenKind::Digits => TokenString::Punctuation("number"),
+                    TokenKind::True => TokenString::Keyword("true"),
+                    TokenKind::False => TokenString::Keyword("false"),
                 }
             }
 

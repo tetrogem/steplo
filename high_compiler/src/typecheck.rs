@@ -5,12 +5,26 @@ use std::{
 };
 
 use anyhow::{anyhow, bail};
-use itertools::Itertools;
 
 use crate::logic_ast as l;
 
+static ANY_TYPE: LazyLock<Arc<l::Type>> =
+    LazyLock::new(|| Arc::new(l::Type::Base(Arc::new(l::BaseType::Any))));
+
 static VAL_TYPE: LazyLock<Arc<l::Type>> =
     LazyLock::new(|| Arc::new(l::Type::Base(Arc::new(l::BaseType::Val))));
+
+static NUM_TYPE: LazyLock<Arc<l::Type>> =
+    LazyLock::new(|| Arc::new(l::Type::Base(Arc::new(l::BaseType::Num))));
+
+static INT_TYPE: LazyLock<Arc<l::Type>> =
+    LazyLock::new(|| Arc::new(l::Type::Base(Arc::new(l::BaseType::Int))));
+
+static UINT_TYPE: LazyLock<Arc<l::Type>> =
+    LazyLock::new(|| Arc::new(l::Type::Base(Arc::new(l::BaseType::Uint))));
+
+static BOOL_TYPE: LazyLock<Arc<l::Type>> =
+    LazyLock::new(|| Arc::new(l::Type::Base(Arc::new(l::BaseType::Bool))));
 
 type IdentToType<'a> = HashMap<&'a l::Name, Arc<l::Type>>;
 type FuncToParams<'a> = HashMap<&'a l::Name, Arc<Vec<Arc<l::IdentDeclaration>>>>;
@@ -225,7 +239,13 @@ fn eval_assign_expr(
 
 fn eval_expr(item: &l::Expr, ident_to_type: &IdentToType) -> anyhow::Result<Arc<l::Type>> {
     match item {
-        l::Expr::Literal(_) => Ok(VAL_TYPE.clone()),
+        l::Expr::Literal(x) => Ok(match x.as_ref() {
+            l::Literal::Val(_) => VAL_TYPE.clone(),
+            l::Literal::Num(_) => NUM_TYPE.clone(),
+            l::Literal::Int(_) => INT_TYPE.clone(),
+            l::Literal::Uint(_) => UINT_TYPE.clone(),
+            l::Literal::Bool(_) => BOOL_TYPE.clone(),
+        }),
         l::Expr::Place(x) => eval_place(x, ident_to_type),
         l::Expr::Ref(place) => {
             let place_type = eval_place(place, ident_to_type)?;
@@ -268,11 +288,11 @@ fn eval_unary_expr(
     let operand_type = eval_expr(&item.operand, ident_to_type)?;
     match item.op {
         l::UnaryParenExprOp::Not => {
-            if operand_type.is_assignable_to(&VAL_TYPE).not() {
-                bail!("Not operation expects operand to be of type `val`");
+            if operand_type.is_assignable_to(&BOOL_TYPE).not() {
+                bail!("Not operation expects operand to be of type `bool`");
             }
 
-            Ok(VAL_TYPE.clone())
+            Ok(BOOL_TYPE.clone())
         },
     }
 }
@@ -284,34 +304,72 @@ fn eval_binary_expr(
     let left_type = eval_expr(&item.left, ident_to_type)?;
     let right_type = eval_expr(&item.right, ident_to_type)?;
 
-    macro_rules! expect_vals {
-        () => {{
-            if left_type.is_assignable_to(&VAL_TYPE).not() {
-                bail!("Add operation expects left operand to be of type `val`");
-            }
+    macro_rules! expect_types {
+        (
+            $($left:expr, $right:expr => $out:expr;)*
+        ) => {'expect: {
+            $(
+                if left_type.is_assignable_to(&$left) && right_type.is_assignable_to(&$right) {
+                    break 'expect Ok($out.clone());
+                }
+            )*
 
-            if right_type.is_assignable_to(&VAL_TYPE).not() {
-                bail!("Add operation expects right operand to be of type `val`");
-            }
-
-            Ok(VAL_TYPE.clone())
+            break 'expect Err(anyhow!("Bad operands"));
         }};
     }
 
     match item.op {
-        l::BinaryParenExprOp::Add => expect_vals!(),
-        l::BinaryParenExprOp::Sub => expect_vals!(),
-        l::BinaryParenExprOp::Mul => expect_vals!(),
-        l::BinaryParenExprOp::Div => expect_vals!(),
-        l::BinaryParenExprOp::Mod => expect_vals!(),
-        l::BinaryParenExprOp::Eq => expect_vals!(),
-        l::BinaryParenExprOp::Neq => expect_vals!(),
-        l::BinaryParenExprOp::Gt => expect_vals!(),
-        l::BinaryParenExprOp::Lt => expect_vals!(),
-        l::BinaryParenExprOp::Gte => expect_vals!(),
-        l::BinaryParenExprOp::Lte => expect_vals!(),
-        l::BinaryParenExprOp::And => expect_vals!(),
-        l::BinaryParenExprOp::Or => expect_vals!(),
-        l::BinaryParenExprOp::Join => expect_vals!(),
+        l::BinaryParenExprOp::Add => expect_types!(
+            UINT_TYPE, UINT_TYPE => UINT_TYPE;
+            INT_TYPE, INT_TYPE => INT_TYPE;
+            NUM_TYPE, NUM_TYPE => NUM_TYPE;
+        ),
+        l::BinaryParenExprOp::Sub => expect_types!(
+            UINT_TYPE, UINT_TYPE => INT_TYPE;
+            INT_TYPE, INT_TYPE => INT_TYPE;
+            NUM_TYPE, NUM_TYPE => NUM_TYPE;
+        ),
+        l::BinaryParenExprOp::Mul => expect_types!(
+            UINT_TYPE, UINT_TYPE => UINT_TYPE;
+            INT_TYPE, INT_TYPE => INT_TYPE;
+            NUM_TYPE, NUM_TYPE => NUM_TYPE;
+        ),
+        l::BinaryParenExprOp::Div => expect_types!(
+            UINT_TYPE, UINT_TYPE => NUM_TYPE;
+            INT_TYPE, INT_TYPE => NUM_TYPE;
+            NUM_TYPE, NUM_TYPE => NUM_TYPE;
+        ),
+        l::BinaryParenExprOp::Mod => expect_types!(
+            UINT_TYPE, UINT_TYPE => NUM_TYPE;
+            INT_TYPE, INT_TYPE => NUM_TYPE;
+            NUM_TYPE, NUM_TYPE => NUM_TYPE;
+        ),
+        l::BinaryParenExprOp::Eq => expect_types!(
+            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
+        ),
+        l::BinaryParenExprOp::Neq => expect_types!(
+            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
+        ),
+        l::BinaryParenExprOp::Gt => expect_types!(
+            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
+        ),
+        l::BinaryParenExprOp::Lt => expect_types!(
+            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
+        ),
+        l::BinaryParenExprOp::Gte => expect_types!(
+            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
+        ),
+        l::BinaryParenExprOp::Lte => expect_types!(
+            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
+        ),
+        l::BinaryParenExprOp::And => expect_types!(
+            BOOL_TYPE, BOOL_TYPE => BOOL_TYPE;
+        ),
+        l::BinaryParenExprOp::Or => expect_types!(
+            BOOL_TYPE, BOOL_TYPE => BOOL_TYPE;
+        ),
+        l::BinaryParenExprOp::Join => expect_types!(
+            VAL_TYPE, VAL_TYPE => VAL_TYPE;
+        ),
     }
 }

@@ -1,4 +1,6 @@
 use std::collections::VecDeque;
+use std::ops::Not;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::bail;
@@ -134,10 +136,9 @@ impl TryFrom<&g::Type> for l::Type {
         Ok(match value {
             g::Type::Base(base) => Self::Base(try_convert(base)?),
             g::Type::Array(array) => {
-                let len = &array.len.str;
-                let len = len.parse().context(format!(
+                let len = parse_num_literal(&array.len).context(format!(
                     "Array type length should be a positive integer; Found: {}",
-                    len
+                    display_num_literal(&array.len)
                 ))?;
 
                 Self::Array { ty: try_convert(&array.ty)?, len }
@@ -152,8 +153,12 @@ impl TryFrom<&g::BaseType> for l::BaseType {
 
     fn try_from(value: &g::BaseType) -> Result<Self, Self::Error> {
         Ok(match value.name.str.as_ref() {
-            "val" => Self::Val,
             "any" => Self::Any,
+            "val" => Self::Val,
+            "num" => Self::Num,
+            "int" => Self::Int,
+            "uint" => Self::Uint,
+            "bool" => Self::Bool,
             other => bail!("Found invalid type: {}", other),
         })
     }
@@ -265,7 +270,7 @@ impl TryFrom<&g::Expr> for l::Expr {
 
     fn try_from(value: &g::Expr) -> Result<Self, Self::Error> {
         Ok(match value {
-            g::Expr::Literal(x) => Self::Literal(convert(x)),
+            g::Expr::Literal(x) => Self::Literal(try_convert(x)?),
             g::Expr::Place(x) => Self::Place(try_convert(x)?),
             g::Expr::Ref(x) => Self::Ref(try_convert(unnest(&x.place))?),
             g::Expr::Paren(x) => Self::Paren(try_convert(x)?),
@@ -309,20 +314,15 @@ impl TryFrom<&g::AssignExpr> for l::AssignExpr {
                     .collect::<Result<_, _>>()?,
             )),
             g::AssignExpr::Slice(slice) => {
-                let start_in = convert_maybe(slice.start_in.as_ref()).map(convert::<_, l::Literal>);
+                let start_in = convert_maybe(slice.start_in.as_ref());
 
                 let start_in = match start_in {
                     None => 0,
-                    Some(x) => x
-                        .str
-                        .parse()
+                    Some(x) => parse_num_literal(x)
                         .context("Inclusive start of slice range should be a positive integer")?,
                 };
 
-                let end_ex = slice
-                    .end_ex
-                    .str
-                    .parse()
+                let end_ex = parse_num_literal(&slice.end_ex)
                     .context("Exclusive end of slice range should be a positive integer")?;
 
                 Self::Slice { place: try_convert(&slice.place)?, start_in, end_ex }
@@ -345,10 +345,54 @@ impl TryFrom<&g::Place> for l::Place {
     }
 }
 
-impl From<&g::Literal> for l::Literal {
-    fn from(value: &g::Literal) -> Self {
-        Self { str: value.str.clone() }
+impl TryFrom<&g::Literal> for l::Literal {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &g::Literal) -> Result<Self, Self::Error> {
+        Ok(match value {
+            g::Literal::Str(x) => l::Literal::Val(x.str.clone()),
+            g::Literal::Num(x) => {
+                let num: f64 = parse_num_literal(x)?;
+                if num.is_infinite() || num.is_nan() || num.is_subnormal() || num.round() != num {
+                    Self::Num(num)
+                } else {
+                    match num.is_sign_positive() {
+                        false => Self::Int(num),
+                        true => Self::Uint(num),
+                    }
+                }
+            },
+            g::Literal::Bool(x) => match x.as_ref() {
+                g::BoolLiteral::True(_) => l::Literal::Bool(true),
+                g::BoolLiteral::False(_) => l::Literal::Bool(false),
+            },
+        })
     }
+}
+
+fn parse_num_literal<T: FromStr>(lit: &g::NumLiteral) -> anyhow::Result<T> {
+    let num = display_num_literal(lit);
+    match num.parse() {
+        Err(_) => bail!("Invalid num literal: {}", num),
+        Ok(t) => Ok(t),
+    }
+}
+
+fn display_num_literal(lit: &g::NumLiteral) -> String {
+    let mut num = String::new();
+
+    if convert_maybe(&lit.negative).is_some() {
+        num += "-";
+    }
+
+    num += &lit.int.digits;
+
+    if let Some(dec) = convert_maybe(&lit.dec) {
+        num += ".";
+        num += &dec.digits.digits;
+    }
+
+    num
 }
 
 impl TryFrom<&g::ParenExpr> for l::ParenExpr {

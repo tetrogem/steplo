@@ -1,4 +1,4 @@
-main |i: val, nums: val| {
+main |i: uint, nums: val| {
     out("Enter how many iterations to perform:");
     in(&nums);
 
