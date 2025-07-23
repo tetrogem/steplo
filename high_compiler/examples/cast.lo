@@ -41,5 +41,12 @@ main |val: val, any: any, val_ref: &val, any_ref: &any, num: num| {
     val = num;
     any = <any>num;
     any = num;
+
+    // refs can be cast to numbers (and their supertypes)
+    num = <uint>any_ref;
+    num = <int>any_ref;
+    num = <num>any_ref;
+    val = <val>any_ref;
+    val = <val>val_ref;
 }
 

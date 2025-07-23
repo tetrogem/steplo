@@ -62,9 +62,10 @@ impl Type {
         }
     }
 
+    // cast: may break invariant of type casting to
     pub fn can_cast_to(&self, other: &Self) -> bool {
-        // can always cast to current type
-        if self == other {
+        // can always cast to current type or subtype
+        if self.is_assignable_to(other) {
             return true;
         }
 
@@ -74,9 +75,18 @@ impl Type {
             return false;
         }
 
-        other.is_assignable_to(self) || self.is_assignable_to(other)
+        // refs can be cast to uints safely (and by proxy, every supertype of a uint)
+        if matches!(self, Self::Ref(_))
+            && Self::Base(Arc::new(BaseType::Uint)).is_assignable_to(other)
+        {
+            return true;
+        }
+
+        // otherwise, casts can be used to perform inverses of type coercion
+        other.is_assignable_to(self)
     }
 
+    // transmute: may break invariant of type casting to AND the value casting from
     pub fn can_transmute_to(&self, other: &Self) -> bool {
         self.size() == other.size()
     }
