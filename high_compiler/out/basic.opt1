@@ -1,0 +1,17 @@
+main {
+    proc #50 {
+        $sp = "-1";
+        jump #f1;
+    }
+}
+
+func main {
+    proc #f1 {
+        $sp = ($sp + "5");
+        stack[($sp - "1")] = "This";
+        stack[($sp - "3")] = "Hello";
+        stack[$sp] = "works!";
+        stack[($sp - "2")] = "world!";
+        exit;
+    }
+}

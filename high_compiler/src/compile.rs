@@ -571,15 +571,14 @@ fn compile_assign_expr_elements(
     let compileds = match expr {
         hast::AssignExpr::Expr(expr) => Vec::from([compile_expr(stack_frame, expr)?]),
         hast::AssignExpr::Span(array) => array
-            .elements
             .iter()
             .map(|expr| compile_expr(stack_frame, expr))
             .collect::<anyhow::Result<Vec<_>>>()?
             .into_iter()
             .collect(),
-        hast::AssignExpr::Slice(slice) => {
-            let elements = (slice.start_in..slice.end_ex).map(|i| {
-                let ident_addr = compile_place_to_addr(stack_frame, &slice.place)?;
+        hast::AssignExpr::Slice { place, start_in, end_ex } => {
+            let elements = (*start_in..*end_ex).map(|i| {
+                let ident_addr = compile_place_to_addr(stack_frame, place)?;
                 let offset = compile_expr(
                     stack_frame,
                     &hast::Expr::Literal(Arc::new(hast::Literal { str: i.to_string().into() })),
@@ -625,8 +624,10 @@ fn compile_expr(stack_frame: &StackFrame, expr: &hast::Expr) -> anyhow::Result<C
 
             CompiledExpr { mem_loc: value.mem_loc, commands }
         },
-        hast::Expr::Ref(expr) => compile_place_to_addr(stack_frame, &expr.place)?,
+        hast::Expr::Ref(place) => compile_place_to_addr(stack_frame, place)?,
         hast::Expr::Paren(expr) => compile_paren_expr(stack_frame, expr)?,
+        hast::Expr::Cast { expr, .. } => compile_expr(stack_frame, expr)?,
+        hast::Expr::Transmute { expr, .. } => compile_expr(stack_frame, expr)?,
     };
 
     Ok(compiled)

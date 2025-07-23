@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+use anyhow::bail;
 use anyhow::Context;
 
 use crate::grammar_ast as g;
@@ -131,37 +132,30 @@ impl TryFrom<&g::Type> for l::Type {
 
     fn try_from(value: &g::Type) -> Result<Self, Self::Error> {
         Ok(match value {
-            g::Type::Base(base) => Self::Base(convert(base)),
-            g::Type::Array(array) => Self::Array(try_convert(array)?),
-            g::Type::Ref(ref_ty) => Self::Ref(try_convert(ref_ty)?),
+            g::Type::Base(base) => Self::Base(try_convert(base)?),
+            g::Type::Array(array) => {
+                let len = &array.len.str;
+                let len = len.parse().context(format!(
+                    "Array type length should be a positive integer; Found: {}",
+                    len
+                ))?;
+
+                Self::Array { ty: try_convert(&array.ty)?, len }
+            },
+            g::Type::Ref(ref_ty) => Self::Ref(try_convert(&ref_ty.ty)?),
         })
     }
 }
 
-impl From<&g::BaseType> for l::BaseType {
-    fn from(value: &g::BaseType) -> Self {
-        Self { name: convert(&value.name) }
-    }
-}
-
-impl TryFrom<&g::ArrayType> for l::ArrayType {
+impl TryFrom<&g::BaseType> for l::BaseType {
     type Error = anyhow::Error;
 
-    fn try_from(value: &g::ArrayType) -> Result<Self, Self::Error> {
-        let len = &value.len.str;
-        let len = len
-            .parse()
-            .context(format!("Array type length should be a positive integer; Found: {}", len))?;
-
-        Ok(Self { ty: try_convert(&value.ty)?, len })
-    }
-}
-
-impl TryFrom<&g::RefType> for l::RefType {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &g::RefType) -> Result<Self, Self::Error> {
-        Ok(Self { ty: try_convert(&value.ty)? })
+    fn try_from(value: &g::BaseType) -> Result<Self, Self::Error> {
+        Ok(match value.name.str.as_ref() {
+            "val" => Self::Val,
+            "any" => Self::Any,
+            other => bail!("Found invalid type: {}", other),
+        })
     }
 }
 
@@ -224,7 +218,7 @@ impl TryFrom<&g::IfItem> for l::IfItem {
 
     fn try_from(value: &g::IfItem) -> Result<Self, Self::Error> {
         Ok(Self {
-            condition: convert(&value.condition),
+            condition: try_convert(&value.condition)?,
             then_body: try_convert(&value.then_body)?,
             else_item: match convert_maybe(&value.else_item) {
                 None => None,
@@ -238,7 +232,7 @@ impl TryFrom<&g::WhileItem> for l::WhileItem {
     type Error = anyhow::Error;
 
     fn try_from(value: &g::WhileItem) -> Result<Self, Self::Error> {
-        Ok(Self { condition: convert(&value.condition), body: try_convert(&value.body)? })
+        Ok(Self { condition: try_convert(&value.condition)?, body: try_convert(&value.body)? })
     }
 }
 
@@ -246,7 +240,7 @@ impl TryFrom<&g::Assign> for l::Assign {
     type Error = anyhow::Error;
 
     fn try_from(value: &g::Assign) -> Result<Self, Self::Error> {
-        Ok(Self { place: convert(&value.place), expr: try_convert(&value.expr)? })
+        Ok(Self { place: try_convert(&value.place)?, expr: try_convert(&value.expr)? })
     }
 }
 
@@ -266,14 +260,22 @@ impl TryFrom<&g::FunctionCall> for l::FunctionCall {
     }
 }
 
-impl From<&g::Expr> for l::Expr {
-    fn from(value: &g::Expr) -> Self {
-        match value {
+impl TryFrom<&g::Expr> for l::Expr {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &g::Expr) -> Result<Self, Self::Error> {
+        Ok(match value {
             g::Expr::Literal(x) => Self::Literal(convert(x)),
-            g::Expr::Place(x) => Self::Place(convert(x)),
-            g::Expr::Ref(x) => Self::Ref(convert(x)),
-            g::Expr::Paren(x) => Self::Paren(convert(x)),
-        }
+            g::Expr::Place(x) => Self::Place(try_convert(x)?),
+            g::Expr::Ref(x) => Self::Ref(try_convert(unnest(&x.place))?),
+            g::Expr::Paren(x) => Self::Paren(try_convert(x)?),
+            g::Expr::Cast(x) => {
+                Self::Cast { ty: try_convert(&x.ty)?, expr: try_convert(unnest(&x.item))? }
+            },
+            g::Expr::Transmute(x) => {
+                Self::Transmute { ty: try_convert(&x.ty)?, expr: try_convert(unnest(&x.item))? }
+            },
+        })
     }
 }
 
@@ -299,19 +301,47 @@ impl TryFrom<&g::AssignExpr> for l::AssignExpr {
 
     fn try_from(value: &g::AssignExpr) -> Result<Self, Self::Error> {
         Ok(match value {
-            g::AssignExpr::Expr(expr) => Self::Expr(convert(expr)),
-            g::AssignExpr::Span(span) => Self::Span(convert(span)),
-            g::AssignExpr::Slice(slice) => Self::Slice(try_convert(slice)?),
+            g::AssignExpr::Expr(expr) => Self::Expr(try_convert(expr)?),
+            g::AssignExpr::Span(span) => Self::Span(Arc::new(
+                VecDeque::from(span.elements.as_ref())
+                    .into_iter()
+                    .map(try_convert)
+                    .collect::<Result<_, _>>()?,
+            )),
+            g::AssignExpr::Slice(slice) => {
+                let start_in = convert_maybe(slice.start_in.as_ref()).map(convert::<_, l::Literal>);
+
+                let start_in = match start_in {
+                    None => 0,
+                    Some(x) => x
+                        .str
+                        .parse()
+                        .context("Inclusive start of slice range should be a positive integer")?,
+                };
+
+                let end_ex = slice
+                    .end_ex
+                    .str
+                    .parse()
+                    .context("Exclusive end of slice range should be a positive integer")?;
+
+                Self::Slice { place: try_convert(&slice.place)?, start_in, end_ex }
+            },
         })
     }
 }
 
-impl From<&g::Place> for l::Place {
-    fn from(value: &g::Place) -> Self {
-        Self {
-            head: convert(unnest(&value.head)),
-            offset: convert_maybe(&value.offset).map(convert),
-        }
+impl TryFrom<&g::Place> for l::Place {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &g::Place) -> Result<Self, Self::Error> {
+        Ok(Self {
+            head: try_convert(unnest(&value.head))?,
+            offset: match convert_maybe(&value.offset) {
+                None => None,
+                Some(offset) => Some(try_convert(offset)?),
+            },
+        })
     }
 }
 
@@ -321,61 +351,25 @@ impl From<&g::Literal> for l::Literal {
     }
 }
 
-impl From<&g::RefExpr> for l::RefExpr {
-    fn from(value: &g::RefExpr) -> Self {
-        Self { place: convert(unnest(&value.place)) }
-    }
-}
-
-impl From<&g::ParenExpr> for l::ParenExpr {
-    fn from(value: &g::ParenExpr) -> Self {
-        match value {
-            g::ParenExpr::Unary(x) => Self::Unary(convert(x)),
-            g::ParenExpr::Binary(x) => Self::Binary(convert(x)),
-        }
-    }
-}
-
-impl From<&g::Span> for l::Span {
-    fn from(value: &g::Span) -> Self {
-        Self {
-            elements: Arc::new(
-                VecDeque::from(value.elements.as_ref()).into_iter().map(convert).collect(),
-            ),
-        }
-    }
-}
-
-impl TryFrom<&g::Slice> for l::Slice {
+impl TryFrom<&g::ParenExpr> for l::ParenExpr {
     type Error = anyhow::Error;
 
-    fn try_from(value: &g::Slice) -> Result<Self, Self::Error> {
-        let start_in = convert_maybe(value.start_in.as_ref()).map(convert::<_, l::Literal>);
-
-        let start_in = match start_in {
-            None => 0,
-            Some(x) => x
-                .str
-                .parse()
-                .context("Inclusive start of slice range should be a positive integer")?,
-        };
-
-        let end_ex = value
-            .end_ex
-            .str
-            .parse()
-            .context("Exclusive end of slice range should be a positive integer")?;
-
-        Ok(Self { place: convert(&value.place), start_in, end_ex })
+    fn try_from(value: &g::ParenExpr) -> Result<Self, Self::Error> {
+        Ok(match value {
+            g::ParenExpr::Unary(x) => Self::Unary(try_convert(x)?),
+            g::ParenExpr::Binary(x) => Self::Binary(try_convert(x)?),
+        })
     }
 }
 
-impl From<&g::PlaceHead> for l::PlaceHead {
-    fn from(value: &g::PlaceHead) -> Self {
-        match value {
-            g::PlaceHead::Ident(ident) => Self::Ident(convert(ident)),
-            g::PlaceHead::Deref(deref) => Self::Deref(convert(deref)),
-        }
+impl TryFrom<&g::PlaceHead> for l::PlaceHead {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &g::PlaceHead) -> Result<Self, Self::Error> {
+        Ok(match value {
+            g::PlaceHead::Ident(ident) => Self::Ident(try_convert(ident)?),
+            g::PlaceHead::Deref(deref) => Self::Deref(try_convert(deref)?),
+        })
     }
 }
 
@@ -386,9 +380,11 @@ fn unnest<T>(nest: &g::ParensNest<T>) -> &Arc<T> {
     }
 }
 
-impl From<&g::Offset> for l::Offset {
-    fn from(value: &g::Offset) -> Self {
-        Self { expr: convert(&value.expr) }
+impl TryFrom<&g::Offset> for l::Offset {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &g::Offset) -> Result<Self, Self::Error> {
+        Ok(Self { expr: try_convert(&value.expr)? })
     }
 }
 
@@ -399,15 +395,23 @@ fn convert_maybe<T>(maybe: &g::Maybe<T>) -> Option<&Arc<T>> {
     }
 }
 
-impl From<&g::UnaryParenExpr> for l::UnaryParenExpr {
-    fn from(value: &g::UnaryParenExpr) -> Self {
-        Self { op: value.op.into(), operand: convert(&value.operand) }
+impl TryFrom<&g::UnaryParenExpr> for l::UnaryParenExpr {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &g::UnaryParenExpr) -> Result<Self, Self::Error> {
+        Ok(Self { op: value.op.into(), operand: try_convert(&value.operand)? })
     }
 }
 
-impl From<&g::BinaryParenExpr> for l::BinaryParenExpr {
-    fn from(value: &g::BinaryParenExpr) -> Self {
-        Self { left: convert(&value.left), op: value.op.into(), right: convert(&value.right) }
+impl TryFrom<&g::BinaryParenExpr> for l::BinaryParenExpr {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &g::BinaryParenExpr) -> Result<Self, Self::Error> {
+        Ok(Self {
+            left: try_convert(&value.left)?,
+            op: value.op.into(),
+            right: try_convert(&value.right)?,
+        })
     }
 }
 
@@ -417,9 +421,11 @@ impl From<&g::Ident> for l::Ident {
     }
 }
 
-impl From<&g::Deref> for l::Deref {
-    fn from(value: &g::Deref) -> Self {
-        Self { addr: convert(&value.addr) }
+impl TryFrom<&g::Deref> for l::Deref {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &g::Deref) -> Result<Self, Self::Error> {
+        Ok(Self { addr: try_convert(&value.addr)? })
     }
 }
 

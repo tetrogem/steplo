@@ -1,8 +1,5 @@
 use std::sync::Arc;
 
-use crate::grammar_ast as g;
-use crate::{ast_error::AstErrorSet, token_feed::TokenFeed};
-
 #[derive(Debug)]
 pub enum TopItem {
     Main(Arc<Main>),
@@ -26,10 +23,10 @@ pub struct Name {
     pub str: Arc<str>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Type {
-    Ref(Arc<RefType>),
-    Array(Arc<ArrayType>),
+    Ref(Arc<Type>),
+    Array { ty: Arc<Type>, len: u32 },
     Base(Arc<BaseType>),
 }
 
@@ -38,25 +35,38 @@ impl Type {
         match self {
             Self::Ref(_) => 1,
             Self::Base(_) => 1,
-            Self::Array(arr) => &arr.ty.size() * arr.len,
+            Self::Array { ty, len } => ty.size() * len,
         }
+    }
+
+    pub fn is_assignable_to(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Ref(a), Self::Ref(b)) => a.is_assignable_to(b) && b.is_assignable_to(a),
+            (Self::Ref(_), Self::Base(b)) => matches!(b.as_ref(), BaseType::Any),
+            (Self::Array { ty: a, len: a_len }, Self::Array { ty: b, len: b_len }) => {
+                a_len == b_len && a.is_assignable_to(b) && b.is_assignable_to(a)
+            },
+            (Self::Base(a), Self::Base(b)) => matches!(
+                (a.as_ref(), b.as_ref()),
+                (BaseType::Val, BaseType::Val | BaseType::Any) | (BaseType::Any, BaseType::Any)
+            ),
+            _ => false,
+        }
+    }
+
+    pub fn can_cast_to(&self, other: &Self) -> bool {
+        other.is_assignable_to(self)
+    }
+
+    pub fn can_transmute_to(&self, other: &Self) -> bool {
+        self.size() == other.size()
     }
 }
 
-#[derive(Debug)]
-pub struct RefType {
-    pub ty: Arc<Type>,
-}
-
-#[derive(Debug)]
-pub struct ArrayType {
-    pub ty: Arc<Type>,
-    pub len: u32,
-}
-
-#[derive(Debug)]
-pub struct BaseType {
-    pub name: Arc<Name>,
+#[derive(Debug, PartialEq, Eq)]
+pub enum BaseType {
+    Val,
+    Any,
 }
 
 #[derive(Debug)]
@@ -150,38 +160,23 @@ pub struct Assign {
 #[derive(Debug)]
 pub enum AssignExpr {
     Expr(Arc<Expr>),
-    Span(Arc<Span>),
-    Slice(Arc<Slice>),
+    Span(Arc<Vec<Arc<Expr>>>),
+    Slice { place: Arc<Place>, start_in: u32, end_ex: u32 },
 }
 
 #[derive(Debug)]
 pub enum Expr {
     Literal(Arc<Literal>),
     Place(Arc<Place>),
-    Ref(Arc<RefExpr>),
+    Ref(Arc<Place>),
     Paren(Arc<ParenExpr>),
-}
-
-#[derive(Debug)]
-pub struct RefExpr {
-    pub place: Arc<Place>,
+    Cast { ty: Arc<Type>, expr: Arc<Expr> },
+    Transmute { ty: Arc<Type>, expr: Arc<Expr> },
 }
 
 #[derive(Debug)]
 pub struct Literal {
     pub str: Arc<str>,
-}
-
-#[derive(Debug)]
-pub struct Span {
-    pub elements: Arc<Vec<Arc<Expr>>>,
-}
-
-#[derive(Debug)]
-pub struct Slice {
-    pub place: Arc<Place>,
-    pub start_in: u32,
-    pub end_ex: u32,
 }
 
 #[derive(Debug)]
@@ -241,10 +236,4 @@ pub enum NativeOperation {
 #[derive(Debug)]
 pub struct Program {
     pub items: Arc<Vec<Arc<TopItem>>>,
-}
-
-#[derive(Debug)]
-pub struct Comment {
-    #[expect(unused)]
-    pub text: Arc<str>,
 }

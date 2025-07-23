@@ -1,0 +1,123 @@
+main {
+    proc #47 {
+        $sp = "-1";
+        %25 = #5e;
+        jump %25;
+    }
+}
+
+func main {
+    proc #5e {
+        %4f = "4";
+        $sp = ($sp + %4f);
+        %51 = "Hello!";
+        %2e = "2";
+        %26 = ($sp - %2e);
+        %aa = "0";
+        %5a = (%26 + %aa);
+        stack[%5a] = %51;
+        %7c = "2";
+        %9e = ($sp - %7c);
+        %0e = "1";
+        %63 = ($sp - %0e);
+        %4e = "0";
+        %ae = (%63 + %4e);
+        stack[%ae] = %9e;
+        %aa3 = "1";
+        %e4 = ($sp - %aa3);
+        %b9 = "0";
+        %7e = ($sp - %b9);
+        %1b = "0";
+        %11 = (%7e + %1b);
+        stack[%11] = %e4;
+        %41 = "2";
+        %eb = ($sp - %41);
+        %ce = "2";
+        %1c = ($sp + %ce);
+        stack[%1c] = %eb;
+        %90 = "1";
+        %252 = ($sp + %90);
+        %a0 = #8f;
+        stack[%252] = %a0;
+        %4d = #dc;
+        jump %4d;
+    }
+
+    proc #8f {
+        exit;
+    }
+}
+
+func func.out {
+    proc #62 {
+        %6c = "2";
+        $sp = ($sp + %6c);
+        %44 = "0";
+        %0b = ($sp - %44);
+        %bb = stack[%0b];
+        out %bb;
+        %af = "2";
+        $sp = ($sp - %af);
+        %d3 = "1";
+        %1c5 = ($sp + %d3);
+        %0a = stack[%1c5];
+        jump %0a;
+    }
+}
+
+func func.in {
+    proc #dc {
+        %fd = "3";
+        $sp = ($sp + %fd);
+        %05 = "0";
+        %20 = ($sp - %05);
+        in;
+        stack[%20] = $answer;
+        %73 = "0";
+        %5b = ($sp - %73);
+        %ee = stack[%5b];
+        %9b = "1";
+        %ba = ($sp - %9b);
+        %d1 = stack[%ba];
+        %b2 = "0";
+        %8c = (%d1 + %b2);
+        stack[%8c] = %ee;
+        %61 = "3";
+        $sp = ($sp - %61);
+        %64 = "1";
+        %85 = ($sp + %64);
+        %a2 = stack[%85];
+        jump %a2;
+    }
+}
+
+func func.random {
+    proc #1f {
+        %0bb = "5";
+        $sp = ($sp + %0bb);
+        %1b6 = "0";
+        %2d = ($sp - %1b6);
+        %02 = "2";
+        %022 = ($sp - %02);
+        %ef = stack[%022];
+        %50 = "1";
+        %46 = ($sp - %50);
+        %de = stack[%46];
+        stack[%2d] = (%ef <random> %de);
+        %6e = "0";
+        %c6 = ($sp - %6e);
+        %fd6 = stack[%c6];
+        %15 = "3";
+        %45 = ($sp - %15);
+        %3c = stack[%45];
+        %16 = "0";
+        %e3 = (%3c + %16);
+        stack[%e3] = %fd6;
+        %df = "5";
+        $sp = ($sp - %df);
+        %8d = "1";
+        %65 = ($sp + %8d);
+        %ff = stack[%65];
+        jump %ff;
+    }
+}

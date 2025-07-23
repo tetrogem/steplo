@@ -1,0 +1,6 @@
+main |a: val, b: &val, c: &&val| {
+    a = "Hello!";
+    b = &a;
+    c = &b;
+    in(c);
+}

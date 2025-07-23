@@ -1,0 +1,18 @@
+main |val: val, any: any, val_ref: &val, any_ref: &any| {
+    val = 10;
+    any = "hello";
+    any = val;
+    val = <val>any;
+
+    val_ref = &val;
+    any_ref = &any;
+    // must transmute, breaks invariant of reference type (&val may no longer be a &val)
+    any_ref = <<&any>>val_ref;
+    val_ref = <<&val>>any_ref;
+
+    any = val_ref;
+    any = any_ref;
+    // any is copied here, so casting it is safe (any will still be an any)
+    val_ref = <&val>any;
+    any_ref = <&any>any;
+}

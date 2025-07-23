@@ -13,6 +13,7 @@ use token::tokenize;
 
 use crate::ast_error::report_ast_errors;
 
+mod add_builtins;
 mod ast_error;
 mod ast_parse;
 mod compile;
@@ -23,6 +24,7 @@ mod logic_ast;
 mod src_pos;
 mod token;
 mod token_feed;
+mod typecheck;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -73,6 +75,10 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
     };
 
     let ast = time("Converting grammar...", || logic_ast::Program::try_from(&ast))?;
+
+    let ast = time("Adding built-in functions...", || add_builtins::add_builtins(ast));
+
+    time("Typechecking...", || typecheck::typecheck(&ast))?;
 
     // dbg!(&ast);
     let linked = time("Linking...", || link(&ast))?;

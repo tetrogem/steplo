@@ -1,0 +1,25 @@
+main {
+    proc #8a {
+        $sp = "-1";
+        jump #9b;
+    }
+}
+
+func main {
+    proc #9b {
+        $sp = ($sp + "5");
+        stack[($sp - "3")] = "10";
+        stack[($sp - "2")] = "20";
+        stack[($sp - "2")] = stack[($sp - "3")];
+        stack[($sp - "3")] = stack[($sp - "2")];
+        stack[($sp - "1")] = ($sp - "3");
+        stack[$sp] = ($sp - "2");
+        stack[$sp] = stack[($sp - "1")];
+        stack[($sp - "1")] = stack[$sp];
+        stack[($sp - "2")] = stack[($sp - "1")];
+        stack[($sp - "2")] = stack[$sp];
+        stack[($sp - "1")] = stack[($sp - "2")];
+        stack[$sp] = stack[($sp - "2")];
+        exit;
+    }
+}

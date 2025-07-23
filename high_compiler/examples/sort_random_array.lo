@@ -1,4 +1,4 @@
-main |arr: [val; 99], vec: [val; 3]| {
+main |arr: [val; 99], vec: [any; 3]| {
     Vec_new(&vec, &arr, 99, 0);
     Vec_random_populate(&vec, 10, "-100", 100);
 
@@ -15,28 +15,28 @@ main |arr: [val; 99], vec: [val; 3]| {
     Vec_print(&vec);
 }
 
-func Vec_new(ret_r: &[val; 3], arr_r: &[val; 99], cap: val, len: val) || {
+func Vec_new(ret_r: &[any; 3], arr_r: &[val; 99], cap: val, len: val) || {
     *ret_r = [arr_r, cap, len];
 }
 
-func Vec_entry(ret_r: &&val, self_r: &[val; 3], i: val) || {
-    *ret_r = &((*(*self_r)[0])[i]);
+func Vec_entry(ret_r: &&val, self_r: &[any; 3], i: val) || {
+    *ret_r = &((*<&[val; 99]>(*self_r)[0])[i]);
 }
 
-func Vec_cap(ret_r: &val, self_r: &[val; 3]) || {
-    *ret_r = (*self_r)[1];
+func Vec_cap(ret_r: &val, self_r: &[any; 3]) || {
+    *ret_r = <val>(*self_r)[1];
 }
 
-func Vec_len_r(ret_r: &&val, self_r: &[val; 3]) || {
-    *ret_r = &((*self_r)[2]);
+func Vec_len_r(ret_r: &&val, self_r: &[any; 3]) || {
+    *ret_r = <<&val>>&((*self_r)[2]);
 }
 
-func Vec_len(ret_r: &val, self_r: &[val; 3]) |len_r: &val| {
+func Vec_len(ret_r: &val, self_r: &[any; 3]) |len_r: &val| {
     Vec_len_r(&len_r, self_r);
     *ret_r = *len_r;
 }
 
-func Vec_push(self_r: &[val; 3], val: val) |cap: val, len: val, entry_r: &val, len_r: &val| {
+func Vec_push(self_r: &[any; 3], val: val) |cap: val, len: val, entry_r: &val, len_r: &val| {
     Vec_cap(&cap, self_r);
     Vec_len(&len, self_r);
     if (len < cap) {
@@ -47,7 +47,7 @@ func Vec_push(self_r: &[val; 3], val: val) |cap: val, len: val, entry_r: &val, l
     }
 }
 
-func Vec_print(self_r: &[val; 3]) |i: val, len: val, val_r: &val, str: val| {
+func Vec_print(self_r: &[any; 3]) |i: val, len: val, val_r: &val, str: val| {
     i = 0;
     str = "Vec (";
     Vec_len(&len, self_r);
@@ -67,7 +67,7 @@ func Vec_print(self_r: &[val; 3]) |i: val, len: val, val_r: &val, str: val| {
     out(str);
 }
 
-func Vec_sort(self_r: &[val; 3]) |i: val, j: val, len: val, a_r: &val, b_r: &val, a: val, b: val| {
+func Vec_sort(self_r: &[any; 3]) |i: val, j: val, len: val, a_r: &val, b_r: &val, a: val, b: val| {
     i = 0;
     Vec_len(&len, self_r);
 
@@ -96,7 +96,7 @@ func swap(a_r: &val, b_r: &val) |temp: val| {
     *b_r = temp;
 }
 
-func Vec_random_populate(self_r: &[val; 3], len: val, min: val, max: val) |i: val, num: val| {
+func Vec_random_populate(self_r: &[any; 3], len: val, min: val, max: val) |i: val, num: val| {
     while (i < len) {
         random(&num, min, max);
         Vec_push(self_r, num);

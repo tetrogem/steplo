@@ -1,0 +1,57 @@
+main {
+    proc #e0 {
+        $sp = "-1";
+        jump #f5;
+    }
+}
+
+func main {
+    proc #f5 {
+        $sp = ($sp + "2");
+        stack[($sp + "2")] = $sp;
+        stack[($sp + "1")] = #c2;
+        jump #44;
+    }
+
+    proc #c2 {
+        stack[($sp + "2")] = stack[$sp];
+        stack[($sp + "1")] = #6e;
+        jump #2f;
+    }
+
+    proc #6e {
+        exit;
+    }
+}
+
+func func.mutate_ref {
+    proc #44 {
+        $sp = ($sp + "2");
+        stack[stack[$sp]] = "1";
+        $sp = ($sp - "2");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.needs_val {
+    proc #2f {
+        $sp = ($sp + "2");
+        stack[($sp + "2")] = stack[$sp];
+        stack[($sp + "1")] = #8d;
+        jump #39;
+    }
+
+    proc #8d {
+        $sp = ($sp - "2");
+        jump stack[($sp + "1")];
+    }
+}
+
+func func.out {
+    proc #39 {
+        $sp = ($sp + "2");
+        out stack[$sp];
+        $sp = ($sp - "2");
+        jump stack[($sp + "1")];
+    }
+}

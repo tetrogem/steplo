@@ -1,0 +1,15 @@
+// instead, we must pass an `&any`, then cast to a type assignable to `any`.
+// casts explicitly show possibly unsafe conversions.
+// safe conversions will be done automatically, without the need for extra syntax.
+main |foo: any| {
+    mutate_ref(&foo);
+    needs_val(<val>foo);
+}
+
+func mutate_ref(ref: &any) || {
+    *ref = 1;
+}
+
+func needs_val(val: val) || {
+    out(val);
+}

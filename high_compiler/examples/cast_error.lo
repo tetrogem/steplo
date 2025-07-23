@@ -1,0 +1,18 @@
+// this file should NOT compile
+
+main |foo: val| {
+    mutate_ref(&foo);
+    needs_val(foo);
+}
+
+// this is fine, `val` is assignable to `any`
+// but... we also could've assigned any *other* type assignable to `any`
+// so that type may not be a `val`.
+// thus, &val cannot be assigned to &any.
+func mutate_ref(ref: &any) || {
+    *ref = 1;
+}
+
+func needs_val(val: val) || {
+    out(val);
+}

@@ -1,0 +1,33 @@
+main {
+    proc #47 {
+        $sp = "-1";
+        jump #5e;
+    }
+}
+
+func main {
+    proc #5e {
+        $sp = ($sp + "4");
+        stack[($sp - "2")] = "Hello!";
+        stack[($sp - "1")] = ($sp - "2");
+        stack[$sp] = ($sp - "1");
+        stack[($sp + "2")] = ($sp - "2");
+        stack[($sp + "1")] = #8f;
+        jump #dc;
+    }
+
+    proc #8f {
+        exit;
+    }
+}
+
+func func.in {
+    proc #dc {
+        $sp = ($sp + "3");
+        in;
+        stack[$sp] = $answer;
+        stack[stack[($sp - "1")]] = stack[$sp];
+        $sp = ($sp - "3");
+        jump stack[($sp + "1")];
+    }
+}

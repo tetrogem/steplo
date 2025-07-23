@@ -1,4 +1,4 @@
-main |a, b, c, d| {
+main |a: val, b: val, c: val, d: val| {
     c = "This";
     a = "Hello";
     d = "works!";

@@ -4,12 +4,12 @@ use crate::{
     ast_error::{AstErrorKind, AstErrorSet},
     grammar_ast::{
         AddOp, AndOp, ArrayType, Assign, AssignExpr, BaseType, BinaryParenExpr, BinaryParenExprOp,
-        Body, BodyItem, CommaList, CommaListLink, Comment, Deref, DivOp, ElseBodyItem, ElseIfItem,
-        ElseItem, Empty, EqOp, Expr, Func, FunctionCall, GtOp, GteOp, Ident, IdentDeclaration,
-        IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, Maybe, ModOp, MulOp, Name,
-        NeqOp, NotOp, Offset, OrOp, ParenExpr, ParensNest, ParensWrapped, Place, PlaceHead, Proc,
-        Program, RefExpr, RefType, SemiList, SemiListLink, Slice, Span, Statement, SubOp, TopItem,
-        Type, UnaryParenExpr, UnaryParenExprOp, WhileItem,
+        Body, BodyItem, CastExpr, CommaList, CommaListLink, Comment, Deref, DivOp, ElseBodyItem,
+        ElseIfItem, ElseItem, Empty, EqOp, Expr, Func, FunctionCall, GtOp, GteOp, Ident,
+        IdentDeclaration, IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, Maybe, ModOp,
+        MulOp, Name, NeqOp, NotOp, Offset, OrOp, ParenExpr, ParensNest, ParensWrapped, Place,
+        PlaceHead, Proc, Program, RefExpr, RefType, SemiList, SemiListLink, Slice, Span, Statement,
+        SubOp, TopItem, TransmuteExpr, Type, UnaryParenExpr, UnaryParenExprOp, WhileItem,
     },
     token::{Token, TokenKind},
     token_feed::TokenFeed,
@@ -644,6 +644,8 @@ impl AstParse for Expr {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_enum! {
             parse tokens => x {
+                Self::Transmute(Arc::new(x)),
+                Self::Cast(Arc::new(x)),
                 Self::Paren(Arc::new(x)),
                 Self::Ref(Arc::new(x)),
                 Self::Place(Arc::new(x)),
@@ -651,6 +653,34 @@ impl AstParse for Expr {
             } else {
                 "Expected expression"
             }
+        }
+    }
+}
+
+impl<T: AstParse> AstParse for TransmuteExpr<T> {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::LeftAngle => (); as [TokenKind::LeftAngle, TokenKind::LeftAngle]];
+            [match _ = Token::LeftAngle => (); as [TokenKind::LeftAngle, TokenKind::LeftAngle]];
+            [struct ty];
+            [match _ = Token::RightAngle => (); as [TokenKind::RightAngle, TokenKind::RightAngle]];
+            [match _ = Token::RightAngle => (); as [TokenKind::RightAngle, TokenKind::RightAngle]];
+            [struct item];
+            [return Self { ty: Arc::new(ty), item: Arc::new(item) }]
+        }
+    }
+}
+
+impl<T: AstParse> AstParse for CastExpr<T> {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::LeftAngle => (); as [TokenKind::LeftAngle]];
+            [struct ty];
+            [match _ = Token::RightAngle => (); as [TokenKind::RightAngle]];
+            [struct item];
+            [return Self { ty: Arc::new(ty), item: Arc::new(item) }]
         }
     }
 }

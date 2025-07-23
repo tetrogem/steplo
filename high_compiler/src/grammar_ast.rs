@@ -176,6 +176,20 @@ pub enum Expr {
     Place(Arc<Place>),
     Ref(Arc<RefExpr>),
     Paren(Arc<ParenExpr>),
+    Cast(Arc<CastExpr<Expr>>),
+    Transmute(Arc<TransmuteExpr<Expr>>),
+}
+
+#[derive(Debug)]
+pub struct CastExpr<T> {
+    pub ty: Arc<Type>,
+    pub item: Arc<ParensNest<T>>,
+}
+
+#[derive(Debug)]
+pub struct TransmuteExpr<T> {
+    pub ty: Arc<Type>,
+    pub item: Arc<ParensNest<T>>,
 }
 
 #[derive(Debug)]
