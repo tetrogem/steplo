@@ -1,4 +1,4 @@
-main |a: val, b: &val, c: &&val, val: val, num: num, int: int, uint: uint, bool: bool| {
+main |a: val, b: &val, c: &&val, val: val, num: num, int: int, uint: uint, bool: oops| {
     a = "Hello!";
     b = &a;
     c = &b;

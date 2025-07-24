@@ -1,6 +1,6 @@
 use std::{iter::Peekable, sync::Arc};
 
-use itertools::{chain, Itertools};
+use itertools::Itertools;
 use uuid::Uuid;
 
 use crate::logic_ast as ast;

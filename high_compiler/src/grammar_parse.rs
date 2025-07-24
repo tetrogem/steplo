@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    ast_error::{AstErrorKind, AstErrorSet},
+    compile_error::{CompileError, CompileErrorSet, GrammarError},
     grammar_ast::{
         AddOp, AndOp, ArrayType, Assign, AssignExpr, BaseType, BinaryParenExpr, BinaryParenExprOp,
         Body, BodyItem, BoolLiteral, CastExpr, CommaList, CommaListLink, Comment, Decimal, Deref,
@@ -12,6 +12,7 @@ use crate::{
         RefExpr, RefType, SemiList, SemiListLink, Slice, Span, Statement, StrLiteral, SubOp,
         TopItem, TransmuteExpr, TrueLiteral, Type, UnaryParenExpr, UnaryParenExprOp, WhileItem,
     },
+    srced::{SrcRange, Srced},
     token::{Token, TokenKind},
     token_feed::TokenFeed,
 };
@@ -22,29 +23,8 @@ trait AstParse: Sized {
 
 #[derive(Debug)]
 struct AstParseRes<T> {
-    item: Result<T, ()>,
-    errors: AstErrorSet,
-}
-
-macro_rules! token {
-    ($token_pat:pat => $token_use:expr, $expected:expr) => {{
-        |cell| match cell.res {
-            Some(t) => match &t.token {
-                $token_pat => Ok($token_use),
-                token => Err(AstErrorSet::new_error(
-                    t.range,
-                    AstErrorKind::MismatchedTokenString {
-                        expected: $expected.into(),
-                        found: token.into(),
-                    },
-                )),
-            },
-            None => Err(AstErrorSet::new_error(
-                cell.range,
-                AstErrorKind::ExpectedTokenString { expected: $expected.into() },
-            )),
-        }
-    }};
+    item: Result<Srced<T>, ()>,
+    errors: CompileErrorSet,
 }
 
 macro_rules! parse_enum {
@@ -56,19 +36,20 @@ macro_rules! parse_enum {
         } else $else_msg:expr
     } => {
         let (item, errors) = match $tokens.try_match(|tokens| {
-            let mut errors = AstErrorSet::new();
+            let mut errors = CompileErrorSet::new();
 
             $(
                 let res = <_ as AstParse>::parse(tokens);
                 errors = errors.merge(res.errors);
                 if let Ok($x) = res.item {
-                    return Ok(($parser, errors));
+                    let range = $x.range;
+                    return Ok(($parser, errors, range));
                 }
             )*
 
             Err(errors)
         }) {
-            Ok((item, errors)) => (Ok(item), errors),
+            Ok((item, errors, range)) => (Ok(Srced { val: item, range }), errors),
             Err(errors) => (Err(()), errors),
         };
 
@@ -77,21 +58,52 @@ macro_rules! parse_enum {
 }
 
 macro_rules! parse_helper {
-    ([$tokens:ident, $errors:ident] struct $ident:ident) => {
+    ([$tokens:ident, $errors:ident, $range:ident] struct $ident:ident) => {
         let $ident = {
             let res = <_ as AstParse>::parse($tokens);
             $errors = $errors.merge(res.errors);
             match res.item {
-                Ok(val) => val,
+                Ok(val) => {
+                    $range = Some(match $range {
+                        None => val.range,
+                        Some(prev) => prev.merge(val.range),
+                    });
+
+                    val
+                },
                 Err(()) => return Err($errors),
             }
         };
     };
-    ([$tokens:ident, $errors:ident] match $ident:pat = $token_pat:pat => $token_use:expr; as $expected:expr) => {
+    ([$tokens:ident, $errors:ident, $range:ident] match $ident:pat = $token_pat:pat => $token_use:expr; as $expected:expr) => {
         #[allow(clippy::let_unit_value)]
         let $ident = {
-            match $tokens.try_next(token!($token_pat => $token_use, $expected)) {
-                Ok(val) => val,
+            match $tokens.try_next(|cell| match cell.res {
+                Some(t) => match &t.val {
+                    $token_pat => Ok(($token_use, t.range)),
+                    token => Err(CompileErrorSet::new_error(
+                        t.range,
+                        CompileError::Grammar(GrammarError::MismatchedTokenString {
+                            expected: $expected.into(),
+                            found: token.into(),
+                        }),
+                    )),
+                },
+                None => Err(CompileErrorSet::new_error(
+                    cell.range,
+                    CompileError::Grammar(GrammarError::ExpectedTokenString {
+                        expected: $expected.into(),
+                    }),
+                )),
+            }) {
+                Ok((val, range)) => {
+                    $range = Some(match $range {
+                        None => range,
+                        Some(prev) => prev.merge(range),
+                    });
+
+                    val
+                },
                 Err(errors) => {
                     $errors = $errors.merge(errors);
                     return Err($errors);
@@ -99,8 +111,8 @@ macro_rules! parse_helper {
             }
         };
     };
-    ([$tokens:ident, $errors:ident] return $expr:expr) => {
-        return Ok(($expr, $errors));
+    ([$tokens:ident, $errors:ident, $range:ident] return $expr:expr) => {
+        return Ok(($expr, $errors, $range));
     };
 }
 
@@ -110,13 +122,17 @@ macro_rules! parse_struct {
         $([$($stuff:tt)*]);* $(;)?
     } => {
         let (item, errors) = match $tokens.try_match(|tokens| {
-            let mut errors = AstErrorSet::new();
+            let mut errors = CompileErrorSet::new();
+            let mut range: Option<SrcRange> = None;
 
             $(
-                parse_helper!([tokens, errors] $($stuff)*);
+                parse_helper!([tokens, errors, range] $($stuff)*);
             )*
         }) {
-            Ok((item, errors)) => (Ok(item), errors),
+            Ok((item, errors, range)) => {
+                let range = range.unwrap_or_else(|| SrcRange::new_zero_len($tokens.cur_range().end));
+                (Ok(Srced { val: item, range }), errors)
+            },
             Err(errors) => (Err(()), errors),
         };
 
@@ -124,7 +140,7 @@ macro_rules! parse_struct {
     };
 }
 
-pub fn parse_ast(tokens: &mut TokenFeed) -> Result<Program, AstErrorSet> {
+pub fn parse_ast(tokens: &mut TokenFeed) -> Result<Srced<Program>, CompileErrorSet> {
     let res = Program::parse(tokens);
 
     match res.item {
@@ -808,7 +824,7 @@ impl AstParse for UnaryParenExpr {
             [struct op];
             [struct operand];
             [match _ = Token::RightParen => (); as [TokenKind::RightParen]];
-            [return Self { op, operand: Arc::new(operand) }];
+            [return Self { op: Arc::new(op), operand: Arc::new(operand) }];
         }
     }
 }
@@ -822,7 +838,7 @@ impl AstParse for BinaryParenExpr {
             [struct op];
             [struct right];
             [match _ = Token::RightParen => (); as [TokenKind::RightParen]];
-            [return Self { op, left: Arc::new(left), right: Arc::new(right) }];
+            [return Self { op: Arc::new(op), left: Arc::new(left), right: Arc::new(right) }];
         }
     }
 }
@@ -831,7 +847,7 @@ impl AstParse for UnaryParenExprOp {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_enum! {
             parse tokens => x {
-                Self::Not(x),
+                Self::Not(Arc::new(x)),
             } else {
                 "Expected unary operator"
             }
@@ -856,27 +872,27 @@ impl AstParse for BinaryParenExprOp {
                 // == two chars ==
 
                 // inequality
-                Self::Eq(x),
-                Self::Neq(x),
-                Self::Gte(x),
-                Self::Lte(x),
+                Self::Eq(Arc::new(x)),
+                Self::Neq(Arc::new(x)),
+                Self::Gte(Arc::new(x)),
+                Self::Lte(Arc::new(x)),
                 // boolean
-                Self::And(x),
-                Self::Or(x),
+                Self::And(Arc::new(x)),
+                Self::Or(Arc::new(x)),
 
                 // == one char ==
 
                 // math
-                Self::Add(x),
-                Self::Sub(x),
-                Self::Mul(x),
-                Self::Div(x),
-                Self::Mod(x),
+                Self::Add(Arc::new(x)),
+                Self::Sub(Arc::new(x)),
+                Self::Mul(Arc::new(x)),
+                Self::Div(Arc::new(x)),
+                Self::Mod(Arc::new(x)),
                 // inequality
-                Self::Gt(x),
-                Self::Lt(x),
+                Self::Gt(Arc::new(x)),
+                Self::Lt(Arc::new(x)),
                 // string
-                Self::Join(x),
+                Self::Join(Arc::new(x)),
             } else {
                 "Expected binary operator"
             }

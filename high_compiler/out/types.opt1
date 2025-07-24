@@ -1,22 +1,22 @@
 main {
-    proc #d9 {
+    proc #c6 {
         $sp = "-1";
-        jump #5b;
+        jump #bf;
     }
 }
 
 func main {
-    proc #5b {
+    proc #bf {
         $sp = ($sp + "9");
         stack[($sp - "7")] = "Hello!";
         stack[($sp - "6")] = ($sp - "7");
         stack[($sp - "5")] = ($sp - "6");
         stack[($sp + "2")] = stack[($sp - "6")];
-        stack[($sp + "1")] = #75;
-        jump #7d;
+        stack[($sp + "1")] = #f8;
+        jump #a4;
     }
 
-    proc #75 {
+    proc #f8 {
         stack[($sp - "4")] = "Hello world!";
         stack[($sp - "4")] = "0";
         stack[($sp - "3")] = "10.5";
@@ -36,7 +36,7 @@ func main {
 }
 
 func func.in {
-    proc #7d {
+    proc #a4 {
         $sp = ($sp + "3");
         in;
         stack[$sp] = $answer;

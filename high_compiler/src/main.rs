@@ -2,6 +2,7 @@ use std::{
     fs::{self, File},
     io::Read,
     path::Path,
+    sync::Arc,
 };
 
 use clap::Parser;
@@ -11,17 +12,20 @@ use link::link;
 use shared::{time, time_total, write_json};
 use token::tokenize;
 
-use crate::ast_error::report_ast_errors;
+use crate::{
+    compile_error::{CompileErrorSet, report_compile_errors},
+    srced::Srced,
+};
 
 mod add_builtins;
-mod ast_error;
-mod ast_parse;
 mod compile;
+pub(crate) mod compile_error;
 pub mod grammar_ast;
+mod grammar_parse;
 mod grammar_to_logic;
 mod link;
 mod logic_ast;
-mod src_pos;
+mod srced;
 mod token;
 mod token_feed;
 mod typecheck;
@@ -66,15 +70,14 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
 
     let tokens = time("Tokenizing...", || tokenize(&input))?;
     // dbg!(&tokens);
-    let ast = match time("Parsing grammar...", || parse(tokens.into())) {
+
+    let ast = match compile_set_fallables(tokens) {
         Ok(ast) => ast,
         Err(err) => {
-            report_ast_errors(&input, src_path, err);
+            report_compile_errors(&input, src_path, err);
             return Ok(());
         },
     };
-
-    let ast = time("Converting grammar...", || logic_ast::Program::try_from(&ast))?;
 
     let ast = time("Adding built-in functions...", || add_builtins::add_builtins(ast));
 
@@ -92,7 +95,7 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
             .and_then(|stem| stem.to_str())
             .expect("input file should have stem");
 
-        let path = Path::new(&args.out_path).join(format!("{}.opt0", name));
+        let path = Path::new(&args.out_path).join(format!("{name}.opt0"));
         fs::write(path, asm_export).expect("opt export should succeed");
     });
 
@@ -106,7 +109,7 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
             .and_then(|stem| stem.to_str())
             .expect("input file should have stem");
 
-        let path = Path::new(&args.out_path).join(format!("{}.opt1", name));
+        let path = Path::new(&args.out_path).join(format!("{name}.opt1"));
         fs::write(path, asm_export).expect("opt export should succeed");
     });
 
@@ -122,9 +125,17 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
 
     let ir = time("Transpiling to IR...", || ez.compile());
     let js_val = time("Compiling to JSON...", || ir.compile());
-    let json = time("Serializing...", || format!("{:#}", js_val));
+    let json = time("Serializing...", || format!("{js_val:#}"));
 
     time("Exporting...", || write_json(&json, src_path, &args.out_path, &args.res_path));
 
     Ok(())
+}
+
+fn compile_set_fallables(
+    tokens: Vec<Srced<token::Token>>,
+) -> Result<logic_ast::Program, CompileErrorSet> {
+    let ast = time("Parsing grammar...", || parse(tokens.into()))?;
+    let ast = time("Converting grammar...", || logic_ast::Program::try_from(&Arc::new(ast)))?;
+    Ok(ast)
 }

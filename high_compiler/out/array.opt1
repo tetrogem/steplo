@@ -1,0 +1,51 @@
+main {
+    proc #59 {
+        $sp = "-1";
+        jump #5a;
+    }
+}
+
+func main {
+    proc #5a {
+        $sp = ($sp + "7");
+        stack[($sp - "5")] = "Variable";
+        stack[($sp + "2")] = stack[($sp - "5")];
+        stack[($sp + "1")] = #bc;
+        jump #06;
+    }
+
+    proc #bc {
+        stack[($sp - "4")] = "10";
+        stack[($sp + "2")] = stack[($sp - "4")];
+        stack[($sp + "1")] = #3b;
+        jump #06;
+    }
+
+    proc #3b {
+        stack[(($sp - "4") + "3")] = "Hello";
+        stack[(($sp - "4") + "2")] = "World!";
+        stack[(($sp - "4") + "4")] = stack[(($sp - "4") + "2")];
+        stack[($sp + "2")] = stack[(($sp - "4") + "3")];
+        stack[($sp + "1")] = #1f;
+        jump #06;
+    }
+
+    proc #1f {
+        stack[($sp + "2")] = stack[(($sp - "4") + "4")];
+        stack[($sp + "1")] = #0a;
+        jump #06;
+    }
+
+    proc #0a {
+        exit;
+    }
+}
+
+func func.out {
+    proc #06 {
+        $sp = ($sp + "2");
+        out stack[$sp];
+        $sp = ($sp - "2");
+        jump stack[($sp + "1")];
+    }
+}

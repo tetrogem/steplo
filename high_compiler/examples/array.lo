@@ -1,4 +1,4 @@
-main |foo, bar[5]| {
+main |foo: val, bar: [val; 5]| {
     foo = "Variable";
     out(foo);
 

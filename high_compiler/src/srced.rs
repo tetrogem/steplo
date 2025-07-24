@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct SrcPos {
     pub line: usize,
@@ -24,11 +22,6 @@ impl PartialOrd for SrcPos {
     }
 }
 
-// #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-// pub struct SrcPos {
-//     pub char: usize,
-// }
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct SrcRange {
     pub start: SrcPos,
@@ -43,6 +36,10 @@ impl SrcRange {
     pub fn extend_to(self, pos: SrcPos) -> Self {
         Self { start: self.start.min(pos), end: self.end.max(pos) }
     }
+
+    pub fn merge(self, other: SrcRange) -> Self {
+        Self { start: self.start.min(other.start), end: self.end.max(other.end) }
+    }
 }
 
 impl Ord for SrcRange {
@@ -55,4 +52,10 @@ impl PartialOrd for SrcRange {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Srced<T> {
+    pub val: T,
+    pub range: SrcRange,
 }

@@ -1,48 +1,48 @@
-use std::{
-    cmp::Ordering,
-    collections::{BTreeSet, HashSet},
-    path::Path,
-    sync::Arc,
-};
+use std::{cmp::Ordering, collections::HashSet, path::Path, sync::Arc};
 
 use colored::Colorize;
 use itertools::Itertools;
 
-use crate::{src_pos::SrcRange, token::TokenKind};
+use crate::{srced::SrcRange, token::TokenKind};
 
 #[derive(Debug, Default)]
-pub struct AstErrorSet {
-    errors: Vec<AstError>,
+pub struct CompileErrorSet {
+    errors: Vec<CompileError>,
     range: Option<SrcRange>,
 }
 
 #[derive(Debug)]
-pub struct AstError {
-    kind: AstErrorKind,
-    range: SrcRange,
+pub(crate) enum CompileError {
+    Grammar(GrammarError),
+    Convert(LogicError),
 }
 
 #[derive(Debug)]
-pub enum AstErrorKind {
+pub(crate) enum GrammarError {
     MismatchedTokenString { expected: Arc<[TokenKind]>, found: TokenKind },
     ExpectedTokenString { expected: Arc<[TokenKind]> },
-    ExpectedTopItem,
-    InvalidArrayLength,
-    InvalidInclRangeStart,
-    InvalidExclRangeEnd,
 }
 
-impl AstErrorSet {
+#[derive(Debug)]
+#[allow(clippy::enum_variant_names)]
+pub(crate) enum LogicError {
+    InvalidArrayTypeLen,
+    InvalidType,
+    InvalidRangeStartIncl,
+    InvalidRangeEndExcl,
+    InvalidNumLiteral,
+}
+
+impl CompileErrorSet {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn new_error(range: SrcRange, kind: AstErrorKind) -> Self {
-        let err = AstError { range, kind };
-        AstErrorSet { errors: Vec::from([err]), range: Some(range) }
+    pub(crate) fn new_error(range: SrcRange, error: CompileError) -> Self {
+        CompileErrorSet { errors: Vec::from([error]), range: Some(range) }
     }
 
-    pub fn merge(mut self, other: AstErrorSet) -> Self {
+    pub fn merge(mut self, other: CompileErrorSet) -> Self {
         match self.range.cmp(&other.range) {
             Ordering::Less => other,
             Ordering::Greater => self,
@@ -54,21 +54,31 @@ impl AstErrorSet {
     }
 }
 
-enum CollapsedAstErrorKind {
-    MismatchedTokenString { expected: HashSet<Arc<[TokenKind]>>, found: TokenKind },
-    ExpectedTokenString { expected: HashSet<Arc<[TokenKind]>> },
-    ExpectedTopItem,
-    InvalidArrayLength,
-    InvalidInclRangeStart,
-    InvalidExclRangeEnd,
+enum CollapsedCompileError {
+    Grammar(CollapsedGrammarError),
+    Logic(CollapsedLogicError),
 }
 
-impl CollapsedAstErrorKind {
-    pub fn try_collapse(&mut self, other: AstErrorKind) -> Result<(), AstErrorKind> {
+enum CollapsedGrammarError {
+    MismatchedTokenString { expected: HashSet<Arc<[TokenKind]>>, found: TokenKind },
+    ExpectedTokenString { expected: HashSet<Arc<[TokenKind]>> },
+}
+
+#[allow(clippy::enum_variant_names)]
+enum CollapsedLogicError {
+    InvalidArrayTypeLen,
+    InvalidType,
+    InvalidRangeStartIncl,
+    InvalidRangeEndExcl,
+    InvalidNumLiteral,
+}
+
+impl CollapsedGrammarError {
+    pub fn try_collapse(&mut self, other: GrammarError) -> Result<(), GrammarError> {
         match (self, &other) {
             (
                 Self::MismatchedTokenString { expected, found },
-                AstErrorKind::MismatchedTokenString {
+                GrammarError::MismatchedTokenString {
                     expected: other_expected,
                     found: other_found,
                 },
@@ -83,19 +93,46 @@ impl CollapsedAstErrorKind {
             },
             (
                 Self::ExpectedTokenString { expected },
-                AstErrorKind::ExpectedTokenString { expected: other_expected },
+                GrammarError::ExpectedTokenString { expected: other_expected },
             ) => {
                 expected.insert(other_expected.clone());
                 return Ok(());
             },
-            (Self::ExpectedTopItem, AstErrorKind::ExpectedTopItem) => return Ok(()),
-            (Self::InvalidArrayLength, AstErrorKind::InvalidArrayLength) => return Ok(()),
-            (Self::InvalidInclRangeStart, AstErrorKind::InvalidInclRangeStart) => return Ok(()),
-            (Self::InvalidExclRangeEnd, AstErrorKind::InvalidExclRangeEnd) => return Ok(()),
             _ => {},
         }
 
         Err(other)
+    }
+}
+
+impl CollapsedLogicError {
+    pub fn try_collapse(&mut self, other: LogicError) -> Result<(), LogicError> {
+        match (self, &other) {
+            (Self::InvalidArrayTypeLen, LogicError::InvalidArrayTypeLen) => {
+                return Ok(());
+            },
+            (Self::InvalidType, LogicError::InvalidType) => return Ok(()),
+            (Self::InvalidRangeStartIncl, LogicError::InvalidRangeStartIncl) => return Ok(()),
+            (Self::InvalidRangeEndExcl, LogicError::InvalidRangeEndExcl) => return Ok(()),
+            (Self::InvalidNumLiteral, LogicError::InvalidNumLiteral) => return Ok(()),
+            _ => {},
+        }
+
+        Err(other)
+    }
+}
+
+impl CollapsedCompileError {
+    pub fn try_collapse(&mut self, other: CompileError) -> Result<(), CompileError> {
+        match (self, other) {
+            (CollapsedCompileError::Grammar(ast), CompileError::Grammar(other_ast)) => {
+                ast.try_collapse(other_ast).map_err(CompileError::Grammar)
+            },
+            (CollapsedCompileError::Logic(convert), CompileError::Convert(other_convert)) => {
+                convert.try_collapse(other_convert).map_err(CompileError::Convert)
+            },
+            (_, other) => Err(other),
+        }
     }
 
     pub fn to_msg(&self) -> String {
@@ -173,10 +210,10 @@ impl CollapsedAstErrorKind {
                                 FmtTokenString::Generic(s.into())
                             },
                             TokenString::Keyword(s) => {
-                                FmtTokenString::Verbatim(format!("{} {}", verbatim, s))
+                                FmtTokenString::Verbatim(format!("{verbatim} {s}"))
                             },
                             TokenString::Punctuation(s) => {
-                                FmtTokenString::Verbatim(format!("{}{}", verbatim, s))
+                                FmtTokenString::Verbatim(format!("{verbatim}{s}"))
                             },
                         },
                     });
@@ -189,15 +226,13 @@ impl CollapsedAstErrorKind {
                 fmt_token_strings
             }
 
-            let token_string = tokens_to_fts(tokens)
+            tokens_to_fts(tokens)
                 .into_iter()
                 .map(|ts| match ts {
                     FmtTokenString::Generic(s) => s,
-                    FmtTokenString::Verbatim(s) => format!("`{}`", s),
+                    FmtTokenString::Verbatim(s) => format!("`{s}`"),
                 })
-                .join("");
-
-            token_string
+                .join("")
         }
 
         fn token_strings_to_string<'a>(strings: impl Iterator<Item = &'a [TokenKind]>) -> String {
@@ -205,93 +240,108 @@ impl CollapsedAstErrorKind {
         }
 
         match self {
-            Self::MismatchedTokenString { expected, found } => {
-                format!(
-                    "Expected {}; Found: {}",
-                    token_strings_to_string(expected.iter().map(AsRef::as_ref)),
-                    tokens_to_string(&[*found])
-                )
+            Self::Grammar(ast) => match ast {
+                CollapsedGrammarError::MismatchedTokenString { expected, found } => {
+                    format!(
+                        "Expected {}; Found: {}",
+                        token_strings_to_string(expected.iter().map(AsRef::as_ref)),
+                        tokens_to_string(&[*found])
+                    )
+                },
+                CollapsedGrammarError::ExpectedTokenString { expected } => {
+                    format!(
+                        "Expected {}; Found end of document",
+                        token_strings_to_string(expected.iter().map(AsRef::as_ref)),
+                    )
+                },
             },
-            Self::ExpectedTokenString { expected } => {
-                format!(
-                    "Expected {}; Found end of document",
-                    token_strings_to_string(expected.iter().map(AsRef::as_ref)),
-                )
+            Self::Logic(convert) => match convert {
+                CollapsedLogicError::InvalidArrayTypeLen => {
+                    "Array length should be a positive integer".into()
+                },
+                CollapsedLogicError::InvalidType => "This type does not exist".into(),
+                CollapsedLogicError::InvalidRangeStartIncl => {
+                    "Inclusive start of range must be a positive integer".into()
+                },
+                CollapsedLogicError::InvalidRangeEndExcl => {
+                    "Exclusive end of range must be a positive integer".into()
+                },
+                CollapsedLogicError::InvalidNumLiteral => "Invalid number literal".into(),
             },
-            Self::ExpectedTopItem => "Expected top item".into(),
-            Self::InvalidArrayLength => "Array length should be a positive integer".into(),
-            Self::InvalidInclRangeStart => {
-                "Inclusive start of range must be a positive integer".into()
-            },
-            Self::InvalidExclRangeEnd => "Exclusive end of range must be a positive integer".into(),
+        }
+    }
+
+    pub fn phase(&self) -> &'static str {
+        match self {
+            Self::Grammar(_) => "grammar",
+            Self::Logic(_) => "logic",
         }
     }
 }
 
-impl From<AstErrorKind> for CollapsedAstErrorKind {
-    fn from(value: AstErrorKind) -> Self {
+impl From<CompileError> for CollapsedCompileError {
+    fn from(value: CompileError) -> Self {
         match value {
-            AstErrorKind::MismatchedTokenString { expected, found } => {
-                Self::MismatchedTokenString { expected: HashSet::from([expected]), found }
-            },
-            AstErrorKind::ExpectedTokenString { expected } => {
-                Self::ExpectedTokenString { expected: HashSet::from([expected]) }
-            },
-            AstErrorKind::ExpectedTopItem => Self::ExpectedTopItem,
-            AstErrorKind::InvalidArrayLength => Self::InvalidArrayLength,
-            AstErrorKind::InvalidInclRangeStart => Self::InvalidInclRangeStart,
-            AstErrorKind::InvalidExclRangeEnd => Self::InvalidExclRangeEnd,
+            CompileError::Grammar(ast) => Self::Grammar(match ast {
+                GrammarError::MismatchedTokenString { expected, found } => {
+                    CollapsedGrammarError::MismatchedTokenString {
+                        expected: HashSet::from([expected]),
+                        found,
+                    }
+                },
+                GrammarError::ExpectedTokenString { expected } => {
+                    CollapsedGrammarError::ExpectedTokenString {
+                        expected: HashSet::from([expected]),
+                    }
+                },
+            }),
+            CompileError::Convert(convert) => Self::Logic(match convert {
+                LogicError::InvalidArrayTypeLen => CollapsedLogicError::InvalidArrayTypeLen,
+                LogicError::InvalidType => CollapsedLogicError::InvalidType,
+                LogicError::InvalidRangeStartIncl => CollapsedLogicError::InvalidRangeStartIncl,
+                LogicError::InvalidRangeEndExcl => CollapsedLogicError::InvalidRangeEndExcl,
+                LogicError::InvalidNumLiteral => CollapsedLogicError::InvalidNumLiteral,
+            }),
         }
     }
 }
 
-struct CollapsedAstError {
-    kinds: Vec<CollapsedAstErrorKind>,
-    range: SrcRange,
-}
-
-fn collapse_errors(errors: Vec<AstError>) -> Option<CollapsedAstError> {
-    let range = errors.first().map(|e| e.range)?;
-
-    let mut kinds = Vec::<CollapsedAstErrorKind>::new();
-    'error: for error in errors {
-        let mut kind = error.kind;
+fn collapse_errors(errors: Vec<CompileError>) -> Vec<CollapsedCompileError> {
+    let mut kinds = Vec::<CollapsedCompileError>::new();
+    'error: for mut error in errors {
         for collapsed in &mut kinds {
-            match collapsed.try_collapse(kind) {
+            match collapsed.try_collapse(error) {
                 Ok(()) => continue 'error,
-                Err(k) => kind = k,
+                Err(k) => error = k,
             }
         }
 
-        kinds.push(kind.into());
+        kinds.push(error.into());
     }
 
-    Some(CollapsedAstError { range, kinds })
+    kinds
 }
 
-pub fn report_ast_errors(code: &str, code_path: &Path, set: AstErrorSet) {
-    let Some(error) = collapse_errors(set.errors) else { return };
+pub fn report_compile_errors(code: &str, code_path: &Path, set: CompileErrorSet) {
+    let Some(range) = set.range else { return };
+    let errors = collapse_errors(set.errors);
 
     println!("{}", "Error!".red().bold());
 
-    for err in &error.kinds {
-        let src_info = format!(
-            "{}:{}:{}",
-            code_path.to_string_lossy(),
-            error.range.start.line,
-            error.range.start.col
-        )
-        .normal();
+    for err in &errors {
+        let src_info =
+            format!("{}:{}:{}", code_path.to_string_lossy(), range.start.line, range.start.col)
+                .normal();
 
-        println!("{} {} {} {}", "@".blue(), src_info, "-->".blue(), err.to_msg());
+        println!("{} {} {} {} {}", err.phase(), "@".blue(), src_info, "-->".blue(), err.to_msg());
     }
 
     let nearby_lines = code
         .lines()
         .enumerate()
         .map(|(i, line)| (i + 1, line))
-        .skip(error.range.start.line.saturating_sub(2).saturating_sub(1))
-        .take(error.range.start.line.min(3))
+        .skip(range.start.line.saturating_sub(2).saturating_sub(1))
+        .take(range.start.line.min(3))
         .collect_vec();
 
     let Some(max_line_number) = nearby_lines.iter().map(|(i, _)| i.to_string()).max() else {
@@ -301,17 +351,17 @@ pub fn report_ast_errors(code: &str, code_path: &Path, set: AstErrorSet) {
     let line_numbers_width = max_line_number.len() + 1;
 
     let empty_sidebar = format!("{:>width$} |", "", width = line_numbers_width).blue().bold();
-    println!("{}", empty_sidebar);
+    println!("{empty_sidebar}");
 
     for (i, line) in nearby_lines {
-        let sidebar = format!("{:>width$} |", i, width = line_numbers_width);
+        let sidebar = format!("{i:>line_numbers_width$} |");
         println!("{}  {}", sidebar.blue().bold(), line);
     }
 
     println!(
         "{}  {}{}",
         empty_sidebar,
-        " ".repeat(error.range.start.col.saturating_sub(1)),
-        "^".repeat(1 + error.range.end.col.saturating_sub(error.range.start.col)).red(),
+        " ".repeat(range.start.col.saturating_sub(1)),
+        "^".repeat(1 + range.end.col.saturating_sub(range.start.col)).red(),
     );
 }

@@ -1,205 +1,217 @@
 use std::collections::VecDeque;
-use std::ops::Not;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use anyhow::bail;
-use anyhow::Context;
-
+use crate::compile_error::CompileError;
+use crate::compile_error::CompileErrorSet;
+use crate::compile_error::LogicError;
 use crate::grammar_ast as g;
 use crate::logic_ast as l;
 
-fn convert<From, To>(from: impl AsRef<From>) -> Arc<To>
-where
-    for<'a> &'a From: Into<To>,
-{
-    Arc::new(from.as_ref().into())
+trait FromList<T> {
+    fn from_list(value: T) -> Self;
 }
 
-fn try_convert<From, To, Error>(from: impl AsRef<From>) -> Result<Arc<To>, Error>
+fn convert<From, To>(from: &g::Ref<From>) -> Arc<To>
 where
-    for<'a> &'a From: TryInto<To, Error = Error>,
+    for<'a> &'a g::Ref<From>: Into<To>,
 {
-    from.as_ref().try_into().map(Arc::new)
+    Arc::new(from.into())
 }
 
-impl TryFrom<&g::Program> for l::Program {
-    type Error = anyhow::Error;
+fn try_convert<From, To, Error>(from: &g::Ref<From>) -> Result<Arc<To>, Error>
+where
+    for<'a> &'a g::Ref<From>: TryInto<To, Error = Error>,
+{
+    from.try_into().map(Arc::new)
+}
 
-    fn try_from(value: &g::Program) -> Result<Self, Self::Error> {
+impl TryFrom<&g::Ref<g::Program>> for l::Program {
+    type Error = CompileErrorSet;
+
+    fn try_from(value: &g::Ref<g::Program>) -> Result<Self, Self::Error> {
         Ok(Self {
             items: Arc::new(
-                VecDeque::from(value.items.as_ref())
+                VecDeque::from_list(&value.val.items)
                     .into_iter()
-                    .map(try_convert)
+                    .map(|x| try_convert(&x))
                     .collect::<Result<_, _>>()?,
             ),
         })
     }
 }
 
-impl<T> From<&g::List<T>> for VecDeque<Arc<T>> {
-    fn from(value: &g::List<T>) -> Self {
-        match value {
+impl<T> FromList<&g::Ref<g::List<T>>> for VecDeque<g::Ref<T>> {
+    fn from_list(value: &g::Ref<g::List<T>>) -> Self {
+        match &value.val {
             g::List::Empty(_) => Default::default(),
             g::List::Link(link) => {
-                let mut vec = VecDeque::from(link.next.as_ref());
-                vec.push_front(link.item.clone());
+                let mut vec = VecDeque::from_list(&link.val.next);
+                vec.push_front(link.val.item.clone());
                 vec
             },
         }
     }
 }
 
-impl<T> From<&g::CommaList<T>> for VecDeque<Arc<T>> {
-    fn from(value: &g::CommaList<T>) -> Self {
-        match value {
+impl<T> FromList<&g::Ref<g::CommaList<T>>> for VecDeque<g::Ref<T>> {
+    fn from_list(value: &g::Ref<g::CommaList<T>>) -> Self {
+        match &value.val {
             g::CommaList::Empty(_) => Default::default(),
             g::CommaList::Tail(tail) => VecDeque::from([tail.clone()]),
             g::CommaList::Link(link) => {
-                let mut vec = VecDeque::from(link.next.as_ref());
-                vec.push_front(link.item.clone());
+                let mut vec = VecDeque::from_list(&link.val.next);
+                vec.push_front(link.val.item.clone());
                 vec
             },
         }
     }
 }
 
-impl<T> From<&g::SemiList<T>> for VecDeque<Arc<T>> {
-    fn from(value: &g::SemiList<T>) -> Self {
-        match value {
+impl<T> FromList<&g::Ref<g::SemiList<T>>> for VecDeque<g::Ref<T>> {
+    fn from_list(value: &g::Ref<g::SemiList<T>>) -> Self {
+        match &value.val {
             g::SemiList::Empty(_) => Default::default(),
             g::SemiList::Tail(tail) => VecDeque::from([tail.clone()]),
             g::SemiList::Link(link) => {
-                let mut vec = VecDeque::from(link.next.as_ref());
-                vec.push_front(link.item.clone());
+                let mut vec = VecDeque::from_list(&link.val.next);
+                vec.push_front(link.val.item.clone());
                 vec
             },
         }
     }
 }
 
-impl TryFrom<&g::TopItem> for l::TopItem {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::TopItem>> for l::TopItem {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::TopItem) -> Result<Self, Self::Error> {
-        Ok(match value {
+    fn try_from(value: &g::Ref<g::TopItem>) -> Result<Self, Self::Error> {
+        Ok(match &value.val {
             g::TopItem::Main(main) => Self::Main(try_convert(main)?),
             g::TopItem::Func(func) => Self::Func(try_convert(func)?),
         })
     }
 }
 
-impl TryFrom<&g::Main> for l::Main {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::Main>> for l::Main {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::Main) -> Result<Self, Self::Error> {
-        Ok(Self { proc: try_convert(&value.proc)? })
+    fn try_from(value: &g::Ref<g::Main>) -> Result<Self, Self::Error> {
+        Ok(Self { proc: try_convert(&value.val.proc)? })
     }
 }
 
-impl TryFrom<&g::Func> for l::Func {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::Func>> for l::Func {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::Func) -> Result<Self, Self::Error> {
+    fn try_from(value: &g::Ref<g::Func>) -> Result<Self, Self::Error> {
         Ok(Self {
-            name: convert(&value.name),
+            name: convert(&value.val.name),
             params: Arc::new(
-                VecDeque::from(value.params.as_ref())
+                VecDeque::from_list(&value.val.params)
                     .into_iter()
-                    .map(try_convert)
+                    .map(|x| try_convert(&x))
                     .collect::<Result<_, _>>()?,
             ),
-            proc: try_convert(&value.proc)?,
+            proc: try_convert(&value.val.proc)?,
         })
     }
 }
 
-impl From<&g::Name> for l::Name {
-    fn from(value: &g::Name) -> Self {
-        Self { str: value.str.clone() }
+impl From<&g::Ref<g::Name>> for l::Name {
+    fn from(value: &g::Ref<g::Name>) -> Self {
+        Self { str: value.val.str.clone() }
     }
 }
 
-impl TryFrom<&g::IdentDeclaration> for l::IdentDeclaration {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::IdentDeclaration>> for l::IdentDeclaration {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::IdentDeclaration) -> Result<Self, Self::Error> {
-        Ok(Self { name: convert(&value.name), ty: try_convert(&value.ty)? })
+    fn try_from(value: &g::Ref<g::IdentDeclaration>) -> Result<Self, Self::Error> {
+        Ok(Self { name: convert(&value.val.name), ty: Arc::new((&value.val.ty).try_into()?) })
     }
 }
 
-impl TryFrom<&g::Type> for l::Type {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::Type>> for l::Type {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::Type) -> Result<Self, Self::Error> {
-        Ok(match value {
+    fn try_from(value: &g::Ref<g::Type>) -> Result<Self, Self::Error> {
+        Ok(match &value.val {
             g::Type::Base(base) => Self::Base(try_convert(base)?),
             g::Type::Array(array) => {
-                let len = parse_num_literal(&array.len).context(format!(
-                    "Array type length should be a positive integer; Found: {}",
-                    display_num_literal(&array.len)
-                ))?;
+                let len = &array.val.len;
+                let Ok(len) = parse_num_literal(&array.val.len) else {
+                    return Err(CompileErrorSet::new_error(
+                        len.range,
+                        CompileError::Convert(LogicError::InvalidArrayTypeLen),
+                    ));
+                };
 
-                Self::Array { ty: try_convert(&array.ty)?, len }
+                Self::Array { ty: try_convert(&array.val.ty)?, len }
             },
-            g::Type::Ref(ref_ty) => Self::Ref(try_convert(&ref_ty.ty)?),
+            g::Type::Ref(ref_ty) => Self::Ref(try_convert(&ref_ty.val.ty)?),
         })
     }
 }
 
-impl TryFrom<&g::BaseType> for l::BaseType {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::BaseType>> for l::BaseType {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::BaseType) -> Result<Self, Self::Error> {
-        Ok(match value.name.str.as_ref() {
+    fn try_from(value: &g::Ref<g::BaseType>) -> Result<Self, Self::Error> {
+        let name = &value.val.name;
+        Ok(match name.val.str.as_ref() {
             "any" => Self::Any,
             "val" => Self::Val,
             "num" => Self::Num,
             "int" => Self::Int,
             "uint" => Self::Uint,
             "bool" => Self::Bool,
-            other => bail!("Found invalid type: {}", other),
+            _ => {
+                return Err(CompileErrorSet::new_error(
+                    name.range,
+                    CompileError::Convert(LogicError::InvalidType),
+                ));
+            },
         })
     }
 }
 
-impl TryFrom<&g::Proc> for l::Proc {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::Proc>> for l::Proc {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::Proc) -> Result<Self, Self::Error> {
+    fn try_from(value: &g::Ref<g::Proc>) -> Result<Self, Self::Error> {
         Ok(Self {
             idents: Arc::new(
-                VecDeque::from(value.idents.as_ref())
+                VecDeque::from_list(&value.val.idents)
                     .into_iter()
-                    .map(try_convert)
+                    .map(|x| try_convert(&x))
                     .collect::<Result<_, _>>()?,
             ),
-            body: try_convert(&value.body)?,
+            body: try_convert(&value.val.body)?,
         })
     }
 }
 
-impl TryFrom<&g::Body> for l::Body {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::Body>> for l::Body {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::Body) -> Result<Self, Self::Error> {
+    fn try_from(value: &g::Ref<g::Body>) -> Result<Self, Self::Error> {
         Ok(Self {
             items: Arc::new(
-                VecDeque::from(value.items.as_ref())
+                VecDeque::from_list(&value.val.items)
                     .into_iter()
-                    .map(try_convert)
+                    .map(|x| try_convert(&x))
                     .collect::<Result<_, _>>()?,
             ),
         })
     }
 }
 
-impl TryFrom<&g::BodyItem> for l::BodyItem {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::BodyItem>> for l::BodyItem {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::BodyItem) -> Result<Self, Self::Error> {
-        Ok(match value {
+    fn try_from(value: &g::Ref<g::BodyItem>) -> Result<Self, Self::Error> {
+        Ok(match &value.val {
             g::BodyItem::Statement(x) => Self::Statement(try_convert(x)?),
             g::BodyItem::If(x) => Self::If(try_convert(x)?),
             g::BodyItem::While(x) => Self::While(try_convert(x)?),
@@ -207,25 +219,25 @@ impl TryFrom<&g::BodyItem> for l::BodyItem {
     }
 }
 
-impl TryFrom<&g::Statement> for l::Statement {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::Statement>> for l::Statement {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::Statement) -> Result<Self, Self::Error> {
-        Ok(match value {
+    fn try_from(value: &g::Ref<g::Statement>) -> Result<Self, Self::Error> {
+        Ok(match &value.val {
             g::Statement::Assign(x) => Self::Assign(try_convert(x)?),
             g::Statement::Call(x) => Self::Call(try_convert(x)?),
         })
     }
 }
 
-impl TryFrom<&g::IfItem> for l::IfItem {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::IfItem>> for l::IfItem {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::IfItem) -> Result<Self, Self::Error> {
+    fn try_from(value: &g::Ref<g::IfItem>) -> Result<Self, Self::Error> {
         Ok(Self {
-            condition: try_convert(&value.condition)?,
-            then_body: try_convert(&value.then_body)?,
-            else_item: match convert_maybe(&value.else_item) {
+            condition: try_convert(&value.val.condition)?,
+            then_body: try_convert(&value.val.then_body)?,
+            else_item: match convert_maybe(&value.val.else_item) {
                 None => None,
                 Some(x) => Some(try_convert(x)?),
             },
@@ -233,67 +245,72 @@ impl TryFrom<&g::IfItem> for l::IfItem {
     }
 }
 
-impl TryFrom<&g::WhileItem> for l::WhileItem {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::WhileItem>> for l::WhileItem {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::WhileItem) -> Result<Self, Self::Error> {
-        Ok(Self { condition: try_convert(&value.condition)?, body: try_convert(&value.body)? })
-    }
-}
-
-impl TryFrom<&g::Assign> for l::Assign {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &g::Assign) -> Result<Self, Self::Error> {
-        Ok(Self { place: try_convert(&value.place)?, expr: try_convert(&value.expr)? })
-    }
-}
-
-impl TryFrom<&g::FunctionCall> for l::FunctionCall {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &g::FunctionCall) -> Result<Self, Self::Error> {
+    fn try_from(value: &g::Ref<g::WhileItem>) -> Result<Self, Self::Error> {
         Ok(Self {
-            func_name: convert(&value.func_name),
+            condition: try_convert(&value.val.condition)?,
+            body: try_convert(&value.val.body)?,
+        })
+    }
+}
+
+impl TryFrom<&g::Ref<g::Assign>> for l::Assign {
+    type Error = CompileErrorSet;
+
+    fn try_from(value: &g::Ref<g::Assign>) -> Result<Self, Self::Error> {
+        Ok(Self { place: try_convert(&value.val.place)?, expr: try_convert(&value.val.expr)? })
+    }
+}
+
+impl TryFrom<&g::Ref<g::FunctionCall>> for l::FunctionCall {
+    type Error = CompileErrorSet;
+
+    fn try_from(value: &g::Ref<g::FunctionCall>) -> Result<Self, Self::Error> {
+        Ok(Self {
+            func_name: convert(&value.val.func_name),
             param_exprs: Arc::new(
-                VecDeque::from(value.param_exprs.as_ref())
+                VecDeque::from_list(&value.val.param_exprs)
                     .into_iter()
-                    .map(try_convert)
+                    .map(|x| try_convert(&x))
                     .collect::<Result<_, _>>()?,
             ),
         })
     }
 }
 
-impl TryFrom<&g::Expr> for l::Expr {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::Expr>> for l::Expr {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::Expr) -> Result<Self, Self::Error> {
-        Ok(match value {
+    fn try_from(value: &g::Ref<g::Expr>) -> Result<Self, Self::Error> {
+        Ok(match &value.val {
             g::Expr::Literal(x) => Self::Literal(try_convert(x)?),
             g::Expr::Place(x) => Self::Place(try_convert(x)?),
-            g::Expr::Ref(x) => Self::Ref(try_convert(unnest(&x.place))?),
+            g::Expr::Ref(x) => Self::Ref(try_convert(unnest(&x.val.place))?),
             g::Expr::Paren(x) => Self::Paren(try_convert(x)?),
-            g::Expr::Cast(x) => {
-                Self::Cast { ty: try_convert(&x.ty)?, expr: try_convert(unnest(&x.item))? }
+            g::Expr::Cast(x) => Self::Cast {
+                ty: Arc::new((&x.val.ty).try_into()?),
+                expr: try_convert(unnest(&x.val.item))?,
             },
-            g::Expr::Transmute(x) => {
-                Self::Transmute { ty: try_convert(&x.ty)?, expr: try_convert(unnest(&x.item))? }
+            g::Expr::Transmute(x) => Self::Transmute {
+                ty: Arc::new((&x.val.ty).try_into()?),
+                expr: try_convert(unnest(&x.val.item))?,
             },
         })
     }
 }
 
-impl TryFrom<&g::ElseItem> for l::ElseItem {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::ElseItem>> for l::ElseItem {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::ElseItem) -> Result<Self, Self::Error> {
-        Ok(match value {
-            g::ElseItem::Body(x) => l::ElseItem { body: try_convert(&x.body)? },
+    fn try_from(value: &g::Ref<g::ElseItem>) -> Result<Self, Self::Error> {
+        Ok(match &value.val {
+            g::ElseItem::Body(x) => l::ElseItem { body: try_convert(&x.val.body)? },
             g::ElseItem::If(x) => l::ElseItem {
                 body: Arc::new(l::Body {
                     items: Arc::new(Vec::from([Arc::new(l::BodyItem::If(try_convert(
-                        &x.if_item,
+                        &x.val.if_item,
                     )?))])),
                 }),
             },
@@ -301,43 +318,55 @@ impl TryFrom<&g::ElseItem> for l::ElseItem {
     }
 }
 
-impl TryFrom<&g::AssignExpr> for l::AssignExpr {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::AssignExpr>> for l::AssignExpr {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::AssignExpr) -> Result<Self, Self::Error> {
-        Ok(match value {
+    fn try_from(value: &g::Ref<g::AssignExpr>) -> Result<Self, Self::Error> {
+        Ok(match &value.val {
             g::AssignExpr::Expr(expr) => Self::Expr(try_convert(expr)?),
             g::AssignExpr::Span(span) => Self::Span(Arc::new(
-                VecDeque::from(span.elements.as_ref())
+                VecDeque::from_list(&span.val.elements)
                     .into_iter()
-                    .map(try_convert)
+                    .map(|x| try_convert(&x))
                     .collect::<Result<_, _>>()?,
             )),
             g::AssignExpr::Slice(slice) => {
-                let start_in = convert_maybe(slice.start_in.as_ref());
+                let start_in = convert_maybe(&slice.val.start_in);
 
                 let start_in = match start_in {
                     None => 0,
-                    Some(x) => parse_num_literal(x)
-                        .context("Inclusive start of slice range should be a positive integer")?,
+                    Some(x) => match parse_num_literal(x) {
+                        Ok(x) => x,
+                        Err(_) => {
+                            return Err(CompileErrorSet::new_error(
+                                x.range,
+                                CompileError::Convert(LogicError::InvalidRangeStartIncl),
+                            ));
+                        },
+                    },
                 };
 
-                let end_ex = parse_num_literal(&slice.end_ex)
-                    .context("Exclusive end of slice range should be a positive integer")?;
+                let end_ex = &slice.val.end_ex;
+                let Ok(end_ex) = parse_num_literal(end_ex) else {
+                    return Err(CompileErrorSet::new_error(
+                        end_ex.range,
+                        CompileError::Convert(LogicError::InvalidRangeEndExcl),
+                    ));
+                };
 
-                Self::Slice { place: try_convert(&slice.place)?, start_in, end_ex }
+                Self::Slice { place: try_convert(&slice.val.place)?, start_in, end_ex }
             },
         })
     }
 }
 
-impl TryFrom<&g::Place> for l::Place {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::Place>> for l::Place {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::Place) -> Result<Self, Self::Error> {
+    fn try_from(value: &g::Ref<g::Place>) -> Result<Self, Self::Error> {
         Ok(Self {
-            head: try_convert(unnest(&value.head))?,
-            offset: match convert_maybe(&value.offset) {
+            head: try_convert(unnest(&value.val.head))?,
+            offset: match convert_maybe(&value.val.offset) {
                 None => None,
                 Some(offset) => Some(try_convert(offset)?),
             },
@@ -345,12 +374,12 @@ impl TryFrom<&g::Place> for l::Place {
     }
 }
 
-impl TryFrom<&g::Literal> for l::Literal {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::Literal>> for l::Literal {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::Literal) -> Result<Self, Self::Error> {
-        Ok(match value {
-            g::Literal::Str(x) => l::Literal::Val(x.str.clone()),
+    fn try_from(value: &g::Ref<g::Literal>) -> Result<Self, Self::Error> {
+        Ok(match &value.val {
+            g::Literal::Str(x) => l::Literal::Val(x.val.str.clone()),
             g::Literal::Num(x) => {
                 let num: f64 = parse_num_literal(x)?;
                 if num.is_infinite() || num.is_nan() || num.is_subnormal() || num.round() != num {
@@ -362,7 +391,7 @@ impl TryFrom<&g::Literal> for l::Literal {
                     }
                 }
             },
-            g::Literal::Bool(x) => match x.as_ref() {
+            g::Literal::Bool(x) => match &x.val {
                 g::BoolLiteral::True(_) => l::Literal::Bool(true),
                 g::BoolLiteral::False(_) => l::Literal::Bool(false),
             },
@@ -370,11 +399,14 @@ impl TryFrom<&g::Literal> for l::Literal {
     }
 }
 
-fn parse_num_literal<T: FromStr>(lit: &g::NumLiteral) -> anyhow::Result<T> {
-    let num = display_num_literal(lit);
+fn parse_num_literal<T: FromStr>(lit: &g::Ref<g::NumLiteral>) -> Result<T, CompileErrorSet> {
+    let num = display_num_literal(&lit.val);
     match num.parse() {
-        Err(_) => bail!("Invalid num literal: {}", num),
         Ok(t) => Ok(t),
+        Err(_) => Err(CompileErrorSet::new_error(
+            lit.range,
+            CompileError::Convert(LogicError::InvalidNumLiteral),
+        )),
     }
 }
 
@@ -385,105 +417,105 @@ fn display_num_literal(lit: &g::NumLiteral) -> String {
         num += "-";
     }
 
-    num += &lit.int.digits;
+    num += &lit.int.val.digits;
 
     if let Some(dec) = convert_maybe(&lit.dec) {
         num += ".";
-        num += &dec.digits.digits;
+        num += &dec.val.digits.val.digits;
     }
 
     num
 }
 
-impl TryFrom<&g::ParenExpr> for l::ParenExpr {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::ParenExpr>> for l::ParenExpr {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::ParenExpr) -> Result<Self, Self::Error> {
-        Ok(match value {
+    fn try_from(value: &g::Ref<g::ParenExpr>) -> Result<Self, Self::Error> {
+        Ok(match &value.val {
             g::ParenExpr::Unary(x) => Self::Unary(try_convert(x)?),
             g::ParenExpr::Binary(x) => Self::Binary(try_convert(x)?),
         })
     }
 }
 
-impl TryFrom<&g::PlaceHead> for l::PlaceHead {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::PlaceHead>> for l::PlaceHead {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::PlaceHead) -> Result<Self, Self::Error> {
-        Ok(match value {
-            g::PlaceHead::Ident(ident) => Self::Ident(try_convert(ident)?),
+    fn try_from(value: &g::Ref<g::PlaceHead>) -> Result<Self, Self::Error> {
+        Ok(match &value.val {
+            g::PlaceHead::Ident(ident) => Self::Ident(convert(ident)),
             g::PlaceHead::Deref(deref) => Self::Deref(try_convert(deref)?),
         })
     }
 }
 
-fn unnest<T>(nest: &g::ParensNest<T>) -> &Arc<T> {
-    match nest {
+fn unnest<T>(nest: &g::Ref<g::ParensNest<T>>) -> &g::Ref<T> {
+    match &nest.val {
         g::ParensNest::Root(x) => x,
-        g::ParensNest::Wrapped(wrapped) => unnest(&wrapped.item),
+        g::ParensNest::Wrapped(wrapped) => unnest(&wrapped.val.item),
     }
 }
 
-impl TryFrom<&g::Offset> for l::Offset {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::Offset>> for l::Offset {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::Offset) -> Result<Self, Self::Error> {
-        Ok(Self { expr: try_convert(&value.expr)? })
+    fn try_from(value: &g::Ref<g::Offset>) -> Result<Self, Self::Error> {
+        Ok(Self { expr: try_convert(&value.val.expr)? })
     }
 }
 
-fn convert_maybe<T>(maybe: &g::Maybe<T>) -> Option<&Arc<T>> {
-    match maybe {
+fn convert_maybe<T>(maybe: &g::Ref<g::Maybe<T>>) -> Option<&g::Ref<T>> {
+    match &maybe.val {
         g::Maybe::Item(x) => Some(x),
         g::Maybe::Empty(_) => None,
     }
 }
 
-impl TryFrom<&g::UnaryParenExpr> for l::UnaryParenExpr {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::UnaryParenExpr>> for l::UnaryParenExpr {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::UnaryParenExpr) -> Result<Self, Self::Error> {
-        Ok(Self { op: value.op.into(), operand: try_convert(&value.operand)? })
+    fn try_from(value: &g::Ref<g::UnaryParenExpr>) -> Result<Self, Self::Error> {
+        Ok(Self { op: *convert(&value.val.op), operand: try_convert(&value.val.operand)? })
     }
 }
 
-impl TryFrom<&g::BinaryParenExpr> for l::BinaryParenExpr {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::BinaryParenExpr>> for l::BinaryParenExpr {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::BinaryParenExpr) -> Result<Self, Self::Error> {
+    fn try_from(value: &g::Ref<g::BinaryParenExpr>) -> Result<Self, Self::Error> {
         Ok(Self {
-            left: try_convert(&value.left)?,
-            op: value.op.into(),
-            right: try_convert(&value.right)?,
+            left: try_convert(&value.val.left)?,
+            op: *convert(&value.val.op),
+            right: try_convert(&value.val.right)?,
         })
     }
 }
 
-impl From<&g::Ident> for l::Ident {
-    fn from(value: &g::Ident) -> Self {
-        Self { name: convert(&value.name) }
+impl From<&g::Ref<g::Ident>> for l::Ident {
+    fn from(value: &g::Ref<g::Ident>) -> Self {
+        Self { name: convert(&value.val.name) }
     }
 }
 
-impl TryFrom<&g::Deref> for l::Deref {
-    type Error = anyhow::Error;
+impl TryFrom<&g::Ref<g::Deref>> for l::Deref {
+    type Error = CompileErrorSet;
 
-    fn try_from(value: &g::Deref) -> Result<Self, Self::Error> {
-        Ok(Self { addr: try_convert(&value.addr)? })
+    fn try_from(value: &g::Ref<g::Deref>) -> Result<Self, Self::Error> {
+        Ok(Self { addr: try_convert(&value.val.addr)? })
     }
 }
 
-impl From<g::UnaryParenExprOp> for l::UnaryParenExprOp {
-    fn from(value: g::UnaryParenExprOp) -> Self {
-        match value {
+impl From<&g::Ref<g::UnaryParenExprOp>> for l::UnaryParenExprOp {
+    fn from(value: &g::Ref<g::UnaryParenExprOp>) -> Self {
+        match &value.val {
             g::UnaryParenExprOp::Not(_) => Self::Not,
         }
     }
 }
 
-impl From<g::BinaryParenExprOp> for l::BinaryParenExprOp {
-    fn from(value: g::BinaryParenExprOp) -> Self {
-        match value {
+impl From<&g::Ref<g::BinaryParenExprOp>> for l::BinaryParenExprOp {
+    fn from(value: &g::Ref<g::BinaryParenExprOp>) -> Self {
+        match &value.val {
             g::BinaryParenExprOp::Add(_) => Self::Add,
             g::BinaryParenExprOp::Sub(_) => Self::Sub,
             g::BinaryParenExprOp::Mul(_) => Self::Mul,

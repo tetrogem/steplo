@@ -1,200 +1,204 @@
 use std::sync::Arc;
 
-use crate::{ast_error::AstErrorSet, ast_parse::parse_ast, token_feed::TokenFeed};
+use crate::{
+    compile_error::CompileErrorSet, grammar_parse::parse_ast, srced::Srced, token_feed::TokenFeed,
+};
+
+pub type Ref<T> = Arc<Srced<T>>;
 
 #[derive(Debug)]
 pub enum TopItem {
-    Main(Arc<Main>),
-    Func(Arc<Func>),
+    Main(Ref<Main>),
+    Func(Ref<Func>),
 }
 
 #[derive(Debug)]
 pub struct Main {
-    pub proc: Arc<Proc>,
+    pub proc: Ref<Proc>,
 }
 
 #[derive(Debug)]
 pub struct Func {
-    pub name: Arc<Name>,
-    pub params: Arc<CommaList<IdentDeclaration>>,
-    pub proc: Arc<Proc>,
+    pub name: Ref<Name>,
+    pub params: Ref<CommaList<IdentDeclaration>>,
+    pub proc: Ref<Proc>,
 }
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct Name {
     pub str: Arc<str>,
 }
 
 #[derive(Debug)]
 pub enum Type {
-    Ref(Arc<RefType>),
-    Array(Arc<ArrayType>),
-    Base(Arc<BaseType>),
+    Ref(Ref<RefType>),
+    Array(Ref<ArrayType>),
+    Base(Ref<BaseType>),
 }
 
 #[derive(Debug)]
 pub struct RefType {
-    pub ty: Arc<Type>,
+    pub ty: Ref<Type>,
 }
 
 #[derive(Debug)]
 pub struct ArrayType {
-    pub ty: Arc<Type>,
-    pub len: Arc<NumLiteral>,
+    pub ty: Ref<Type>,
+    pub len: Ref<NumLiteral>,
 }
 
 #[derive(Debug)]
 pub struct BaseType {
-    pub name: Arc<Name>,
+    pub name: Ref<Name>,
 }
 
 #[derive(Debug)]
 pub struct IdentDeclaration {
-    pub name: Arc<Name>,
-    pub ty: Arc<Type>,
+    pub name: Ref<Name>,
+    pub ty: Ref<Type>,
 }
 
 #[derive(Debug)]
 pub struct Place {
-    pub head: Arc<ParensNest<PlaceHead>>,
-    pub offset: Arc<Maybe<Offset>>,
+    pub head: Ref<ParensNest<PlaceHead>>,
+    pub offset: Ref<Maybe<Offset>>,
 }
 
 #[derive(Debug)]
 pub enum ParensNest<T> {
-    Root(Arc<T>),
-    Wrapped(Arc<ParensWrapped<ParensNest<T>>>),
+    Root(Ref<T>),
+    Wrapped(Ref<ParensWrapped<ParensNest<T>>>),
 }
 
 #[derive(Debug)]
 pub struct ParensWrapped<T> {
-    pub item: Arc<T>,
+    pub item: Ref<T>,
 }
 
 #[derive(Debug)]
-pub enum Maybe<T: ?Sized> {
-    Item(Arc<T>),
-    Empty(Arc<Empty>),
+pub enum Maybe<T> {
+    Item(Ref<T>),
+    Empty(Ref<Empty>),
 }
 
 #[derive(Debug)]
 pub enum PlaceHead {
-    Ident(Arc<Ident>),
-    Deref(Arc<Deref>),
+    Ident(Ref<Ident>),
+    Deref(Ref<Deref>),
 }
 
 #[derive(Debug)]
 pub struct Offset {
-    pub expr: Arc<Expr>,
+    pub expr: Ref<Expr>,
 }
 
 #[derive(Debug)]
 pub struct Ident {
-    pub name: Arc<Name>,
+    pub name: Ref<Name>,
 }
 
 #[derive(Debug)]
 pub struct Deref {
-    pub addr: Arc<Expr>,
+    pub addr: Ref<Expr>,
 }
 
 #[derive(Debug)]
 pub struct Proc {
-    pub idents: Arc<CommaList<IdentDeclaration>>,
-    pub body: Arc<Body>,
+    pub idents: Ref<CommaList<IdentDeclaration>>,
+    pub body: Ref<Body>,
 }
 
 #[derive(Debug)]
 pub struct Body {
-    pub items: Arc<SemiList<BodyItem>>,
+    pub items: Ref<SemiList<BodyItem>>,
 }
 
 #[derive(Debug)]
 pub enum BodyItem {
-    Statement(Arc<Statement>),
-    If(Arc<IfItem>),
-    While(Arc<WhileItem>),
+    Statement(Ref<Statement>),
+    If(Ref<IfItem>),
+    While(Ref<WhileItem>),
 }
 
 #[derive(Debug)]
 pub struct IfItem {
-    pub condition: Arc<Expr>,
-    pub then_body: Arc<Body>,
-    pub else_item: Arc<Maybe<ElseItem>>,
+    pub condition: Ref<Expr>,
+    pub then_body: Ref<Body>,
+    pub else_item: Ref<Maybe<ElseItem>>,
 }
 
 #[derive(Debug)]
 pub enum ElseItem {
-    Body(Arc<ElseBodyItem>),
-    If(Arc<ElseIfItem>),
+    Body(Ref<ElseBodyItem>),
+    If(Ref<ElseIfItem>),
 }
 
 #[derive(Debug)]
 pub struct ElseBodyItem {
-    pub body: Arc<Body>,
+    pub body: Ref<Body>,
 }
 
 #[derive(Debug)]
 pub struct ElseIfItem {
-    pub if_item: Arc<IfItem>,
+    pub if_item: Ref<IfItem>,
 }
 
 #[derive(Debug)]
 pub struct WhileItem {
-    pub condition: Arc<Expr>,
-    pub body: Arc<Body>,
+    pub condition: Ref<Expr>,
+    pub body: Ref<Body>,
 }
 
 #[derive(Debug)]
 pub enum Statement {
-    Assign(Arc<Assign>),
-    Call(Arc<FunctionCall>),
+    Assign(Ref<Assign>),
+    Call(Ref<FunctionCall>),
 }
 
 #[derive(Debug)]
 pub struct FunctionCall {
-    pub func_name: Arc<Name>,
-    pub param_exprs: Arc<CommaList<AssignExpr>>,
+    pub func_name: Ref<Name>,
+    pub param_exprs: Ref<CommaList<AssignExpr>>,
 }
 
 #[derive(Debug)]
 pub struct Assign {
-    pub place: Arc<Place>,
-    pub expr: Arc<AssignExpr>,
+    pub place: Ref<Place>,
+    pub expr: Ref<AssignExpr>,
 }
 
 #[derive(Debug)]
 pub enum AssignExpr {
-    Expr(Arc<Expr>),
-    Span(Arc<Span>),
-    Slice(Arc<Slice>),
+    Expr(Ref<Expr>),
+    Span(Ref<Span>),
+    Slice(Ref<Slice>),
 }
 
 #[derive(Debug)]
 pub enum Expr {
-    Literal(Arc<Literal>),
-    Place(Arc<Place>),
-    Ref(Arc<RefExpr>),
-    Paren(Arc<ParenExpr>),
-    Cast(Arc<CastExpr<Expr>>),
-    Transmute(Arc<TransmuteExpr<Expr>>),
+    Literal(Ref<Literal>),
+    Place(Ref<Place>),
+    Ref(Ref<RefExpr>),
+    Paren(Ref<ParenExpr>),
+    Cast(Ref<CastExpr<Expr>>),
+    Transmute(Ref<TransmuteExpr<Expr>>),
 }
 
 #[derive(Debug)]
 pub struct CastExpr<T> {
-    pub ty: Arc<Type>,
-    pub item: Arc<ParensNest<T>>,
+    pub ty: Ref<Type>,
+    pub item: Ref<ParensNest<T>>,
 }
 
 #[derive(Debug)]
 pub struct TransmuteExpr<T> {
-    pub ty: Arc<Type>,
-    pub item: Arc<ParensNest<T>>,
+    pub ty: Ref<Type>,
+    pub item: Ref<ParensNest<T>>,
 }
 
 #[derive(Debug)]
 pub struct RefExpr {
-    pub place: Arc<ParensNest<Place>>,
+    pub place: Ref<ParensNest<Place>>,
 }
 
 #[derive(Debug)]
@@ -204,14 +208,14 @@ pub struct StrLiteral {
 
 #[derive(Debug)]
 pub struct NumLiteral {
-    pub negative: Arc<Maybe<Negative>>,
-    pub int: Arc<Digits>,
-    pub dec: Arc<Maybe<Decimal>>,
+    pub negative: Ref<Maybe<Negative>>,
+    pub int: Ref<Digits>,
+    pub dec: Ref<Maybe<Decimal>>,
 }
 
 #[derive(Debug)]
 pub struct Decimal {
-    pub digits: Arc<Digits>,
+    pub digits: Ref<Digits>,
 }
 
 #[derive(Debug)]
@@ -224,8 +228,8 @@ pub struct Negative;
 
 #[derive(Debug)]
 pub enum BoolLiteral {
-    True(Arc<TrueLiteral>),
-    False(Arc<FalseLiteral>),
+    True(Ref<TrueLiteral>),
+    False(Ref<FalseLiteral>),
 }
 
 #[derive(Debug)]
@@ -236,39 +240,39 @@ pub struct FalseLiteral;
 
 #[derive(Debug)]
 pub enum Literal {
-    Str(Arc<StrLiteral>),
-    Num(Arc<NumLiteral>),
-    Bool(Arc<BoolLiteral>),
+    Str(Ref<StrLiteral>),
+    Num(Ref<NumLiteral>),
+    Bool(Ref<BoolLiteral>),
 }
 
 #[derive(Debug)]
 pub struct Span {
-    pub elements: Arc<CommaList<Expr>>,
+    pub elements: Ref<CommaList<Expr>>,
 }
 
 #[derive(Debug)]
 pub struct Slice {
-    pub place: Arc<Place>,
-    pub start_in: Arc<Maybe<NumLiteral>>,
-    pub end_ex: Arc<NumLiteral>,
+    pub place: Ref<Place>,
+    pub start_in: Ref<Maybe<NumLiteral>>,
+    pub end_ex: Ref<NumLiteral>,
 }
 
 #[derive(Debug)]
 pub enum ParenExpr {
-    Unary(Arc<UnaryParenExpr>),
-    Binary(Arc<BinaryParenExpr>),
+    Unary(Ref<UnaryParenExpr>),
+    Binary(Ref<BinaryParenExpr>),
 }
 
 #[derive(Debug)]
 pub struct UnaryParenExpr {
-    pub op: UnaryParenExprOp,
-    pub operand: Arc<Expr>,
+    pub op: Ref<UnaryParenExprOp>,
+    pub operand: Ref<Expr>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub enum UnaryParenExprOp {
     // boolean
-    Not(NotOp),
+    Not(Ref<NotOp>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -276,31 +280,31 @@ pub struct NotOp;
 
 #[derive(Debug)]
 pub struct BinaryParenExpr {
-    pub op: BinaryParenExprOp,
-    pub left: Arc<Expr>,
-    pub right: Arc<Expr>,
+    pub op: Ref<BinaryParenExprOp>,
+    pub left: Ref<Expr>,
+    pub right: Ref<Expr>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub enum BinaryParenExprOp {
     // math
-    Add(AddOp),
-    Sub(SubOp),
-    Mul(MulOp),
-    Div(DivOp),
-    Mod(ModOp),
+    Add(Ref<AddOp>),
+    Sub(Ref<SubOp>),
+    Mul(Ref<MulOp>),
+    Div(Ref<DivOp>),
+    Mod(Ref<ModOp>),
     // inequality
-    Eq(EqOp),
-    Neq(NeqOp),
-    Gt(GtOp),
-    Lt(LtOp),
-    Gte(GteOp),
-    Lte(LteOp),
+    Eq(Ref<EqOp>),
+    Neq(Ref<NeqOp>),
+    Gt(Ref<GtOp>),
+    Lt(Ref<LtOp>),
+    Gte(Ref<GteOp>),
+    Lte(Ref<LteOp>),
     // boolean
-    And(AndOp),
-    Or(OrOp),
+    And(Ref<AndOp>),
+    Or(Ref<OrOp>),
     // string
-    Join(JoinOp),
+    Join(Ref<JoinOp>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -347,13 +351,13 @@ pub struct JoinOp;
 
 #[derive(Debug)]
 pub enum NativeOperation {
-    Out { ident: Arc<Place> },
-    In { dest_ident: Arc<Place> },
+    Out { ident: Ref<Place> },
+    In { dest_ident: Ref<Place> },
 }
 
 #[derive(Debug)]
 pub struct Program {
-    pub items: Arc<List<TopItem>>,
+    pub items: Ref<List<TopItem>>,
 }
 
 #[derive(Debug)]
@@ -367,49 +371,49 @@ pub struct Empty;
 #[derive(Debug)]
 pub enum CommaList<T> {
     // <item>,
-    Link(Arc<CommaListLink<T>>),
+    Link(Ref<CommaListLink<T>>),
     // <item>
-    Tail(Arc<T>),
+    Tail(Ref<T>),
     //
-    Empty(Arc<Empty>),
+    Empty(Ref<Empty>),
 }
 
 #[derive(Debug)]
 pub struct CommaListLink<T> {
-    pub item: Arc<T>,
-    pub next: Arc<CommaList<T>>,
+    pub item: Ref<T>,
+    pub next: Ref<CommaList<T>>,
 }
 
 #[derive(Debug)]
 pub enum SemiList<T> {
     // <item>,
-    Link(Arc<SemiListLink<T>>),
+    Link(Ref<SemiListLink<T>>),
     // <item>
-    Tail(Arc<T>),
+    Tail(Ref<T>),
     //
-    Empty(Arc<Empty>),
+    Empty(Ref<Empty>),
 }
 
 #[derive(Debug)]
 pub struct SemiListLink<T> {
-    pub item: Arc<T>,
-    pub next: Arc<SemiList<T>>,
+    pub item: Ref<T>,
+    pub next: Ref<SemiList<T>>,
 }
 
 #[derive(Debug)]
 pub enum List<T> {
     // <item>
-    Link(Arc<ListLink<T>>),
+    Link(Ref<ListLink<T>>),
     //
-    Empty(Arc<Empty>),
+    Empty(Ref<Empty>),
 }
 
 #[derive(Debug)]
 pub struct ListLink<T> {
-    pub item: Arc<T>,
-    pub next: Arc<List<T>>,
+    pub item: Ref<T>,
+    pub next: Ref<List<T>>,
 }
 
-pub fn parse(mut tokens: TokenFeed) -> Result<Program, AstErrorSet> {
+pub fn parse(mut tokens: TokenFeed) -> Result<Srced<Program>, CompileErrorSet> {
     parse_ast(&mut tokens)
 }

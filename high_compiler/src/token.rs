@@ -1,7 +1,7 @@
 use anyhow::bail;
 use itertools::{Itertools, MultiPeek};
 
-use crate::src_pos::{SrcPos, SrcRange};
+use crate::srced::{SrcPos, SrcRange, Srced};
 
 #[derive(Debug, Clone, PartialEq, Eq, strum::EnumDiscriminants)]
 #[strum_discriminants(name(TokenKind), derive(Hash))]
@@ -41,21 +41,15 @@ pub enum Token {
     False,
 }
 
-#[derive(Debug, Clone)]
-pub struct SrcToken {
-    pub token: Token,
-    pub range: SrcRange,
-}
-
 fn consume_char(
     chars: &mut impl Iterator<Item = SrcChar>,
     token: Option<Token>,
-) -> anyhow::Result<Option<SrcToken>> {
+) -> anyhow::Result<Option<Srced<Token>>> {
     let Some(char) = chars.next() else { bail!("Expected char") };
-    Ok(token.map(|token| SrcToken { token, range: SrcRange::new_zero_len(char.pos) }))
+    Ok(token.map(|token| Srced { val: token, range: SrcRange::new_zero_len(char.pos) }))
 }
 
-fn consume_string(chars: &mut impl Iterator<Item = SrcChar>) -> anyhow::Result<SrcToken> {
+fn consume_string(chars: &mut impl Iterator<Item = SrcChar>) -> anyhow::Result<Srced<Token>> {
     let Some(opening_quote) = chars.next() else { bail!("Expected literal opening quote") };
 
     if opening_quote.char != '"' {
@@ -81,10 +75,12 @@ fn consume_string(chars: &mut impl Iterator<Item = SrcChar>) -> anyhow::Result<S
         bail!("Expected literal closing quote");
     }
 
-    Ok(SrcToken { token: Token::String(value), range })
+    Ok(Srced { val: Token::String(value), range })
 }
 
-fn consume_word(chars: &mut MultiPeek<impl Iterator<Item = SrcChar>>) -> anyhow::Result<SrcToken> {
+fn consume_word(
+    chars: &mut MultiPeek<impl Iterator<Item = SrcChar>>,
+) -> anyhow::Result<Srced<Token>> {
     let mut word = String::new();
     let mut range: Option<SrcRange> = None;
 
@@ -124,12 +120,12 @@ fn consume_word(chars: &mut MultiPeek<impl Iterator<Item = SrcChar>>) -> anyhow:
         },
     };
 
-    Ok(SrcToken { token, range })
+    Ok(Srced { val: token, range })
 }
 
 fn consume_digits(
     chars: &mut MultiPeek<impl Iterator<Item = SrcChar>>,
-) -> anyhow::Result<SrcToken> {
+) -> anyhow::Result<Srced<Token>> {
     let mut value = String::new();
     let mut range: Option<SrcRange> = None;
 
@@ -152,10 +148,10 @@ fn consume_digits(
 
     let Some(range) = range else { bail!("Digits is empty") };
 
-    Ok(SrcToken { token: Token::Digits(value), range })
+    Ok(Srced { val: Token::Digits(value), range })
 }
 
-fn consume_comment(chars: &mut impl Iterator<Item = SrcChar>) -> anyhow::Result<SrcToken> {
+fn consume_comment(chars: &mut impl Iterator<Item = SrcChar>) -> anyhow::Result<Srced<Token>> {
     let Some(slash) = chars.next() else { bail!("Expected //") };
     if slash.char != '/' {
         bail!("Expected //");
@@ -180,7 +176,7 @@ fn consume_comment(chars: &mut impl Iterator<Item = SrcChar>) -> anyhow::Result<
         range = range.extend_to(c.pos);
     }
 
-    Ok(SrcToken { token: Token::Comment(comment), range })
+    Ok(Srced { val: Token::Comment(comment), range })
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -206,7 +202,7 @@ fn position_src_chars(code: &str) -> Vec<SrcChar> {
     src_chars
 }
 
-pub fn tokenize(code: &str) -> anyhow::Result<Vec<SrcToken>> {
+pub fn tokenize(code: &str) -> anyhow::Result<Vec<Srced<Token>>> {
     let mut chars = position_src_chars(code).into_iter().multipeek();
     let mut tokens = Vec::new();
 

@@ -1,20 +1,20 @@
 use std::ops::Not;
 
 use crate::{
-    src_pos::{SrcPos, SrcRange},
-    token::{SrcToken, Token},
+    srced::{SrcRange, Srced},
+    token::Token,
     token_feed::cursor::Cursor,
 };
 
 pub struct TokenFeed {
-    tokens: Vec<SrcToken>,
+    tokens: Vec<Srced<Token>>,
     cursor: Cursor,
 }
 
 mod cursor {
     use crate::{
-        src_pos::{SrcPos, SrcRange},
-        token::SrcToken,
+        srced::{SrcPos, SrcRange, Srced},
+        token::Token,
     };
 
     #[derive(Clone, Copy, Default)]
@@ -32,7 +32,7 @@ mod cursor {
             self.range
         }
 
-        pub fn increment(self, last_token: Option<&SrcToken>) -> Self {
+        pub fn increment(self, last_token: Option<&Srced<Token>>) -> Self {
             let range = match last_token {
                 Some(t) => t.range,
                 None => {
@@ -45,12 +45,12 @@ mod cursor {
     }
 }
 
-impl<T: IntoIterator<Item = SrcToken>> From<T> for TokenFeed {
+impl<T: IntoIterator<Item = Srced<Token>>> From<T> for TokenFeed {
     fn from(value: T) -> Self {
         TokenFeed {
             tokens: value
                 .into_iter()
-                .filter(|t| matches!(t.token, Token::Comment(_)).not())
+                .filter(|t| matches!(t.val, Token::Comment(_)).not())
                 .collect(),
             cursor: Cursor::default(),
         }
@@ -58,7 +58,7 @@ impl<T: IntoIterator<Item = SrcToken>> From<T> for TokenFeed {
 }
 
 impl TokenFeed {
-    fn next(&mut self) -> FeedCell<Option<&SrcToken>> {
+    fn next(&mut self) -> FeedCell<Option<&Srced<Token>>> {
         let token = self.tokens.get(self.cursor.index());
         self.cursor = self.cursor.increment(token);
         FeedCell { res: token, range: self.cursor.range() }
@@ -84,7 +84,7 @@ impl TokenFeed {
 
     pub fn try_next<T, E>(
         &mut self,
-        consumer: impl FnOnce(FeedCell<Option<&SrcToken>>) -> Result<T, E>,
+        consumer: impl FnOnce(FeedCell<Option<&Srced<Token>>>) -> Result<T, E>,
     ) -> Result<T, E> {
         self.try_match(|tokens| consumer(tokens.next()))
     }
@@ -92,6 +92,10 @@ impl TokenFeed {
     pub fn parse<T: Parse>(&mut self) -> FeedCell<Result<T, T::Error>> {
         let res = self.try_match(T::parse);
         FeedCell { res, range: self.cursor.range() }
+    }
+
+    pub fn cur_range(&self) -> SrcRange {
+        self.cursor.range()
     }
 }
 
