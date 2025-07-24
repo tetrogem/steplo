@@ -330,7 +330,7 @@ pub fn report_compile_errors(code: &str, code_path: &Path, set: CompileErrorSet)
 
     for err in &errors {
         let src_info =
-            format!("{}:{}:{}", code_path.to_string_lossy(), range.start.line, range.start.col)
+            format!("{}:{}:{}", code_path.to_string_lossy(), range.start().line, range.start().col)
                 .normal();
 
         println!("{} {} {} {} {}", err.phase(), "@".blue(), src_info, "-->".blue(), err.to_msg());
@@ -340,8 +340,8 @@ pub fn report_compile_errors(code: &str, code_path: &Path, set: CompileErrorSet)
         .lines()
         .enumerate()
         .map(|(i, line)| (i + 1, line))
-        .skip(range.start.line.saturating_sub(2).saturating_sub(1))
-        .take(range.start.line.min(3))
+        .skip(range.start().line.saturating_sub(2).saturating_sub(1))
+        .take(range.start().line.min(3))
         .collect_vec();
 
     let Some(max_line_number) = nearby_lines.iter().map(|(i, _)| i.to_string()).max() else {
@@ -350,18 +350,37 @@ pub fn report_compile_errors(code: &str, code_path: &Path, set: CompileErrorSet)
 
     let line_numbers_width = max_line_number.len() + 1;
 
-    let empty_sidebar = format!("{:>width$} |", "", width = line_numbers_width).blue().bold();
+    let empty_sidebar = format!("{:>line_numbers_width$} |", "").blue().bold();
     println!("{empty_sidebar}");
+
+    let range_len = 1 + range.end().col.saturating_sub(range.start().col);
 
     for (i, line) in nearby_lines {
         let sidebar = format!("{i:>line_numbers_width$} |");
+
+        let line = if i == range.start().line && range.is_guess() {
+            let mut first_half = String::new();
+            let mut second_half = String::new();
+            for (i, char) in line.chars().enumerate() {
+                if i < range.start().col {
+                    first_half.push(char);
+                } else {
+                    second_half.push(char);
+                }
+            }
+
+            &format!("{}{}{}", first_half, "_".repeat(range_len).red(), second_half)
+        } else {
+            line
+        };
+
         println!("{}  {}", sidebar.blue().bold(), line);
     }
 
     println!(
         "{}  {}{}",
         empty_sidebar,
-        " ".repeat(range.start.col.saturating_sub(1)),
-        "^".repeat(1 + range.end.col.saturating_sub(range.start.col)).red(),
+        " ".repeat(range.start().col.saturating_sub(if range.is_guess() { 0 } else { 1 })),
+        "^".repeat(range_len).red(),
     );
 }

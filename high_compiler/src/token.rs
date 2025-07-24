@@ -46,7 +46,7 @@ fn consume_char(
     token: Option<Token>,
 ) -> anyhow::Result<Option<Srced<Token>>> {
     let Some(char) = chars.next() else { bail!("Expected char") };
-    Ok(token.map(|token| Srced { val: token, range: SrcRange::new_zero_len(char.pos) }))
+    Ok(token.map(|token| Srced { val: token, range: SrcRange::exact_pos(char.pos) }))
 }
 
 fn consume_string(chars: &mut impl Iterator<Item = SrcChar>) -> anyhow::Result<Srced<Token>> {
@@ -57,7 +57,7 @@ fn consume_string(chars: &mut impl Iterator<Item = SrcChar>) -> anyhow::Result<S
     }
 
     let mut value = String::new();
-    let mut range = SrcRange::new_zero_len(opening_quote.pos);
+    let mut range = SrcRange::exact_pos(opening_quote.pos);
 
     let mut closed = false;
     for c in chars {
@@ -93,7 +93,7 @@ fn consume_word(
             chars.next();
 
             range = Some(match range {
-                None => SrcRange::new_zero_len(c.pos),
+                None => SrcRange::exact_pos(c.pos),
                 Some(range) => range.extend_to(c.pos),
             });
         } else {
@@ -138,7 +138,7 @@ fn consume_digits(
             chars.next();
 
             range = Some(match range {
-                None => SrcRange::new_zero_len(c.pos),
+                None => SrcRange::exact_pos(c.pos),
                 Some(range) => range.extend_to(c.pos),
             });
         } else {
@@ -157,7 +157,7 @@ fn consume_comment(chars: &mut impl Iterator<Item = SrcChar>) -> anyhow::Result<
         bail!("Expected //");
     }
 
-    let mut range = SrcRange::new_zero_len(slash.pos);
+    let mut range = SrcRange::exact_pos(slash.pos);
 
     let Some(slash) = chars.next() else { bail!("Expected //") };
     if slash.char != '/' {

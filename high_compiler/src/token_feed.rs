@@ -35,9 +35,10 @@ mod cursor {
         pub fn increment(self, last_token: Option<&Srced<Token>>) -> Self {
             let range = match last_token {
                 Some(t) => t.range,
-                None => {
-                    SrcRange::new_zero_len(SrcPos { col: self.range.end.col + 1, ..self.range.end })
-                },
+                None => SrcRange::exact_pos(SrcPos {
+                    col: self.range.end().col + 1,
+                    ..self.range.end()
+                }),
             };
 
             Self { index: self.index + 1, range }

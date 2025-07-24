@@ -78,11 +78,12 @@ macro_rules! parse_helper {
     ([$tokens:ident, $errors:ident, $range:ident] match $ident:pat = $token_pat:pat => $token_use:expr; as $expected:expr) => {
         #[allow(clippy::let_unit_value)]
         let $ident = {
+            let cur_range = $tokens.cur_range();
             match $tokens.try_next(|cell| match cell.res {
                 Some(t) => match &t.val {
                     $token_pat => Ok(($token_use, t.range)),
                     token => Err(CompileErrorSet::new_error(
-                        t.range,
+                        SrcRange::guess_pos(cur_range.end()),
                         CompileError::Grammar(GrammarError::MismatchedTokenString {
                             expected: $expected.into(),
                             found: token.into(),
@@ -130,7 +131,7 @@ macro_rules! parse_struct {
             )*
         }) {
             Ok((item, errors, range)) => {
-                let range = range.unwrap_or_else(|| SrcRange::new_zero_len($tokens.cur_range().end));
+                let range = range.unwrap_or_else(|| SrcRange::guess_pos($tokens.cur_range().end()));
                 (Ok(Srced { val: item, range }), errors)
             },
             Err(errors) => (Err(()), errors),
