@@ -14,6 +14,7 @@ use token::tokenize;
 
 use crate::{
     compile_error::{CompileErrorSet, report_compile_errors},
+    grammar_to_logic::grammar_to_ast,
     srced::Srced,
 };
 
@@ -79,7 +80,7 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
         },
     };
 
-    let ast = time("Adding built-in functions...", || add_builtins::add_builtins(ast));
+    let ast = time("Adding built-in functions...", || add_builtins::add_builtins(&ast));
 
     time("Typechecking...", || typecheck::typecheck(&ast))?;
 
@@ -134,8 +135,8 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
 
 fn compile_set_fallables(
     tokens: Vec<Srced<token::Token>>,
-) -> Result<logic_ast::Program, CompileErrorSet> {
+) -> Result<logic_ast::Ref<logic_ast::Program>, CompileErrorSet> {
     let ast = time("Parsing grammar...", || parse(tokens.into()))?;
-    let ast = time("Converting grammar...", || logic_ast::Program::try_from(&Arc::new(ast)))?;
+    let ast = time("Converting grammar...", || grammar_to_ast(&Arc::new(ast)))?;
     Ok(ast)
 }

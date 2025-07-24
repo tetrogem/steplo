@@ -1,24 +1,28 @@
 use std::sync::Arc;
 
+use crate::srced::Srced;
+
+pub type Ref<T> = Arc<Srced<T>>;
+
 #[derive(Debug)]
 pub enum TopItem {
-    Main(Arc<Main>),
-    Func(Arc<Func>),
+    Main(Ref<Main>),
+    Func(Ref<Func>),
 }
 
 #[derive(Debug)]
 pub struct Main {
-    pub proc: Arc<Proc>,
+    pub proc: Ref<Proc>,
 }
 
 #[derive(Debug)]
 pub struct Func {
-    pub name: Arc<Name>,
-    pub params: Arc<Vec<Arc<IdentDeclaration>>>,
-    pub proc: Arc<Proc>,
+    pub name: Ref<Name>,
+    pub params: Ref<Vec<Ref<IdentDeclaration>>>,
+    pub proc: Ref<Proc>,
 }
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct Name {
     pub str: Arc<str>,
 }
@@ -35,16 +39,16 @@ impl Type {
         match self {
             Self::Ref(_) => 1,
             Self::Base(_) => 1,
-            Self::Array { ty, len } => ty.size() * len,
+            Self::Array { ty, len } => &ty.size() * len,
         }
     }
 
     pub fn is_assignable_to(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Ref(a), Self::Ref(b)) => a.is_assignable_to(b) && b.is_assignable_to(a),
+            (Self::Ref(a), Self::Ref(b)) => a.is_assignable_to(&b) && b.is_assignable_to(&a),
             (Self::Ref(_), Self::Base(b)) => matches!(b.as_ref(), BaseType::Any),
             (Self::Array { ty: a, len: a_len }, Self::Array { ty: b, len: b_len }) => {
-                a_len == b_len && a.is_assignable_to(b) && b.is_assignable_to(a)
+                a_len == b_len && a.is_assignable_to(&b) && b.is_assignable_to(&a)
             },
             (Self::Base(a), Self::Base(b)) => {
                 use BaseType::*;
@@ -104,107 +108,107 @@ pub enum BaseType {
 
 #[derive(Debug)]
 pub struct IdentDeclaration {
-    pub name: Arc<Name>,
+    pub name: Ref<Name>,
     pub ty: Arc<Type>,
 }
 
 #[derive(Debug)]
 pub struct Place {
-    pub head: Arc<PlaceHead>,
-    pub offset: Option<Arc<Offset>>,
+    pub head: Ref<PlaceHead>,
+    pub offset: Option<Ref<Offset>>,
 }
 
 #[derive(Debug)]
 pub enum PlaceHead {
-    Ident(Arc<Ident>),
-    Deref(Arc<Deref>),
+    Ident(Ref<Ident>),
+    Deref(Ref<Deref>),
 }
 
 #[derive(Debug)]
 pub struct Offset {
-    pub expr: Arc<Expr>,
+    pub expr: Ref<Expr>,
 }
 
 #[derive(Debug)]
 pub struct Ident {
-    pub name: Arc<Name>,
+    pub name: Ref<Name>,
 }
 
 #[derive(Debug)]
 pub struct Deref {
-    pub addr: Arc<Expr>,
+    pub addr: Ref<Expr>,
 }
 
 #[derive(Debug)]
 pub struct Proc {
-    pub idents: Arc<Vec<Arc<IdentDeclaration>>>,
-    pub body: Arc<Body>,
+    pub idents: Ref<Vec<Ref<IdentDeclaration>>>,
+    pub body: Ref<Body>,
 }
 
 #[derive(Debug)]
 pub struct Body {
-    pub items: Arc<Vec<Arc<BodyItem>>>,
+    pub items: Ref<Vec<Ref<BodyItem>>>,
 }
 
 #[derive(Debug)]
 pub enum BodyItem {
-    Statement(Arc<Statement>),
-    If(Arc<IfItem>),
-    While(Arc<WhileItem>),
+    Statement(Ref<Statement>),
+    If(Ref<IfItem>),
+    While(Ref<WhileItem>),
 }
 
 #[derive(Debug)]
 pub struct IfItem {
-    pub condition: Arc<Expr>,
-    pub then_body: Arc<Body>,
-    pub else_item: Option<Arc<ElseItem>>,
+    pub condition: Ref<Expr>,
+    pub then_body: Ref<Body>,
+    pub else_item: Option<Ref<ElseItem>>,
 }
 
 #[derive(Debug)]
 pub struct ElseItem {
-    pub body: Arc<Body>,
+    pub body: Ref<Body>,
 }
 
 #[derive(Debug)]
 pub struct WhileItem {
-    pub condition: Arc<Expr>,
-    pub body: Arc<Body>,
+    pub condition: Ref<Expr>,
+    pub body: Ref<Body>,
 }
 
 #[derive(Debug)]
 pub enum Statement {
-    Assign(Arc<Assign>),
-    Call(Arc<FunctionCall>),
-    Native(Arc<NativeOperation>), // not compiled to by source code, internal/built-ins only
+    Assign(Ref<Assign>),
+    Call(Ref<FunctionCall>),
+    Native(Ref<NativeOperation>), // not compiled to by source code, internal/built-ins only
 }
 
 #[derive(Debug)]
 pub struct FunctionCall {
-    pub func_name: Arc<Name>,
-    pub param_exprs: Arc<Vec<Arc<AssignExpr>>>,
+    pub func_name: Ref<Name>,
+    pub param_exprs: Ref<Vec<Ref<AssignExpr>>>,
 }
 
 #[derive(Debug)]
 pub struct Assign {
-    pub place: Arc<Place>,
-    pub expr: Arc<AssignExpr>,
+    pub place: Ref<Place>,
+    pub expr: Ref<AssignExpr>,
 }
 
 #[derive(Debug)]
 pub enum AssignExpr {
-    Expr(Arc<Expr>),
-    Span(Arc<Vec<Arc<Expr>>>),
-    Slice { place: Arc<Place>, start_in: u32, end_ex: u32 },
+    Expr(Ref<Expr>),
+    Span(Ref<Vec<Ref<Expr>>>),
+    Slice { place: Ref<Place>, start_in: u32, end_ex: u32 },
 }
 
 #[derive(Debug)]
 pub enum Expr {
-    Literal(Arc<Literal>),
-    Place(Arc<Place>),
-    Ref(Arc<Place>),
-    Paren(Arc<ParenExpr>),
-    Cast { ty: Arc<Type>, expr: Arc<Expr> },
-    Transmute { ty: Arc<Type>, expr: Arc<Expr> },
+    Literal(Ref<Literal>),
+    Place(Ref<Place>),
+    Ref(Ref<Place>),
+    Paren(Ref<ParenExpr>),
+    Cast { ty: Arc<Type>, expr: Ref<Expr> },
+    Transmute { ty: Arc<Type>, expr: Ref<Expr> },
 }
 
 #[derive(Debug)]
@@ -218,14 +222,14 @@ pub enum Literal {
 
 #[derive(Debug)]
 pub enum ParenExpr {
-    Unary(Arc<UnaryParenExpr>),
-    Binary(Arc<BinaryParenExpr>),
+    Unary(Ref<UnaryParenExpr>),
+    Binary(Ref<BinaryParenExpr>),
 }
 
 #[derive(Debug)]
 pub struct UnaryParenExpr {
-    pub op: UnaryParenExprOp,
-    pub operand: Arc<Expr>,
+    pub op: Ref<UnaryParenExprOp>,
+    pub operand: Ref<Expr>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -236,9 +240,9 @@ pub enum UnaryParenExprOp {
 
 #[derive(Debug)]
 pub struct BinaryParenExpr {
-    pub op: BinaryParenExprOp,
-    pub left: Arc<Expr>,
-    pub right: Arc<Expr>,
+    pub op: Ref<BinaryParenExprOp>,
+    pub left: Ref<Expr>,
+    pub right: Ref<Expr>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -265,12 +269,12 @@ pub enum BinaryParenExprOp {
 
 #[derive(Debug)]
 pub enum NativeOperation {
-    Out { ident: Arc<Place> },
-    In { dest_ident: Arc<Place> },
-    Random { dest_ident: Arc<Place>, min: Arc<Expr>, max: Arc<Expr> },
+    Out { ident: Ref<Place> },
+    In { dest_ident: Ref<Place> },
+    Random { dest_ident: Ref<Place>, min: Ref<Expr>, max: Ref<Expr> },
 }
 
 #[derive(Debug)]
 pub struct Program {
-    pub items: Arc<Vec<Arc<TopItem>>>,
+    pub items: Ref<Vec<Ref<TopItem>>>,
 }

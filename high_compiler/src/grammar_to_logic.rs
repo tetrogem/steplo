@@ -7,37 +7,56 @@ use crate::compile_error::CompileErrorSet;
 use crate::compile_error::LogicError;
 use crate::grammar_ast as g;
 use crate::logic_ast as l;
+use crate::srced::Srced;
 
 trait FromList<T> {
     fn from_list(value: T) -> Self;
 }
 
-fn convert<From, To>(from: &g::Ref<From>) -> Arc<To>
+fn convert<From, To>(from: &g::Ref<From>) -> l::Ref<To>
 where
     for<'a> &'a g::Ref<From>: Into<To>,
 {
-    Arc::new(from.into())
+    Arc::new(Srced { range: from.range, val: from.into() })
 }
 
-fn try_convert<From, To, Error>(from: &g::Ref<From>) -> Result<Arc<To>, Error>
+fn try_convert<From, To, Error>(from: &g::Ref<From>) -> Result<l::Ref<To>, Error>
+where
+    for<'a> &'a g::Ref<From>: TryInto<To, Error = Error>,
+{
+    from.try_into().map(|val| Arc::new(Srced { val, range: from.range }))
+}
+
+fn try_convert_type<From, To, Error>(from: &g::Ref<From>) -> Result<Arc<To>, Error>
 where
     for<'a> &'a g::Ref<From>: TryInto<To, Error = Error>,
 {
     from.try_into().map(Arc::new)
 }
 
+fn try_convert_list<List, From, To, Error>(
+    list: &g::Ref<List>,
+) -> Result<l::Ref<Vec<l::Ref<To>>>, Error>
+where
+    for<'a> VecDeque<g::Ref<From>>: FromList<&'a g::Ref<List>>,
+    for<'a> &'a g::Ref<From>: TryInto<To, Error = Error>,
+{
+    let deque = VecDeque::from_list(list);
+    let tos = deque.iter().map(|x| -> Result<l::Ref<To>, Error> { try_convert(x) });
+    let tos = tos.collect::<Result<Vec<_>, _>>()?;
+
+    Ok(Arc::new(Srced { val: tos, range: list.range }))
+}
+
+pub fn grammar_to_ast(grammar: &g::Ref<g::Program>) -> Result<l::Ref<l::Program>, CompileErrorSet> {
+    try_convert(grammar)
+}
+
 impl TryFrom<&g::Ref<g::Program>> for l::Program {
     type Error = CompileErrorSet;
 
     fn try_from(value: &g::Ref<g::Program>) -> Result<Self, Self::Error> {
-        Ok(Self {
-            items: Arc::new(
-                VecDeque::from_list(&value.val.items)
-                    .into_iter()
-                    .map(|x| try_convert(&x))
-                    .collect::<Result<_, _>>()?,
-            ),
-        })
+        Ok(Self { items: try_convert_list(&value.val.items)? })
     }
 }
 
@@ -107,12 +126,7 @@ impl TryFrom<&g::Ref<g::Func>> for l::Func {
     fn try_from(value: &g::Ref<g::Func>) -> Result<Self, Self::Error> {
         Ok(Self {
             name: convert(&value.val.name),
-            params: Arc::new(
-                VecDeque::from_list(&value.val.params)
-                    .into_iter()
-                    .map(|x| try_convert(&x))
-                    .collect::<Result<_, _>>()?,
-            ),
+            params: try_convert_list(&value.val.params)?,
             proc: try_convert(&value.val.proc)?,
         })
     }
@@ -137,7 +151,7 @@ impl TryFrom<&g::Ref<g::Type>> for l::Type {
 
     fn try_from(value: &g::Ref<g::Type>) -> Result<Self, Self::Error> {
         Ok(match &value.val {
-            g::Type::Base(base) => Self::Base(try_convert(base)?),
+            g::Type::Base(base) => Self::Base(try_convert_type(base)?),
             g::Type::Array(array) => {
                 let len = &array.val.len;
                 let Ok(len) = parse_num_literal(&array.val.len) else {
@@ -147,9 +161,9 @@ impl TryFrom<&g::Ref<g::Type>> for l::Type {
                     ));
                 };
 
-                Self::Array { ty: try_convert(&array.val.ty)?, len }
+                Self::Array { ty: try_convert_type(&array.val.ty)?, len }
             },
-            g::Type::Ref(ref_ty) => Self::Ref(try_convert(&ref_ty.val.ty)?),
+            g::Type::Ref(ref_ty) => Self::Ref(try_convert_type(&ref_ty.val.ty)?),
         })
     }
 }
@@ -181,12 +195,7 @@ impl TryFrom<&g::Ref<g::Proc>> for l::Proc {
 
     fn try_from(value: &g::Ref<g::Proc>) -> Result<Self, Self::Error> {
         Ok(Self {
-            idents: Arc::new(
-                VecDeque::from_list(&value.val.idents)
-                    .into_iter()
-                    .map(|x| try_convert(&x))
-                    .collect::<Result<_, _>>()?,
-            ),
+            idents: try_convert_list(&value.val.idents)?,
             body: try_convert(&value.val.body)?,
         })
     }
@@ -196,14 +205,7 @@ impl TryFrom<&g::Ref<g::Body>> for l::Body {
     type Error = CompileErrorSet;
 
     fn try_from(value: &g::Ref<g::Body>) -> Result<Self, Self::Error> {
-        Ok(Self {
-            items: Arc::new(
-                VecDeque::from_list(&value.val.items)
-                    .into_iter()
-                    .map(|x| try_convert(&x))
-                    .collect::<Result<_, _>>()?,
-            ),
-        })
+        Ok(Self { items: try_convert_list(&value.val.items)? })
     }
 }
 
@@ -270,12 +272,7 @@ impl TryFrom<&g::Ref<g::FunctionCall>> for l::FunctionCall {
     fn try_from(value: &g::Ref<g::FunctionCall>) -> Result<Self, Self::Error> {
         Ok(Self {
             func_name: convert(&value.val.func_name),
-            param_exprs: Arc::new(
-                VecDeque::from_list(&value.val.param_exprs)
-                    .into_iter()
-                    .map(|x| try_convert(&x))
-                    .collect::<Result<_, _>>()?,
-            ),
+            param_exprs: try_convert_list(&value.val.param_exprs)?,
         })
     }
 }
@@ -308,10 +305,17 @@ impl TryFrom<&g::Ref<g::ElseItem>> for l::ElseItem {
         Ok(match &value.val {
             g::ElseItem::Body(x) => l::ElseItem { body: try_convert(&x.val.body)? },
             g::ElseItem::If(x) => l::ElseItem {
-                body: Arc::new(l::Body {
-                    items: Arc::new(Vec::from([Arc::new(l::BodyItem::If(try_convert(
-                        &x.val.if_item,
-                    )?))])),
+                body: Arc::new(Srced {
+                    range: x.range,
+                    val: l::Body {
+                        items: Arc::new(Srced {
+                            range: x.val.if_item.range,
+                            val: Vec::from([Arc::new(Srced {
+                                range: x.val.if_item.range,
+                                val: l::BodyItem::If(try_convert(&x.val.if_item)?),
+                            })]),
+                        }),
+                    },
                 }),
             },
         })
@@ -324,12 +328,7 @@ impl TryFrom<&g::Ref<g::AssignExpr>> for l::AssignExpr {
     fn try_from(value: &g::Ref<g::AssignExpr>) -> Result<Self, Self::Error> {
         Ok(match &value.val {
             g::AssignExpr::Expr(expr) => Self::Expr(try_convert(expr)?),
-            g::AssignExpr::Span(span) => Self::Span(Arc::new(
-                VecDeque::from_list(&span.val.elements)
-                    .into_iter()
-                    .map(|x| try_convert(&x))
-                    .collect::<Result<_, _>>()?,
-            )),
+            g::AssignExpr::Span(span) => Self::Span(try_convert_list(&span.val.elements)?),
             g::AssignExpr::Slice(slice) => {
                 let start_in = convert_maybe(&slice.val.start_in);
 
@@ -475,7 +474,7 @@ impl TryFrom<&g::Ref<g::UnaryParenExpr>> for l::UnaryParenExpr {
     type Error = CompileErrorSet;
 
     fn try_from(value: &g::Ref<g::UnaryParenExpr>) -> Result<Self, Self::Error> {
-        Ok(Self { op: *convert(&value.val.op), operand: try_convert(&value.val.operand)? })
+        Ok(Self { op: convert(&value.val.op), operand: try_convert(&value.val.operand)? })
     }
 }
 
@@ -485,7 +484,7 @@ impl TryFrom<&g::Ref<g::BinaryParenExpr>> for l::BinaryParenExpr {
     fn try_from(value: &g::Ref<g::BinaryParenExpr>) -> Result<Self, Self::Error> {
         Ok(Self {
             left: try_convert(&value.val.left)?,
-            op: *convert(&value.val.op),
+            op: convert(&value.val.op),
             right: try_convert(&value.val.right)?,
         })
     }

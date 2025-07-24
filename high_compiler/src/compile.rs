@@ -2,15 +2,16 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::link;
 use crate::logic_ast as hast;
+use crate::srced::Srced;
 use anyhow::bail;
-use itertools::chain;
 use itertools::Itertools;
+use itertools::chain;
 use mem_opt::ast;
 use mem_opt::ast as opt;
 use uuid::Uuid;
 
 struct StackFrame {
-    ident_name_to_info: HashMap<Arc<hast::Name>, Arc<StackVarInfo>>,
+    ident_name_to_info: HashMap<Arc<str>, Arc<StackVarInfo>>,
 }
 
 struct StackVarInfo {
@@ -19,23 +20,23 @@ struct StackVarInfo {
 }
 
 impl StackFrame {
-    fn new(idents: &[Arc<hast::IdentDeclaration>]) -> Self {
+    fn new(idents: &[hast::Ref<hast::IdentDeclaration>]) -> Self {
         let mut ident_name_to_info = HashMap::new();
         let mut total_offset = 0;
 
         for ident in idents.iter().rev() {
-            let size = ident.ty.size();
+            let size = ident.val.ty.size();
             total_offset += size;
             let info = StackVarInfo { size, offset: total_offset - 1 };
 
-            ident_name_to_info.insert(ident.name.clone(), Arc::new(info));
+            ident_name_to_info.insert(ident.val.name.val.str.clone(), Arc::new(info));
         }
 
         Self { ident_name_to_info }
     }
 
     fn get_info(&self, name: &hast::Name) -> anyhow::Result<&Arc<StackVarInfo>> {
-        let Some(info) = self.ident_name_to_info.get(name) else {
+        let Some(info) = self.ident_name_to_info.get(&name.str) else {
             bail!("ident name {} is not in current stack frame", name.str);
         };
 
@@ -50,31 +51,31 @@ impl StackFrame {
 }
 
 struct FuncManager {
-    name_to_head_uuid: HashMap<Arc<hast::Name>, Uuid>,
-    name_to_params: HashMap<Arc<hast::Name>, Arc<Vec<Arc<hast::IdentDeclaration>>>>,
+    name_to_head_uuid: HashMap<Arc<str>, Uuid>,
+    name_to_params: HashMap<Arc<str>, hast::Ref<Vec<hast::Ref<hast::IdentDeclaration>>>>,
 }
 
 impl FuncManager {
-    fn try_new(procs: &[Arc<link::Proc>]) -> anyhow::Result<Self> {
+    fn try_new(procs: &[hast::Ref<link::Proc>]) -> anyhow::Result<Self> {
         let mut name_to_head_uuid = HashMap::new();
         let mut name_to_params = HashMap::new();
 
         for proc in procs {
-            let link::ProcKind::Func { name, params } = &proc.kind else { continue };
+            let link::ProcKind::Func { name, params } = &proc.val.kind else { continue };
 
-            let Some(first_sp) = proc.sub_procs.first() else {
-                bail!("procedure `{}` has no sub-procedures", name.str);
+            let Some(first_sp) = proc.val.sub_procs.val.first() else {
+                bail!("procedure `{}` has no sub-procedures", name.val.str);
             };
 
-            name_to_head_uuid.insert(name.clone(), first_sp.uuid);
-            name_to_params.insert(name.clone(), params.clone());
+            name_to_head_uuid.insert(name.val.str.clone(), first_sp.val.uuid);
+            name_to_params.insert(name.val.str.clone(), params.clone());
         }
 
         Ok(Self { name_to_head_uuid, name_to_params })
     }
 
     fn get_head_uuid(&self, name: &hast::Name) -> anyhow::Result<Uuid> {
-        let Some(uuid) = self.name_to_head_uuid.get(name) else {
+        let Some(uuid) = self.name_to_head_uuid.get(&name.str) else {
             bail!("no head UUID registered for function `{}`", name.str)
         };
 
@@ -84,8 +85,8 @@ impl FuncManager {
     fn get_params(
         &self,
         name: &hast::Name,
-    ) -> anyhow::Result<&Arc<Vec<Arc<hast::IdentDeclaration>>>> {
-        let Some(params) = self.name_to_params.get(name) else {
+    ) -> anyhow::Result<&hast::Ref<Vec<hast::Ref<hast::IdentDeclaration>>>> {
+        let Some(params) = self.name_to_params.get(&name.str) else {
             bail!("no params registered for function `{}`", name.str)
         };
 
@@ -93,7 +94,9 @@ impl FuncManager {
     }
 }
 
-pub fn compile(linked: Vec<Arc<link::Proc>>) -> anyhow::Result<Vec<Arc<opt::Proc<opt::UMemLoc>>>> {
+pub fn compile(
+    linked: Vec<hast::Ref<link::Proc>>,
+) -> anyhow::Result<Vec<Arc<opt::Proc<opt::UMemLoc>>>> {
     let user_main_sp_uuid = find_user_main_sp_uuid(&linked)?;
     let func_manager = FuncManager::try_new(&linked)?;
     let opt_procs = linked
@@ -188,17 +191,17 @@ fn binary_args(
     Arc::new(ast::BinaryArgs { left, right })
 }
 
-fn find_user_main_sp_uuid(procs: &[Arc<link::Proc>]) -> anyhow::Result<Uuid> {
-    let Some(main_proc) = procs.iter().find(|proc| matches!(proc.kind, link::ProcKind::Main))
+fn find_user_main_sp_uuid(procs: &[hast::Ref<link::Proc>]) -> anyhow::Result<Uuid> {
+    let Some(main_proc) = procs.iter().find(|proc| matches!(proc.val.kind, link::ProcKind::Main))
     else {
         bail!("could not find user main procedure");
     };
 
-    let Some(first_sp) = main_proc.sub_procs.first() else {
+    let Some(first_sp) = main_proc.val.sub_procs.val.first() else {
         bail!("user main procedure has no sub-procedures");
     };
 
-    Ok(first_sp.uuid)
+    Ok(first_sp.val.uuid)
 }
 
 fn create_runner_proc(user_main_sp_uuid: Uuid) -> Arc<opt::Proc<opt::UMemLoc>> {
@@ -228,22 +231,24 @@ fn create_runner_proc(user_main_sp_uuid: Uuid) -> Arc<opt::Proc<opt::UMemLoc>> {
 
 fn compile_proc(
     func_manager: &FuncManager,
-    proc: &link::Proc,
+    proc: &hast::Ref<link::Proc>,
 ) -> anyhow::Result<Arc<opt::Proc<opt::UMemLoc>>> {
-    let (kind, stack_params) = match &proc.kind {
+    let (kind, stack_params) = match &proc.val.kind {
         link::ProcKind::Main => (opt::ProcKind::Func { name: "main".into() }, Vec::new()),
         link::ProcKind::Func { name, params } => (
-            opt::ProcKind::Func { name: format!("func.{}", name.str).into() },
-            params.iter().cloned().collect(),
+            opt::ProcKind::Func { name: format!("func.{}", name.val.str).into() },
+            params.val.iter().cloned().collect(),
         ),
     };
 
-    let stack_vars = proc.idents.iter().cloned();
+    let stack_vars = proc.val.idents.val.iter().cloned();
     let stack_idents = chain!(stack_params, stack_vars).collect_vec();
 
     let stack_frame = StackFrame::new(&stack_idents);
     let sub_procs = proc
+        .val
         .sub_procs
+        .val
         .iter()
         .enumerate()
         .map(|(i, sp)| compile_sub_proc(&stack_frame, func_manager, sp, i == 0))
@@ -257,7 +262,7 @@ fn compile_proc(
 fn compile_sub_proc(
     stack_frame: &StackFrame,
     func_manager: &FuncManager,
-    sp: &link::SubProc,
+    sp: &hast::Ref<link::SubProc>,
     proc_head: bool,
 ) -> anyhow::Result<Arc<opt::SubProc<opt::UMemLoc>>> {
     // initialize stack vars
@@ -282,7 +287,9 @@ fn compile_sub_proc(
     };
 
     let statement_commands: Vec<_> = sp
+        .val
         .statements
+        .val
         .iter()
         .map(|s| compile_statement(stack_frame, s))
         .collect::<Result<Vec<_>, _>>()?
@@ -290,12 +297,13 @@ fn compile_sub_proc(
         .flatten()
         .collect();
 
-    let compiled_call = compile_call(stack_frame, func_manager, &sp.next_call)?;
+    let compiled_call = compile_call(stack_frame, func_manager, &sp.val.next_call.val)?;
 
     let commands =
         chain!(stack_frame_commands, statement_commands, compiled_call.commands).collect();
 
-    let sp = opt::SubProc { uuid: sp.uuid, commands: Arc::new(commands), call: compiled_call.call };
+    let sp =
+        opt::SubProc { uuid: sp.val.uuid, commands: Arc::new(commands), call: compiled_call.call };
 
     Ok(Arc::new(sp))
 }
@@ -312,11 +320,11 @@ fn compile_call(
 ) -> anyhow::Result<CompiledCall> {
     let compiled = match call {
         link::Call::Func { name, param_exprs, return_sub_proc } => {
-            let param_idents = func_manager.get_params(name)?;
+            let param_idents = func_manager.get_params(&name.val)?;
             let mut param_stack_offset: u32 = 0;
             let mut param_setup_commands = Vec::new();
-            for (ident, expr) in param_idents.iter().zip(param_exprs.as_ref()) {
-                let elements = compile_assign_expr_elements(stack_frame, expr)?;
+            for (ident, expr) in param_idents.val.iter().zip(&param_exprs.val) {
+                let elements = compile_assign_expr_elements(stack_frame, &expr)?;
 
                 for (i, element) in elements.into_iter().enumerate() {
                     param_setup_commands.extend(element.commands);
@@ -345,7 +353,7 @@ fn compile_call(
                     param_setup_commands.extend(assign_commands);
                 }
 
-                param_stack_offset += ident.ty.size();
+                param_stack_offset += ident.val.ty.size();
             }
 
             let return_setup_commands = {
@@ -377,7 +385,7 @@ fn compile_call(
             };
 
             let (jump_commands, jump_call) = {
-                let func_head_uuid = func_manager.get_head_uuid(name)?;
+                let func_head_uuid = func_manager.get_head_uuid(&name.val)?;
                 let jump_label_loc = temp();
 
                 (
@@ -498,18 +506,25 @@ fn compile_call(
 
 fn compile_statement(
     stack_frame: &StackFrame,
-    statement: &link::Statement,
+    statement: &hast::Ref<link::Statement>,
 ) -> anyhow::Result<Vec<Arc<opt::Command<opt::UMemLoc>>>> {
-    let assignments = match statement {
+    let assignments = match &statement.val {
         link::Statement::Assign(assign) => {
-            let elements = compile_assign_expr_elements(stack_frame, &assign.expr)?;
+            let elements = compile_assign_expr_elements(stack_frame, &assign.val.expr)?;
             let mut element_assignments = Vec::new();
 
             for (i, element) in elements.into_iter().enumerate() {
-                let compiled_ident_addr = compile_place_to_addr(stack_frame, &assign.place)?;
+                let compiled_ident_addr =
+                    compile_place_to_addr(stack_frame, &assign.val.place.val)?;
                 let compiled_offset = compile_expr(
                     stack_frame,
-                    &hast::Expr::Literal(Arc::new(hast::Literal::Uint(i as f64))),
+                    &Arc::new(Srced {
+                        range: statement.range,
+                        val: hast::Expr::Literal(Arc::new(Srced {
+                            range: statement.range,
+                            val: hast::Literal::Uint(i as f64),
+                        })),
+                    }),
                 )?;
 
                 let compile_dest_addr =
@@ -536,9 +551,9 @@ fn compile_statement(
 
             element_assignments
         },
-        link::Statement::Native(native) => match native.as_ref() {
+        link::Statement::Native(native) => match &native.val {
             hast::NativeOperation::Out { ident } => {
-                let compiled_ident_addr = compile_place_to_addr(stack_frame, ident)?;
+                let compiled_ident_addr = compile_place_to_addr(stack_frame, &ident.val)?;
                 let ident_value_loc = temp();
 
                 chain!(
@@ -556,7 +571,7 @@ fn compile_statement(
                 .collect()
             },
             hast::NativeOperation::In { dest_ident } => {
-                let compiled_ident_addr = compile_place_to_addr(stack_frame, dest_ident)?;
+                let compiled_ident_addr = compile_place_to_addr(stack_frame, &dest_ident.val)?;
 
                 chain!(
                     compiled_ident_addr.commands,
@@ -571,7 +586,7 @@ fn compile_statement(
                 .collect()
             },
             hast::NativeOperation::Random { dest_ident, min, max } => {
-                let compiled_ident_addr = compile_place_to_addr(stack_frame, dest_ident)?;
+                let compiled_ident_addr = compile_place_to_addr(stack_frame, &dest_ident.val)?;
                 let compiled_min = compile_expr(stack_frame, min)?;
                 let compiled_max = compile_expr(stack_frame, max)?;
 
@@ -597,11 +612,12 @@ fn compile_statement(
 
 fn compile_assign_expr_elements(
     stack_frame: &StackFrame,
-    expr: &hast::AssignExpr,
+    expr: &hast::Ref<hast::AssignExpr>,
 ) -> anyhow::Result<Vec<CompiledExpr>> {
-    let compileds = match expr {
-        hast::AssignExpr::Expr(expr) => Vec::from([compile_expr(stack_frame, expr)?]),
+    let compileds = match &expr.val {
+        hast::AssignExpr::Expr(expr) => Vec::from([compile_expr(stack_frame, &expr)?]),
         hast::AssignExpr::Span(array) => array
+            .val
             .iter()
             .map(|expr| compile_expr(stack_frame, expr))
             .collect::<anyhow::Result<Vec<_>>>()?
@@ -609,10 +625,16 @@ fn compile_assign_expr_elements(
             .collect(),
         hast::AssignExpr::Slice { place, start_in, end_ex } => {
             let elements = (*start_in..*end_ex).map(|i| {
-                let ident_addr = compile_place_to_addr(stack_frame, place)?;
+                let ident_addr = compile_place_to_addr(stack_frame, &place.val)?;
                 let offset = compile_expr(
                     stack_frame,
-                    &hast::Expr::Literal(Arc::new(hast::Literal::Uint(f64::from(i)))),
+                    &Arc::new(Srced {
+                        range: expr.range,
+                        val: hast::Expr::Literal(Arc::new(Srced {
+                            range: expr.range,
+                            val: hast::Literal::Uint(f64::from(i)),
+                        })),
+                    }),
                 )?;
 
                 let element_addr = compile_addr_offset(ident_addr.mem_loc, offset.mem_loc)?;
@@ -636,27 +658,30 @@ fn compile_assign_expr_elements(
     Ok(compileds)
 }
 
-fn compile_expr(stack_frame: &StackFrame, expr: &hast::Expr) -> anyhow::Result<CompiledExpr> {
-    let compiled = match expr {
+fn compile_expr(
+    stack_frame: &StackFrame,
+    expr: &hast::Ref<hast::Expr>,
+) -> anyhow::Result<CompiledExpr> {
+    let compiled = match &expr.val {
         hast::Expr::Literal(lit) => {
             let value_temp = temp();
             let assignments = Vec::from([Arc::new(opt::Command::SetMemLoc {
                 mem_loc: value_temp.clone(),
-                val: literal(lit.as_ref()),
+                val: literal(&lit.val),
             })]);
 
             CompiledExpr { mem_loc: value_temp, commands: assignments }
         },
         hast::Expr::Place(ident) => {
-            let ident_addr = compile_place_to_addr(stack_frame, ident)?;
+            let ident_addr = compile_place_to_addr(stack_frame, &ident.val)?;
             let value = compile_addr_deref(&ident_addr.mem_loc);
 
             let commands = chain!(ident_addr.commands, value.commands).collect();
 
             CompiledExpr { mem_loc: value.mem_loc, commands }
         },
-        hast::Expr::Ref(place) => compile_place_to_addr(stack_frame, place)?,
-        hast::Expr::Paren(expr) => compile_paren_expr(stack_frame, expr)?,
+        hast::Expr::Ref(place) => compile_place_to_addr(stack_frame, &place.val)?,
+        hast::Expr::Paren(expr) => compile_paren_expr(stack_frame, &expr.val)?,
         hast::Expr::Cast { expr, .. } => compile_expr(stack_frame, expr)?,
         hast::Expr::Transmute { expr, .. } => compile_expr(stack_frame, expr)?,
     };
@@ -669,8 +694,8 @@ fn compile_paren_expr(
     expr: &hast::ParenExpr,
 ) -> anyhow::Result<CompiledExpr> {
     match expr {
-        hast::ParenExpr::Unary(unary) => compile_unary_paren_expr(stack_frame, unary),
-        hast::ParenExpr::Binary(binary) => compile_binary_paren_expr(stack_frame, binary),
+        hast::ParenExpr::Unary(unary) => compile_unary_paren_expr(stack_frame, &unary.val),
+        hast::ParenExpr::Binary(binary) => compile_binary_paren_expr(stack_frame, &binary.val),
     }
 }
 
@@ -681,7 +706,7 @@ fn compile_unary_paren_expr(
     let res_loc = temp();
     let operand_ops = compile_expr(stack_frame, &expr.operand)?;
 
-    let expr_commands = match expr.op {
+    let expr_commands = match expr.op.val {
         hast::UnaryParenExprOp::Not => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Not(mem_loc_expr(operand_ops.mem_loc))),
@@ -702,7 +727,7 @@ fn compile_binary_paren_expr(
     let left_ops = compile_expr(stack_frame, &expr.left)?;
     let right_ops = compile_expr(stack_frame, &expr.right)?;
 
-    let expr_commands = match expr.op {
+    let expr_commands = match expr.op.val {
         hast::BinaryParenExprOp::Add => Vec::from([Arc::new(opt::Command::SetMemLoc {
             mem_loc: res_loc.clone(),
             val: Arc::new(opt::Expr::Add(binary_args(
@@ -823,11 +848,11 @@ fn compile_place_to_addr(
     stack_frame: &StackFrame,
     place: &hast::Place,
 ) -> anyhow::Result<CompiledExpr> {
-    let compiled_head = compile_place_head_to_add(stack_frame, &place.head)?;
+    let compiled_head = compile_place_head_to_add(stack_frame, &place.head.val)?;
     let compiled_place = match &place.offset {
         None => compiled_head,
         Some(offset) => {
-            let compiled_index = compile_expr(stack_frame, &offset.expr)?;
+            let compiled_index = compile_expr(stack_frame, &offset.val.expr)?;
             let offset_addr = compile_addr_offset(compiled_head.mem_loc, compiled_index.mem_loc)?;
 
             let commands =
@@ -846,8 +871,10 @@ fn compile_place_head_to_add(
     place_head: &hast::PlaceHead,
 ) -> anyhow::Result<CompiledExpr> {
     match place_head {
-        hast::PlaceHead::Ident(ident) => compile_ident_name_to_start_addr(stack_frame, &ident.name),
-        hast::PlaceHead::Deref(deref) => compile_expr(stack_frame, &deref.addr),
+        hast::PlaceHead::Ident(ident) => {
+            compile_ident_name_to_start_addr(stack_frame, &ident.val.name.val)
+        },
+        hast::PlaceHead::Deref(deref) => compile_expr(stack_frame, &deref.val.addr),
     }
 }
 

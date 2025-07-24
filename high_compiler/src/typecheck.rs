@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{anyhow, bail};
 
-use crate::logic_ast as l;
+use crate::{logic_ast as l, srced::Srced};
 
 static ANY_TYPE: LazyLock<Arc<l::Type>> =
     LazyLock::new(|| Arc::new(l::Type::Base(Arc::new(l::BaseType::Any))));
@@ -26,48 +26,60 @@ static UINT_TYPE: LazyLock<Arc<l::Type>> =
 static BOOL_TYPE: LazyLock<Arc<l::Type>> =
     LazyLock::new(|| Arc::new(l::Type::Base(Arc::new(l::BaseType::Bool))));
 
-type IdentToType<'a> = HashMap<&'a l::Name, Arc<l::Type>>;
-type FuncToParams<'a> = HashMap<&'a l::Name, Arc<Vec<Arc<l::IdentDeclaration>>>>;
+type IdentToType = HashMap<Arc<str>, Arc<l::Type>>;
+type FuncToParams = HashMap<Arc<str>, l::Ref<Vec<l::Ref<l::IdentDeclaration>>>>;
 
-pub fn typecheck(program: &l::Program) -> anyhow::Result<()> {
+pub fn typecheck(program: &l::Ref<l::Program>) -> anyhow::Result<()> {
     let func_to_params = program
+        .val
         .items
+        .val
         .iter()
-        .filter_map(|item| match item.as_ref() {
+        .filter_map(|item| match &item.val {
             l::TopItem::Main(_) => None,
-            l::TopItem::Func(func) => Some((func.name.as_ref(), func.params.clone())),
+            l::TopItem::Func(func) => {
+                Some((func.val.name.val.str.clone(), func.val.params.clone()))
+            },
         })
         .collect::<FuncToParams>();
 
-    program.items.iter().try_for_each(|x| typecheck_top_item(x, &func_to_params))
+    program.val.items.val.iter().try_for_each(|x| typecheck_top_item(&x, &func_to_params))
 }
 
-fn typecheck_top_item(item: &l::TopItem, func_to_params: &FuncToParams) -> anyhow::Result<()> {
-    let (proc, params) = match item {
-        l::TopItem::Main(x) => (x.proc.as_ref(), [].iter()),
-        l::TopItem::Func(x) => (x.proc.as_ref(), x.params.iter()),
+fn typecheck_top_item(
+    item: &l::Ref<l::TopItem>,
+    func_to_params: &FuncToParams,
+) -> anyhow::Result<()> {
+    let (proc, params) = match &item.val {
+        l::TopItem::Main(x) => (&x.val.proc, [].iter()),
+        l::TopItem::Func(x) => (&x.val.proc, x.val.params.val.iter()),
     };
 
-    let idents = proc.idents.iter().chain(params).map(AsRef::as_ref);
-    let ident_to_type = idents.map(|i| (i.name.as_ref(), i.ty.clone())).collect::<IdentToType>();
+    let idents = proc.val.idents.val.iter().chain(params).map(AsRef::as_ref);
+    let ident_to_type =
+        idents.map(|i| (i.val.name.val.str.clone(), i.val.ty.clone())).collect::<IdentToType>();
 
-    typecheck_body(&proc.body, &ident_to_type, func_to_params)
+    typecheck_body(&proc.val.body, &ident_to_type, func_to_params)
 }
 
 fn typecheck_body(
-    body: &l::Body,
+    body: &l::Ref<l::Body>,
     ident_to_type: &IdentToType,
     func_to_params: &FuncToParams,
 ) -> anyhow::Result<()> {
-    body.items.iter().try_for_each(|x| typecheck_body_item(x, ident_to_type, func_to_params))
+    body.val
+        .items
+        .val
+        .iter()
+        .try_for_each(|x| typecheck_body_item(x, ident_to_type, func_to_params))
 }
 
 fn typecheck_body_item(
-    item: &l::BodyItem,
+    item: &l::Ref<l::BodyItem>,
     ident_to_type: &IdentToType,
     func_to_params: &FuncToParams,
 ) -> anyhow::Result<()> {
-    match item {
+    match &item.val {
         l::BodyItem::Statement(x) => typecheck_statement(x, ident_to_type, func_to_params),
         l::BodyItem::If(x) => typecheck_if(x, ident_to_type, func_to_params),
         l::BodyItem::While(x) => typecheck_while(x, ident_to_type, func_to_params),
@@ -75,53 +87,53 @@ fn typecheck_body_item(
 }
 
 fn typecheck_if(
-    item: &l::IfItem,
+    item: &l::Ref<l::IfItem>,
     ident_to_type: &IdentToType,
     func_to_params: &FuncToParams,
 ) -> anyhow::Result<()> {
-    let condition_type = eval_expr(&item.condition, ident_to_type)?;
+    let condition_type = eval_expr(&item.val.condition, ident_to_type)?;
     if condition_type.is_assignable_to(&VAL_TYPE).not() {
         bail!("If condition expected to be of type `val`");
     }
 
-    typecheck_body(&item.then_body, ident_to_type, func_to_params)?;
-    if let Some(else_item) = &item.else_item {
-        typecheck_body(&else_item.body, ident_to_type, func_to_params)?;
+    typecheck_body(&item.val.then_body, ident_to_type, func_to_params)?;
+    if let Some(else_item) = &item.val.else_item {
+        typecheck_body(&else_item.val.body, ident_to_type, func_to_params)?;
     }
 
     Ok(())
 }
 
 fn typecheck_while(
-    item: &l::WhileItem,
+    item: &l::Ref<l::WhileItem>,
     ident_to_type: &IdentToType,
     func_to_params: &FuncToParams,
 ) -> anyhow::Result<()> {
-    let condition_type = eval_expr(&item.condition, ident_to_type)?;
+    let condition_type = eval_expr(&item.val.condition, ident_to_type)?;
     if condition_type.is_assignable_to(&VAL_TYPE).not() {
         bail!("While condition expected to be of type `val`");
     }
 
-    typecheck_body(&item.body, ident_to_type, func_to_params)?;
+    typecheck_body(&item.val.body, ident_to_type, func_to_params)?;
 
     Ok(())
 }
 
 fn typecheck_statement(
-    item: &l::Statement,
+    item: &l::Ref<l::Statement>,
     ident_to_type: &IdentToType,
     func_to_params: &FuncToParams,
 ) -> anyhow::Result<()> {
-    match item {
+    match &item.val {
         l::Statement::Assign(x) => typecheck_assign(x, ident_to_type),
         l::Statement::Call(x) => typecheck_call(x, ident_to_type, func_to_params),
         l::Statement::Native(_) => Ok(()),
     }
 }
 
-fn typecheck_assign(item: &l::Assign, ident_to_type: &IdentToType) -> anyhow::Result<()> {
-    let place_type = eval_place(&item.place, ident_to_type)?;
-    let expr_type = eval_assign_expr(&item.expr, &place_type, ident_to_type)?;
+fn typecheck_assign(item: &l::Ref<l::Assign>, ident_to_type: &IdentToType) -> anyhow::Result<()> {
+    let place_type = eval_place(&item.val.place, ident_to_type)?;
+    let expr_type = eval_assign_expr(&item.val.expr, &place_type, ident_to_type)?;
     if expr_type.is_assignable_to(&place_type).not() {
         bail!(
             "Type of expr is not assignable to type of place, Expected: {:?}, found: {:?}",
@@ -134,33 +146,37 @@ fn typecheck_assign(item: &l::Assign, ident_to_type: &IdentToType) -> anyhow::Re
 }
 
 fn typecheck_call(
-    item: &l::FunctionCall,
+    item: &l::Ref<l::FunctionCall>,
     ident_to_type: &IdentToType,
     func_to_params: &FuncToParams,
 ) -> anyhow::Result<()> {
-    let Some(param_decls) = func_to_params.get(item.func_name.as_ref()) else {
-        bail!("No function with name `{}` exists", item.func_name.str);
+    let Some(param_decls) = func_to_params.get(item.val.func_name.val.str.as_ref()) else {
+        bail!("No function with name `{}` exists", item.val.func_name.val.str);
     };
 
-    let mut expr_iter = item.param_exprs.iter();
-    let mut decl_iter = param_decls.iter();
+    let mut expr_iter = item.val.param_exprs.val.iter();
+    let mut decl_iter = param_decls.val.iter();
 
     loop {
         let (expr, decl) = (expr_iter.next(), decl_iter.next());
         match (expr, decl) {
             (None, None) => break,
             (Some(expr), Some(decl)) => {
-                let expr_type = eval_assign_expr(expr, &decl.ty, ident_to_type)?;
-                if expr_type.is_assignable_to(&decl.ty).not() {
-                    bail!("Argument type mismatch, expected {:?} found {:?}", decl.ty, expr_type);
+                let expr_type = eval_assign_expr(expr, &decl.val.ty, ident_to_type)?;
+                if expr_type.is_assignable_to(&decl.val.ty).not() {
+                    bail!(
+                        "Argument type mismatch, expected {:?} found {:?}",
+                        decl.val.ty,
+                        expr_type,
+                    );
                 }
             },
             _ => {
                 bail!(
                     "Argument count mismatch for calling function `{}`: Expected {} args, found {} args",
-                    item.func_name.str,
-                    param_decls.len(),
-                    item.param_exprs.len(),
+                    item.val.func_name.val.str,
+                    param_decls.val.len(),
+                    item.val.param_exprs.val.len(),
                 );
             },
         }
@@ -169,9 +185,12 @@ fn typecheck_call(
     Ok(())
 }
 
-fn eval_place(item: &l::Place, ident_to_type: &IdentToType) -> anyhow::Result<Arc<l::Type>> {
-    let head_type = eval_place_head(&item.head, ident_to_type)?;
-    Ok(match item.offset {
+fn eval_place(
+    item: &l::Ref<l::Place>,
+    ident_to_type: &IdentToType,
+) -> anyhow::Result<Arc<l::Type>> {
+    let head_type = eval_place_head(&item.val.head, ident_to_type)?;
+    Ok(match &item.val.offset {
         None => head_type,
         Some(_) => {
             let l::Type::Array { ty, .. } = head_type.as_ref() else {
@@ -184,24 +203,30 @@ fn eval_place(item: &l::Place, ident_to_type: &IdentToType) -> anyhow::Result<Ar
 }
 
 fn eval_place_head(
-    item: &l::PlaceHead,
+    item: &l::Ref<l::PlaceHead>,
     ident_to_type: &IdentToType,
 ) -> anyhow::Result<Arc<l::Type>> {
-    match item {
+    match &item.val {
         l::PlaceHead::Ident(ident) => eval_ident(ident, ident_to_type),
         l::PlaceHead::Deref(deref) => eval_deref(deref, ident_to_type),
     }
 }
 
-fn eval_ident(item: &l::Ident, ident_to_type: &IdentToType) -> anyhow::Result<Arc<l::Type>> {
+fn eval_ident(
+    item: &l::Ref<l::Ident>,
+    ident_to_type: &IdentToType,
+) -> anyhow::Result<Arc<l::Type>> {
     ident_to_type
-        .get(item.name.as_ref())
-        .ok_or_else(|| anyhow!("Identifier `{}` was not found in scope", item.name.str))
+        .get(item.val.name.val.str.as_ref())
+        .ok_or_else(|| anyhow!("Identifier `{}` was not found in scope", item.val.name.val.str))
         .cloned()
 }
 
-fn eval_deref(item: &l::Deref, ident_to_type: &IdentToType) -> anyhow::Result<Arc<l::Type>> {
-    let addr_type = eval_expr(&item.addr, ident_to_type)?;
+fn eval_deref(
+    item: &l::Ref<l::Deref>,
+    ident_to_type: &IdentToType,
+) -> anyhow::Result<Arc<l::Type>> {
+    let addr_type = eval_expr(&item.val.addr, ident_to_type)?;
     let l::Type::Ref(deref_type) = addr_type.as_ref() else {
         bail!("Cannot dereference non-reference type: {:?}", addr_type)
     };
@@ -210,36 +235,40 @@ fn eval_deref(item: &l::Deref, ident_to_type: &IdentToType) -> anyhow::Result<Ar
 }
 
 fn eval_assign_expr(
-    item: &l::AssignExpr,
+    item: &l::Ref<l::AssignExpr>,
     expected_type: &Arc<l::Type>,
     ident_to_type: &IdentToType,
 ) -> anyhow::Result<Arc<l::Type>> {
-    match item {
+    match &item.val {
         l::AssignExpr::Expr(x) => eval_expr(x, ident_to_type),
         l::AssignExpr::Span(elements) => {
             let l::Type::Array { ty: expected_el_type, .. } = expected_type.as_ref() else {
                 bail!("Assignment is not expecting span")
             };
 
-            for el in elements.iter() {
+            for el in elements.val.iter() {
                 let el_type = eval_expr(el, ident_to_type)?;
-                if el_type.is_assignable_to(expected_el_type).not() {
-                    bail!("Array element is not the correct type for this array, Expected: {:?}, found: {:?}", expected_el_type, el_type);
+                if el_type.is_assignable_to(&expected_el_type).not() {
+                    bail!(
+                        "Array element is not the correct type for this array, Expected: {:?}, found: {:?}",
+                        expected_el_type,
+                        el_type
+                    );
                 }
             }
 
             Ok(Arc::new(l::Type::Array {
                 ty: expected_el_type.clone(),
-                len: elements.len() as u32,
+                len: elements.val.len() as u32,
             }))
         },
         l::AssignExpr::Slice { place, .. } => eval_place(place, ident_to_type),
     }
 }
 
-fn eval_expr(item: &l::Expr, ident_to_type: &IdentToType) -> anyhow::Result<Arc<l::Type>> {
-    match item {
-        l::Expr::Literal(x) => Ok(match x.as_ref() {
+fn eval_expr(item: &l::Ref<l::Expr>, ident_to_type: &IdentToType) -> anyhow::Result<Arc<l::Type>> {
+    match &item.val {
+        l::Expr::Literal(x) => Ok(match &x.val {
             l::Literal::Val(_) => VAL_TYPE.clone(),
             l::Literal::Num(_) => NUM_TYPE.clone(),
             l::Literal::Int(_) => INT_TYPE.clone(),
@@ -272,21 +301,21 @@ fn eval_expr(item: &l::Expr, ident_to_type: &IdentToType) -> anyhow::Result<Arc<
 }
 
 fn eval_paren_expr(
-    item: &l::ParenExpr,
+    item: &l::Ref<l::ParenExpr>,
     ident_to_type: &IdentToType,
 ) -> anyhow::Result<Arc<l::Type>> {
-    match item {
+    match &item.val {
         l::ParenExpr::Unary(x) => eval_unary_expr(x, ident_to_type),
         l::ParenExpr::Binary(x) => eval_binary_expr(x, ident_to_type),
     }
 }
 
 fn eval_unary_expr(
-    item: &l::UnaryParenExpr,
+    item: &l::Ref<l::UnaryParenExpr>,
     ident_to_type: &IdentToType,
 ) -> anyhow::Result<Arc<l::Type>> {
-    let operand_type = eval_expr(&item.operand, ident_to_type)?;
-    match item.op {
+    let operand_type = eval_expr(&item.val.operand, ident_to_type)?;
+    match item.val.op.val {
         l::UnaryParenExprOp::Not => {
             if operand_type.is_assignable_to(&BOOL_TYPE).not() {
                 bail!("Not operation expects operand to be of type `bool`");
@@ -298,11 +327,11 @@ fn eval_unary_expr(
 }
 
 fn eval_binary_expr(
-    item: &l::BinaryParenExpr,
+    item: &l::Ref<l::BinaryParenExpr>,
     ident_to_type: &IdentToType,
 ) -> anyhow::Result<Arc<l::Type>> {
-    let left_type = eval_expr(&item.left, ident_to_type)?;
-    let right_type = eval_expr(&item.right, ident_to_type)?;
+    let left_type = eval_expr(&item.val.left, ident_to_type)?;
+    let right_type = eval_expr(&item.val.right, ident_to_type)?;
 
     macro_rules! expect_types {
         (
@@ -318,7 +347,7 @@ fn eval_binary_expr(
         }};
     }
 
-    match item.op {
+    match item.val.op.val {
         l::BinaryParenExprOp::Add => expect_types!(
             UINT_TYPE, UINT_TYPE => UINT_TYPE;
             INT_TYPE, INT_TYPE => INT_TYPE;
