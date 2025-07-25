@@ -1,3 +1,0 @@
-lit $foo "1"
-lit $bar "2"
-add $sum $foo $bar
