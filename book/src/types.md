@@ -8,7 +8,7 @@
 | val | 1 | any | The base primitive type of Steplo, equivalent to strings in other languages |
 | num | 1 | val | 64-bit floating-point numbers (equivalent to TypeScript's `number` type or Rust's `f64` type)  |
 | int | 1 | num | A 64-bit floating-point signed integer |
-| uint | 1 | num | A 64-bit floating-point unsigned integer |
+| uint | 1 | int | A 64-bit floating-point unsigned integer |
 | bool | 1 | val | A boolean value, either true or false |
 
 ## Reference Types
