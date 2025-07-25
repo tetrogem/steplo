@@ -16,7 +16,7 @@
   <br>
   👉 <a href="https://discord.tetro.dev/">https://discord.tetro.dev/</a>
   <br><br>
-  <i>A dedicated server will be created if enough interest is found!</i>
+  <i>A dedicated Discord server for Steplo will be created if enough interest is found!</i>
 </p>
 
 ---
@@ -35,39 +35,39 @@ Its goals include:
 
 ## 🚫 What Steplo is *not*:
 
-* ❌ A 1:1 syntax of Scratch blocks as text
-* ❌ An emulator for existing CPU architectures
+* A 1:1 syntax of Scratch blocks as text
+* An emulator for existing CPU architectures
 
 ---
 
 ## ✨ Features
 *✅ = Implemented | 🚧 = Planned*
 
-| Feature                                   | Status |
-| ----------------------------------------- | ------ |
-| Stdout / Printing                         | ✅      |
-| Stack Memory                              | ✅      |
-| Memory Pointers / References              | ✅      |
-| In-Memory Arrays                          | ✅      |
-| Functions                                 | ✅      |
-| Branching / Control Flow                  | ✅      |
-| Recursion                                 | ✅      |
-| Optimizer                                 | ✅      |
-| Static Typing                             | ✅      |
-| Typecasting & Transmutations              | ✅      |
-| Typechecker                               | ✅      |
-| Native Scratch I/O (e.g. RNG, user input) | ✅      |
-| Structs                                   | 🚧      |
-| Enums                                     | 🚧      |
-| Tagged Unions                             | 🚧      |
-| Module System                             | 🚧      |
-| External Linking / Libraries              | 🚧      |
-| More Scratch Native Features              | 🚧      |
-| Language Server                           | 🚧      |
-| VS Code Extension                         | 🚧      |
-| Standard Library                          | 🚧      |
-| Heap Memory Support                       | 🚧      |
-| Smart Pointers                            | 🚧      |
+| Status | Feature |
+| :---: | --- |
+| ✅ | Stdout / Printing |
+| ✅ | Stack Memory |
+| ✅ | Memory Pointers / References |
+| ✅ | In-Memory Arrays |
+| ✅ | Functions |
+| ✅ | Branching / Control Flow |
+| ✅ | Recursion |
+| ✅ | Optimizer |
+| ✅ | Static Typing |
+| ✅ | Typecasting & Transmutations |
+| ✅ | Typechecker |
+| ✅ | Native Scratch Functionality (e.g. RNG, user input) |
+| 🚧 | Structs |
+| 🚧 | Enums |
+| 🚧 | Discriminated/Tagged Unions |
+| 🚧 | Module System |
+| 🚧 | External Linking / Libraries |
+| 🚧 | More Scratch Native Features |
+| 🚧 | Language Server |
+| 🚧 | VS Code (and possibly other IDEs) Extension |
+| 🚧 | Standard Library |
+| 🚧 | Built-in Heap Memory Support |
+| 🚧 | Smart Pointers |
 
 ---
 
