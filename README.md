@@ -62,7 +62,7 @@ Its goals include:
 | 🚧 | Discriminated/Tagged Unions |
 | 🚧 | Module System |
 | 🚧 | External Linking / Libraries |
-| 🚧 | More Scratch Native Features |
+| 🚧 | More Scratch Native Features (e.g., sprites, key events, sounds, pen) |
 | 🚧 | Language Server |
 | 🚧 | VS Code (and possibly other IDEs) Extension |
 | 🚧 | Standard Library |
