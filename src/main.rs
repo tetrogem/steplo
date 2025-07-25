@@ -7,7 +7,6 @@ mod utils;
 use std::{
     fs::{self, File},
     io::Read,
-    ops::Not,
     path::Path,
     sync::Arc,
 };
