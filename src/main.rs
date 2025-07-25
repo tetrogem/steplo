@@ -7,6 +7,7 @@ mod utils;
 use std::{
     fs::{self, File},
     io::Read,
+    ops::Not,
     path::Path,
     sync::Arc,
 };
@@ -31,13 +32,20 @@ use crate::{
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Enables stack monitoring
-    #[arg(long)]
-    dev: bool,
     /// The Steplo source code file (.lo) to compile
     src_path: String,
     /// The folder to save the compiled program (and other build artifacts) within
     out_path: String,
+
+    /// Enables stack monitoring
+    #[arg(long)]
+    dev: bool,
+    // Disables optimizations
+    #[arg(long)]
+    no_opt: bool,
+    // Outputs intermediate optimization artifacts
+    #[arg(long)]
+    out_opt: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -79,33 +87,43 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
     let linked = time("Linking...", || link(&ast));
     let mem_opt_ast = time("Compiling high-level to designation IR...", || compile(linked))?;
 
-    time("Writing intermediate opt 0 file...", || {
-        let asm_export = mem_opt::export::export(mem_opt_ast.iter().map(AsRef::as_ref));
-        let name = src_path
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .expect("input file should have stem");
+    if args.out_opt {
+        time("Writing intermediate opt 0 file...", || {
+            let asm_export = mem_opt::export::export(mem_opt_ast.iter().map(AsRef::as_ref));
+            let name = src_path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .expect("input file should have stem");
 
-        let path = Path::new(&args.out_path).join(format!("{name}.opt0"));
-        fs::write(path, asm_export).expect("opt export should succeed");
-    });
+            let path = Path::new(&args.out_path).join(format!("{name}.opt0"));
+            fs::write(path, asm_export).expect("opt export should succeed");
+        });
+    }
 
-    let mem_opt1_ast =
-        time("Optimizing code...", || mem_opt::opt::optimize(mem_opt_ast.iter().cloned()));
+    let mem_opt_ast = if args.no_opt {
+        mem_opt_ast
+    } else {
+        let mem_opt_ast =
+            time("Optimizing code...", || mem_opt::opt::optimize(mem_opt_ast.iter().cloned()));
 
-    time("Writing intermediate opt 1 file...", || {
-        let asm_export = mem_opt::export::export(mem_opt1_ast.iter().map(AsRef::as_ref));
-        let name = src_path
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .expect("input file should have stem");
+        if args.out_opt {
+            time("Writing intermediate opt 1 file...", || {
+                let asm_export = mem_opt::export::export(mem_opt_ast.iter().map(AsRef::as_ref));
+                let name = src_path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .expect("input file should have stem");
 
-        let path = Path::new(&args.out_path).join(format!("{name}.opt1"));
-        fs::write(path, asm_export).expect("opt export should succeed");
-    });
+                let path = Path::new(&args.out_path).join(format!("{name}.opt1"));
+                fs::write(path, asm_export).expect("opt export should succeed");
+            });
+        }
+
+        mem_opt_ast
+    };
 
     let mem_opt_designated =
-        time("Designating registers...", || mem_opt::designate::designate_registers(&mem_opt1_ast));
+        time("Designating registers...", || mem_opt::designate::designate_registers(&mem_opt_ast));
 
     let ez = time("Compiling to EZ...", || {
         mem_opt::compile::compile(
