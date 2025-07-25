@@ -1,9 +1,13 @@
-use std::{cmp::Ordering, collections::HashSet, path::Path, sync::Arc};
+use std::{cmp::Ordering, collections::HashSet, fmt::Display, path::Path, sync::Arc};
 
 use colored::Colorize;
 use itertools::Itertools;
 
-use crate::{srced::SrcRange, token::TokenKind};
+use crate::{
+    logic_ast::{BaseType, Type},
+    srced::SrcRange,
+    token::TokenKind,
+};
 
 #[derive(Debug, Default)]
 pub struct CompileErrorSet {
@@ -15,6 +19,7 @@ pub struct CompileErrorSet {
 pub(crate) enum CompileError {
     Grammar(GrammarError),
     Convert(LogicError),
+    Type(TypeError),
 }
 
 #[derive(Debug)]
@@ -31,6 +36,93 @@ pub(crate) enum LogicError {
     InvalidRangeStartIncl,
     InvalidRangeEndExcl,
     InvalidNumLiteral,
+}
+
+#[derive(Debug)]
+pub(crate) enum TypeError {
+    Mismatch {
+        expected: Arc<VagueType>,
+        found: Arc<VagueType>,
+    },
+    InvalidCast {
+        from: Arc<VagueType>,
+        to: Arc<VagueType>,
+    },
+    InvalidTransmute {
+        from: Arc<VagueType>,
+        to: Arc<VagueType>,
+    },
+    IndexNonArray {
+        found: Arc<VagueType>,
+    },
+    IdentNotFound {
+        name: Arc<str>,
+    },
+    DerefNonRef {
+        found: Arc<VagueType>,
+    },
+    FuncNotFound {
+        name: Arc<str>,
+    },
+    ArgsLenMismatch {
+        func_name: Arc<str>,
+        expected: usize,
+        found: usize,
+    },
+    BinaryOpOperandsMismatch {
+        op: Arc<str>,
+        expected: Arc<[(Arc<VagueType>, Arc<VagueType>)]>,
+        found: (Arc<VagueType>, Arc<VagueType>),
+    },
+}
+
+#[derive(Debug)]
+pub enum VagueType {
+    Unknown,
+    Base(Arc<BaseType>),
+    Ref(Arc<VagueType>),
+    Array { ty: Arc<VagueType>, len: Option<u32> },
+}
+
+impl From<&Type> for VagueType {
+    fn from(value: &Type) -> Self {
+        match value {
+            Type::Base(base) => Self::Base(base.clone()),
+            Type::Ref(ty) => Self::Ref(Arc::new(ty.as_ref().into())),
+            Type::Array { ty, len } => {
+                Self::Array { ty: Arc::new(ty.as_ref().into()), len: Some(*len) }
+            },
+        }
+    }
+}
+
+impl Display for VagueType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unknown => write!(f, "_"),
+            Self::Base(base) => {
+                let base = match base.as_ref() {
+                    BaseType::Any => "any",
+                    BaseType::Val => "val",
+                    BaseType::Num => "num",
+                    BaseType::Int => "int",
+                    BaseType::Uint => "uint",
+                    BaseType::Bool => "bool",
+                };
+
+                write!(f, "{base}")
+            },
+            Self::Ref(ty) => write!(f, "&{}", ty.as_ref()),
+            Self::Array { ty, len } => {
+                let len = match len {
+                    Some(len) => &len.to_string(),
+                    None => "_",
+                };
+
+                write!(f, "[{ty}; {len}]")
+            },
+        }
+    }
 }
 
 impl CompileErrorSet {
@@ -57,6 +149,7 @@ impl CompileErrorSet {
 enum CollapsedCompileError {
     Grammar(CollapsedGrammarError),
     Logic(CollapsedLogicError),
+    Type(CollapsedTypeError),
 }
 
 enum CollapsedGrammarError {
@@ -71,6 +164,43 @@ enum CollapsedLogicError {
     InvalidRangeStartIncl,
     InvalidRangeEndExcl,
     InvalidNumLiteral,
+}
+
+enum CollapsedTypeError {
+    Mismatch {
+        expected: Arc<VagueType>,
+        found: Arc<VagueType>,
+    },
+    InvalidCast {
+        from: Arc<VagueType>,
+        to: Arc<VagueType>,
+    },
+    InvalidTransmute {
+        from: Arc<VagueType>,
+        to: Arc<VagueType>,
+    },
+    IndexNonArray {
+        found: Arc<VagueType>,
+    },
+    IdentNotFound {
+        name: Arc<str>,
+    },
+    DerefNonRef {
+        found: Arc<VagueType>,
+    },
+    FuncNotFound {
+        name: Arc<str>,
+    },
+    ArgsLenMismatch {
+        func_name: Arc<str>,
+        expected: usize,
+        found: usize,
+    },
+    BinaryOpOperandsMismatch {
+        op: Arc<str>,
+        expected: Arc<[(Arc<VagueType>, Arc<VagueType>)]>,
+        found: (Arc<VagueType>, Arc<VagueType>),
+    },
 }
 
 impl CollapsedGrammarError {
@@ -122,6 +252,12 @@ impl CollapsedLogicError {
     }
 }
 
+impl CollapsedTypeError {
+    pub fn try_collapse(&mut self, other: TypeError) -> Result<(), TypeError> {
+        Err(other)
+    }
+}
+
 impl CollapsedCompileError {
     pub fn try_collapse(&mut self, other: CompileError) -> Result<(), CompileError> {
         match (self, other) {
@@ -130,6 +266,9 @@ impl CollapsedCompileError {
             },
             (CollapsedCompileError::Logic(convert), CompileError::Convert(other_convert)) => {
                 convert.try_collapse(other_convert).map_err(CompileError::Convert)
+            },
+            (CollapsedCompileError::Type(ty), CompileError::Type(other_ty)) => {
+                ty.try_collapse(other_ty).map_err(CompileError::Type)
             },
             (_, other) => Err(other),
         }
@@ -243,14 +382,14 @@ impl CollapsedCompileError {
             Self::Grammar(ast) => match ast {
                 CollapsedGrammarError::MismatchedTokenString { expected, found } => {
                     format!(
-                        "Expected {}; Found: {}",
+                        "Expected one of: {}; Found: {}",
                         token_strings_to_string(expected.iter().map(AsRef::as_ref)),
                         tokens_to_string(&[*found])
                     )
                 },
                 CollapsedGrammarError::ExpectedTokenString { expected } => {
                     format!(
-                        "Expected {}; Found end of document",
+                        "Expected one of: {}; Found end of document",
                         token_strings_to_string(expected.iter().map(AsRef::as_ref)),
                     )
                 },
@@ -268,6 +407,43 @@ impl CollapsedCompileError {
                 },
                 CollapsedLogicError::InvalidNumLiteral => "Invalid number literal".into(),
             },
+            Self::Type(ty) => match ty {
+                CollapsedTypeError::Mismatch { expected, found } => {
+                    format!("Expected `{expected}`; Found `{found}`")
+                },
+                CollapsedTypeError::InvalidCast { from, to } => {
+                    format!("Unable to cast `{from}` to `{to}`")
+                },
+                CollapsedTypeError::InvalidTransmute { from, to } => {
+                    format!("Unable to transmute `{from}` to `{to}`")
+                },
+                CollapsedTypeError::IndexNonArray { found } => {
+                    format!("Unable to index a type that isn't an array; Found: `{found}`")
+                },
+                CollapsedTypeError::IdentNotFound { name } => {
+                    format!("Identifier `{name}` was not found in scope")
+                },
+                CollapsedTypeError::DerefNonRef { found } => {
+                    format!("Unable to dereference a type that isn't a reference; Found: `{found}`")
+                },
+                CollapsedTypeError::FuncNotFound { name } => {
+                    format!("Function `{name}` was not found")
+                },
+                CollapsedTypeError::ArgsLenMismatch { func_name, expected, found } => {
+                    format!(
+                        "Function `{func_name}` expected {expected} arguments; Found {found} arguments"
+                    )
+                },
+                CollapsedTypeError::BinaryOpOperandsMismatch { op, expected, found } => {
+                    let fmt_binary_op_expr =
+                        |(left, right): &(_, _)| format!("{left:?} {op} {right:?}");
+
+                    let expected = expected.iter().map(fmt_binary_op_expr).join(", ");
+                    let found = fmt_binary_op_expr(found);
+
+                    format!("Expected one of: {expected}; Found {found}")
+                },
+            },
         }
     }
 
@@ -275,6 +451,7 @@ impl CollapsedCompileError {
         match self {
             Self::Grammar(_) => "grammar",
             Self::Logic(_) => "logic",
+            Self::Type(_) => "type",
         }
     }
 }
@@ -301,6 +478,25 @@ impl From<CompileError> for CollapsedCompileError {
                 LogicError::InvalidRangeStartIncl => CollapsedLogicError::InvalidRangeStartIncl,
                 LogicError::InvalidRangeEndExcl => CollapsedLogicError::InvalidRangeEndExcl,
                 LogicError::InvalidNumLiteral => CollapsedLogicError::InvalidNumLiteral,
+            }),
+            CompileError::Type(ty) => Self::Type(match ty {
+                TypeError::Mismatch { expected, found } => {
+                    CollapsedTypeError::Mismatch { expected, found }
+                },
+                TypeError::InvalidCast { from, to } => CollapsedTypeError::InvalidCast { from, to },
+                TypeError::InvalidTransmute { from, to } => {
+                    CollapsedTypeError::InvalidTransmute { from, to }
+                },
+                TypeError::IndexNonArray { found } => CollapsedTypeError::IndexNonArray { found },
+                TypeError::IdentNotFound { name } => CollapsedTypeError::IdentNotFound { name },
+                TypeError::DerefNonRef { found } => CollapsedTypeError::DerefNonRef { found },
+                TypeError::FuncNotFound { name } => CollapsedTypeError::FuncNotFound { name },
+                TypeError::ArgsLenMismatch { func_name, expected, found } => {
+                    CollapsedTypeError::ArgsLenMismatch { func_name, expected, found }
+                },
+                TypeError::BinaryOpOperandsMismatch { op, expected, found } => {
+                    CollapsedTypeError::BinaryOpOperandsMismatch { op, expected, found }
+                },
             }),
         }
     }

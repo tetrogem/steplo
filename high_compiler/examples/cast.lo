@@ -1,4 +1,4 @@
-main |val: val, any: any, val_ref: &val, any_ref: &any, num: num| {
+main |val: val, any: any, val_ref: &any, any_ref: &any, num: num| {
     val = 10;
     any = "hello";
     any = val;

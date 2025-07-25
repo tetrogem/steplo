@@ -39,16 +39,16 @@ impl Type {
         match self {
             Self::Ref(_) => 1,
             Self::Base(_) => 1,
-            Self::Array { ty, len } => &ty.size() * len,
+            Self::Array { ty, len } => ty.size() * len,
         }
     }
 
     pub fn is_assignable_to(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Ref(a), Self::Ref(b)) => a.is_assignable_to(&b) && b.is_assignable_to(&a),
+            (Self::Ref(a), Self::Ref(b)) => a.is_assignable_to(b) && b.is_assignable_to(a),
             (Self::Ref(_), Self::Base(b)) => matches!(b.as_ref(), BaseType::Any),
             (Self::Array { ty: a, len: a_len }, Self::Array { ty: b, len: b_len }) => {
-                a_len == b_len && a.is_assignable_to(&b) && b.is_assignable_to(&a)
+                a_len == b_len && a.is_assignable_to(b) && b.is_assignable_to(a)
             },
             (Self::Base(a), Self::Base(b)) => {
                 use BaseType::*;

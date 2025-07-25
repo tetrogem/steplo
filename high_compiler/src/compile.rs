@@ -237,7 +237,7 @@ fn compile_proc(
         link::ProcKind::Main => (opt::ProcKind::Func { name: "main".into() }, Vec::new()),
         link::ProcKind::Func { name, params } => (
             opt::ProcKind::Func { name: format!("func.{}", name.val.str).into() },
-            params.val.iter().cloned().collect(),
+            params.val.to_vec(),
         ),
     };
 
@@ -324,7 +324,7 @@ fn compile_call(
             let mut param_stack_offset: u32 = 0;
             let mut param_setup_commands = Vec::new();
             for (ident, expr) in param_idents.val.iter().zip(&param_exprs.val) {
-                let elements = compile_assign_expr_elements(stack_frame, &expr)?;
+                let elements = compile_assign_expr_elements(stack_frame, expr)?;
 
                 for (i, element) in elements.into_iter().enumerate() {
                     param_setup_commands.extend(element.commands);
@@ -615,7 +615,7 @@ fn compile_assign_expr_elements(
     expr: &hast::Ref<hast::AssignExpr>,
 ) -> anyhow::Result<Vec<CompiledExpr>> {
     let compileds = match &expr.val {
-        hast::AssignExpr::Expr(expr) => Vec::from([compile_expr(stack_frame, &expr)?]),
+        hast::AssignExpr::Expr(expr) => Vec::from([compile_expr(stack_frame, expr)?]),
         hast::AssignExpr::Span(array) => array
             .val
             .iter()

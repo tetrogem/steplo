@@ -80,10 +80,6 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
         },
     };
 
-    let ast = time("Adding built-in functions...", || add_builtins::add_builtins(&ast));
-
-    time("Typechecking...", || typecheck::typecheck(&ast))?;
-
     // dbg!(&ast);
     let linked = time("Linking...", || link(&ast))?;
     // dbg!(&linked);
@@ -138,5 +134,7 @@ fn compile_set_fallables(
 ) -> Result<logic_ast::Ref<logic_ast::Program>, CompileErrorSet> {
     let ast = time("Parsing grammar...", || parse(tokens.into()))?;
     let ast = time("Converting grammar...", || grammar_to_ast(&Arc::new(ast)))?;
+    let ast = time("Adding built-in functions...", || add_builtins::add_builtins(&ast));
+    time("Typechecking...", || typecheck::typecheck(&ast))?;
     Ok(ast)
 }

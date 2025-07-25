@@ -1,31 +1,31 @@
 main {
-    proc #e7 {
+    proc #7d {
         $sp = "-1";
-        jump #7a;
+        jump #2e;
     }
 }
 
 func main {
-    proc #7a {
+    proc #2e {
         $sp = ($sp + "2");
         stack[($sp + "2")] = $sp;
-        stack[($sp + "1")] = #51;
-        jump #a9;
+        stack[($sp + "1")] = #de;
+        jump #5c;
     }
 
-    proc #51 {
+    proc #de {
         stack[($sp + "2")] = stack[$sp];
-        stack[($sp + "1")] = #7b;
-        jump #66;
+        stack[($sp + "1")] = #68;
+        jump #d1;
     }
 
-    proc #7b {
+    proc #68 {
         exit;
     }
 }
 
 func func.mutate_ref {
-    proc #a9 {
+    proc #5c {
         $sp = ($sp + "2");
         stack[stack[$sp]] = "1";
         $sp = ($sp - "2");
@@ -34,11 +34,11 @@ func func.mutate_ref {
 }
 
 func func.needs_val {
-    proc #66 {
+    proc #d1 {
         $sp = ($sp + "2");
         stack[($sp + "2")] = stack[$sp];
         stack[($sp + "1")] = #12;
-        jump #8d;
+        jump #39;
     }
 
     proc #12 {
@@ -48,7 +48,7 @@ func func.needs_val {
 }
 
 func func.out {
-    proc #8d {
+    proc #39 {
         $sp = ($sp + "2");
         out stack[$sp];
         $sp = ($sp - "2");

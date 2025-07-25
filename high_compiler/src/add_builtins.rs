@@ -6,9 +6,9 @@ use crate::{
 };
 
 pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
-    let mut top_items: Vec<_> = l.val.items.val.iter().cloned().collect();
+    let mut top_items = l.val.items.val.to_vec();
 
-    static SRC_RANGE: LazyLock<SrcRange> = LazyLock::new(|| SrcRange::default());
+    static SRC_RANGE: LazyLock<SrcRange> = LazyLock::new(SrcRange::default);
 
     fn rf<T>(t: T) -> l::Ref<T> {
         Arc::new(Srced { val: t, range: *SRC_RANGE })
