@@ -1,7 +1,0 @@
-lit "1" "What is your name?"
-out "1"
-in "2"
-
-lit "1" "Your name is..."
-out "1"
-out "2"

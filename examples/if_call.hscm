@@ -1,0 +1,13 @@
+main || {
+    out("Starting...");
+
+    if 1 {
+        foo();
+    }
+
+    out("Stopping...");
+}
+
+func foo() || {
+    out("Foo was called!");
+}

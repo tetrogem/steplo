@@ -1,0 +1,18 @@
+main |i: val| {
+    i = 20;
+    iterate(&i);
+}
+
+func iterate(i_r: &val) |i: val| {
+    i = *i_r;
+
+    if (0 != i) {
+        *i_r = (i - 1);
+        greet();
+        iterate(i_r);
+    }
+}
+
+func greet() || {
+    out("Hello!");
+}

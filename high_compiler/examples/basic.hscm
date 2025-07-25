@@ -1,6 +1,0 @@
-main |a, b, c, d| {
-    c = "This";
-    a = "Hello";
-    d = "works!";
-    b = "world!";
-}

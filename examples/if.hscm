@@ -1,0 +1,7 @@
+main || {
+    if "true" {
+        out("Inside if!");
+    }
+
+    out("Outside if!");
+}

@@ -1,7 +1,0 @@
-main |a| {
-    ret(ref a);
-}
-
-func ret(ret_ref) || {
-    deref ret_ref = "Returned!";
-}

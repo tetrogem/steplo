@@ -1,0 +1,52 @@
+main |val: val, any: any, val_ref: &any, any_ref: &any, num: num| {
+    val = 10;
+    any = "hello";
+    any = val;
+    val = <val>any;
+
+    val_ref = &val;
+    any_ref = &any;
+    // must transmute, breaks invariant of reference type (&val may no longer be a &val)
+    any_ref = <<&any>>val_ref;
+    val_ref = <<&val>>any_ref;
+
+    any = val_ref;
+    any = any_ref;
+    // any is copied here, but casting it is STILL not safe
+    // this is because the memory location pointed to by any may *not* be a &val, so setting it may
+    // break it's invariant
+    val_ref = <<&val>>any;
+    any_ref = <<&any>>any;
+
+    num = 10;
+    val = num;
+    num = <num>val;
+
+    // casts are chainable
+    any = any_ref;
+    val = <val><any>any_ref;
+    num = <num><any>any_ref;
+
+    // casting to the same type is always ok
+    any = <any>any;
+    val = <val>val;
+    any_ref = <&any>any_ref;
+    val_ref = <&val>val_ref;
+
+    // casting to a supertype is always ok
+    // (though you don't need to do this, the compiler will automatically do it for you)
+    any = <any>val;
+    any = val;
+    val = <val>num;
+    val = num;
+    any = <any>num;
+    any = num;
+
+    // refs can be cast to numbers (and their supertypes)
+    num = <uint>any_ref;
+    num = <int>any_ref;
+    num = <num>any_ref;
+    val = <val>any_ref;
+    val = <val>val_ref;
+}
+

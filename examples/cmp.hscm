@@ -1,0 +1,6 @@
+main |a, b, c, e| {
+    a = 1;
+    b = 2;
+    c = a | eq b | not;
+    e = "End";
+}

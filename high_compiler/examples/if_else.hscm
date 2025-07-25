@@ -1,7 +1,0 @@
-main || {
-    if "1" | eq "10" {
-        out("Inside if!");
-    } else {
-        out("Inside else!");
-    }
-}

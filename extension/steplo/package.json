@@ -1,0 +1,37 @@
+{
+  "name": "steplo",
+  "displayName": "steplo",
+  "description": "Support for the Steplo programming language",
+  "version": "0.0.1",
+  "scripts": {
+    "package": "npx vsce package"
+  },
+  "engines": {
+    "vscode": "^1.99.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "steplo",
+        "aliases": [
+          "Steplo",
+          "steplo"
+        ],
+        "extensions": [
+          ".lo"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "steplo",
+        "scopeName": "source.steplo",
+        "path": "./syntaxes/steplo.tmLanguage.json"
+      }
+    ]
+  }
+}

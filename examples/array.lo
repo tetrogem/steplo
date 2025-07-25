@@ -1,0 +1,16 @@
+main |foo: val, bar: [val; 5], ints: [int; 6]| {
+    foo = "Variable";
+    out(foo);
+
+    bar[0] = 10;
+    out(bar[0]);
+
+    bar[3] = "Hello";
+    bar[2] = "World!";
+    bar[4] = bar[2];
+    bar[4] = foo;
+    out(bar[3]);
+    out(bar[4]);
+
+    ints = [1, 2, 3, 4, 5];
+}

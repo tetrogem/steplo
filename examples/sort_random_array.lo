@@ -1,0 +1,105 @@
+main |arr: [num; 99], vec: [any; 3]| {
+    Vec_new(&vec, &arr, 99, 0);
+    Vec_random_populate(&vec, 10, -100, 100);
+
+    out("Unsorted:");
+    Vec_print(&vec);
+
+    out("Sorted:");
+    Vec_sort(&vec);
+    Vec_print(&vec);
+
+    out("Pushing `12.5` then sorting again:");
+    Vec_push(&vec, 12.5);
+    Vec_sort(&vec);
+    Vec_print(&vec);
+}
+
+func Vec_new(ret_r: &[any; 3], arr_r: &[num; 99], cap: uint, len: uint) || {
+    *ret_r = [arr_r, cap, len];
+}
+
+func Vec_entry(ret_r: &&num, self_r: &[any; 3], i: uint) || {
+    *ret_r = &((*<<&[num; 99]>>(*self_r)[0])[i]);
+}
+
+func Vec_cap(ret_r: &uint, self_r: &[any; 3]) || {
+    *ret_r = <uint>(*self_r)[1];
+}
+
+func Vec_len_r(ret_r: &&uint, self_r: &[any; 3]) || {
+    *ret_r = <<&uint>>&((*self_r)[2]);
+}
+
+func Vec_len(ret_r: &uint, self_r: &[any; 3]) |len_r: &uint| {
+    Vec_len_r(&len_r, self_r);
+    *ret_r = *len_r;
+}
+
+func Vec_push(self_r: &[any; 3], val: num) |cap: uint, len: uint, entry_r: &num, len_r: &uint| {
+    Vec_cap(&cap, self_r);
+    Vec_len(&len, self_r);
+    if (len < cap) {
+        Vec_entry(&entry_r, self_r, len);
+        *entry_r = val;
+        Vec_len_r(&len_r, self_r);
+        *len_r = (len + 1);
+    }
+}
+
+func Vec_print(self_r: &[any; 3]) |i: uint, len: uint, val_r: &num, str: val| {
+    i = 0;
+    str = "Vec (";
+    Vec_len(&len, self_r);
+    str = (str ~ len);
+    str = (str ~ ") ");
+
+    while (i < len) {
+        if (i != 0) {
+            str = (str ~ ", ");
+        };
+
+        Vec_entry(&val_r, self_r, i);
+        str = (str ~ *val_r);
+        i = (i + 1);
+    };
+
+    out(str);
+}
+
+func Vec_sort(self_r: &[any; 3]) |i: uint, j: uint, len: uint, a_r: &num, b_r: &num, a: num, b: num| {
+    i = 0;
+    Vec_len(&len, self_r);
+
+    while (i < len) {
+        j = i;
+        while (j < len) {
+            Vec_entry(&a_r, self_r, i);
+            Vec_entry(&b_r, self_r, j);
+            a = *a_r;
+            b = *b_r;
+
+            if (b < a) {
+                swap(a_r, b_r);
+            };
+
+            j = (j + 1);
+        };
+
+        i = (i + 1);
+    };
+}
+
+func swap(a_r: &num, b_r: &num) |temp: num| {
+    temp = *a_r;
+    *a_r = *b_r;
+    *b_r = temp;
+}
+
+func Vec_random_populate(self_r: &[any; 3], len: uint, min: num, max: num) |i: uint, num: num| {
+    while (i < len) {
+        random_num(&num, min, max);
+        Vec_push(self_r, num);
+        i = (i + 1);
+    }
+}

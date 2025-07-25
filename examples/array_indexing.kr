@@ -1,0 +1,9 @@
+main |foo: [val; 10], foo_ref: &[val; 10]| {
+    foo = [98, 76, 54, 32, 90, 80, 70, 60, 50, 40];
+    foo_ref = &foo;
+
+    out(foo[1]);
+    out(*(&foo + 1));
+    out((*foo_ref)[1]);
+    out(*(foo_ref + 1));
+}
