@@ -1,0 +1,5 @@
+[book]
+authors = ["tetrogem"]
+language = "en"
+src = "src"
+title = "The Steplo Programming Language"

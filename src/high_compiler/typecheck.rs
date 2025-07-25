@@ -444,7 +444,6 @@ fn eval_binary_expr(
         ),
         l::BinaryParenExprOp::Sub => expect_types!(
             for "-";
-            UINT_TYPE, UINT_TYPE => INT_TYPE;
             INT_TYPE, INT_TYPE => INT_TYPE;
             NUM_TYPE, NUM_TYPE => NUM_TYPE;
         ),
@@ -456,14 +455,10 @@ fn eval_binary_expr(
         ),
         l::BinaryParenExprOp::Div => expect_types!(
             for "/";
-            UINT_TYPE, UINT_TYPE => NUM_TYPE;
-            INT_TYPE, INT_TYPE => NUM_TYPE;
             NUM_TYPE, NUM_TYPE => NUM_TYPE;
         ),
         l::BinaryParenExprOp::Mod => expect_types!(
             for "%";
-            UINT_TYPE, UINT_TYPE => NUM_TYPE;
-            INT_TYPE, INT_TYPE => NUM_TYPE;
             NUM_TYPE, NUM_TYPE => NUM_TYPE;
         ),
         l::BinaryParenExprOp::Eq => expect_types!(
