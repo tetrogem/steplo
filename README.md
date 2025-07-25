@@ -31,6 +31,8 @@ Its goals include:
 * Using **stack-based memory** as the primary memory model
 * Compiling into custom "bytecode", designed specifically to integrate with Scratch’s native primitive types and features (sprites, sounds, costumes, pen, etc.)
 
+<img src="readme/fizzbuzz.png">
+
 ---
 
 ## 🚫 What Steplo is *not*:
@@ -57,6 +59,7 @@ Its goals include:
 | ✅ | Typecasting & Transmutations |
 | ✅ | Typechecker |
 | ✅ | Native Scratch Functionality (e.g. RNG, user input) |
+| ✅ | Helpful Compiler Errors |
 | 🚧 | Structs |
 | 🚧 | Enums |
 | 🚧 | Discriminated/Tagged Unions |

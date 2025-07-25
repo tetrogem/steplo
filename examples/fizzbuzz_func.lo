@@ -1,0 +1,25 @@
+main |i: uint, iters: uint, result: val| {
+    out("Enter how many iterations to perform:");
+    in(<<&val>>&iters);
+
+    i = 1;
+    while (i <= iters) {
+        fizzbuzz(&result, i);
+        out(result);
+        i = (i + 1);
+    };
+
+    out("Done!");
+}
+
+func fizzbuzz(return: &val, num: uint) || {
+    if ((num % 15) == 0) {
+        *return = "FizzBuzz";
+    } else if ((num % 3) == 0) {
+        *return = "Fizz";
+    } else if ((num % 5) == 0) {
+        *return = "Buzz";
+    } else {
+        *return = num;
+    };
+}
