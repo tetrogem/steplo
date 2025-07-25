@@ -5,20 +5,18 @@ mod mem_opt;
 mod utils;
 
 use std::{
-    env::current_exe,
     fs::{self, File},
     io::Read,
     path::Path,
-    process,
     sync::Arc,
 };
 
-use anyhow::bail;
 use high_compiler::{compile, compile_error, grammar_ast, grammar_to_logic, link, srced, token};
 
 use clap::Parser;
 use compile::compile;
 use grammar_ast::parse;
+use include_dir::{Dir, include_dir};
 use link::link;
 use token::tokenize;
 use utils::{time, time_total, write_json};
@@ -53,15 +51,12 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn compile_all(args: Args) -> anyhow::Result<()> {
-    let Ok(exe_path) = current_exe() else { bail!("Failed to get exe path") };
-    let Some(exe_dir) = exe_path.parent() else { bail!("Failed to get exe parent dir") };
-
-    let res_path = exe_dir.join("../../res");
+    static RES_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/res");
 
     let src_path = Path::new(&args.src_path);
     assert!(
         src_path.extension().and_then(|x| x.to_str()) == Some("lo"),
-        "input file must be a steplo source code (.lo) file"
+        "input file must be a Steplo source code (.lo) file"
     );
 
     let mut in_file = File::open(src_path).expect("input file should open");
@@ -72,7 +67,6 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
     };
 
     let tokens = time("Tokenizing...", || tokenize(&input))?;
-    // dbg!(&tokens);
 
     let ast = match compile_set_fallables(tokens) {
         Ok(ast) => ast,
@@ -82,9 +76,7 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
         },
     };
 
-    // dbg!(&ast);
     let linked = time("Linking...", || link(&ast));
-    // dbg!(&linked);
     let mem_opt_ast = time("Compiling high-level to designation IR...", || compile(linked))?;
 
     time("Writing intermediate opt 0 file...", || {
@@ -126,7 +118,7 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
     let js_val = time("Compiling to JSON...", || ir.compile());
     let json = time("Serializing...", || format!("{js_val:#}"));
 
-    time("Exporting...", || write_json(&json, src_path, Path::new(&args.out_path), &res_path));
+    time("Exporting...", || write_json(&json, src_path, Path::new(&args.out_path), &RES_DIR));
 
     Ok(())
 }

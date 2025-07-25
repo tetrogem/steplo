@@ -27,20 +27,26 @@ pub fn time_total<R>(message: &str, runner: impl FnOnce() -> R) -> R {
     res
 }
 
-pub fn write_json(json: &str, in_path: &Path, out_path: &Path, res_path: &Path) {
+pub fn write_json(json: &str, in_path: &Path, out_path: &Path, res_dir: &include_dir::Dir) {
     let in_filename = in_path.file_name().and_then(|name| name.to_str());
     let out_name = in_filename.map(|name| name.split('.')).and_then(|mut parts| parts.next());
     let out_name = out_name.expect("input path should have a filename prefix");
 
     let out_folder = Path::new(&out_path).join(out_name);
-    write_files(json, out_name, &out_folder, out_path, res_path);
+    write_files(json, out_name, &out_folder, out_path, res_dir);
 
     let _ = fs::remove_dir_all(&out_folder);
 }
 
 // needs to be a separate function to work on linux for some reason
 // (probably to do with dropping file handles before attempting deletion)
-fn write_files(json: &str, out_name: &str, out_folder: &PathBuf, out_path: &Path, res_path: &Path) {
+fn write_files(
+    json: &str,
+    out_name: &str,
+    out_folder: &PathBuf,
+    out_path: &Path,
+    res_dir: &include_dir::Dir,
+) {
     let _ = fs::DirBuilder::new().create(out_folder);
     let out_path_metadata = fs::metadata(out_folder).expect("out path should exist");
     assert!(out_path_metadata.is_dir(), "out path should be a dir");
@@ -50,12 +56,10 @@ fn write_files(json: &str, out_name: &str, out_folder: &PathBuf, out_path: &Path
 
     project_file.write_all(json.as_bytes()).expect("should be able to write to out file");
 
-    fs_extra::dir::copy(
-        res_path,
-        out_folder,
-        &fs_extra::dir::CopyOptions::new().content_only(true),
-    )
-    .expect("res copy should succeed");
+    for file in res_dir.files() {
+        fs::write(out_folder.join(file.path()), file.contents())
+            .unwrap_or_else(|_| panic!("copying `res/{:?}` should succeed", file.path()));
+    }
 
     let out_zip_path = Path::new(&out_path).join(format!("{out_name}.sb3"));
     let out_zip_file = File::create(out_zip_path).expect("should be able to create out zip file");
