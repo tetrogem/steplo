@@ -36,13 +36,13 @@ struct Args {
     /// The folder to save the compiled program (and other build artifacts) within
     out_path: String,
 
-    /// Enables stack monitoring
+    /// Enable stack monitoring
     #[arg(long)]
     dev: bool,
-    // Disables optimizations
+    /// Disable optimizations
     #[arg(long)]
     no_opt: bool,
-    // Outputs intermediate optimization artifacts
+    /// Output intermediate optimization artifacts
     #[arg(long)]
     out_opt: bool,
 }
