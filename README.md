@@ -95,7 +95,7 @@ The upside to this is that core functionality is still up for design changes. Yo
 
 ```bash
 # Clone the repo
-git clone https://github.com/yourname/steplo.git
+git clone https://github.com/tetrogem/steplo.git
 cd steplo
 
 # (Optional) Create an output folder, or use an already existing folder
