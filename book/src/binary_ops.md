@@ -1,6 +1,6 @@
 # Binary Operaters
 
-Binary operators are expressions that take two other expressions as input. An example of a binary operator is the add `+` operator:
+Binary operators can create expressions that take two other expressions as input. An example of a binary operator is the add `+` operator:
 
 ```
 main || {

@@ -151,7 +151,7 @@ impl TryFrom<&g::Ref<g::Type>> for l::Type {
 
     fn try_from(value: &g::Ref<g::Type>) -> Result<Self, Self::Error> {
         Ok(match &value.val {
-            g::Type::Base(base) => Self::Base(try_convert_type(base)?),
+            g::Type::Base(base) => base.try_into()?,
             g::Type::Array(array) => {
                 let len = &array.val.len;
                 let Ok(len) = parse_num_literal(&array.val.len) else {
@@ -168,18 +168,18 @@ impl TryFrom<&g::Ref<g::Type>> for l::Type {
     }
 }
 
-impl TryFrom<&g::Ref<g::BaseType>> for l::BaseType {
+impl TryFrom<&g::Ref<g::BaseType>> for l::Type {
     type Error = CompileErrorSet;
 
     fn try_from(value: &g::Ref<g::BaseType>) -> Result<Self, Self::Error> {
         let name = &value.val.name;
         Ok(match name.val.str.as_ref() {
             "any" => Self::Any,
-            "val" => Self::Val,
-            "num" => Self::Num,
-            "int" => Self::Int,
-            "uint" => Self::Uint,
-            "bool" => Self::Bool,
+            "val" => Self::Primitive(l::PrimitiveType::Val),
+            "num" => Self::Primitive(l::PrimitiveType::Num),
+            "int" => Self::Primitive(l::PrimitiveType::Int),
+            "uint" => Self::Primitive(l::PrimitiveType::Uint),
+            "bool" => Self::Primitive(l::PrimitiveType::Bool),
             _ => {
                 return Err(CompileErrorSet::new_error(
                     name.range,

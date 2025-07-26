@@ -9,23 +9,22 @@ use crate::{
     logic_ast as l,
 };
 
-static ANY_TYPE: LazyLock<Arc<l::Type>> =
-    LazyLock::new(|| Arc::new(l::Type::Base(Arc::new(l::BaseType::Any))));
+static ANY_TYPE: LazyLock<Arc<l::Type>> = LazyLock::new(|| Arc::new(l::Type::Any));
 
 static VAL_TYPE: LazyLock<Arc<l::Type>> =
-    LazyLock::new(|| Arc::new(l::Type::Base(Arc::new(l::BaseType::Val))));
+    LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Val)));
 
 static NUM_TYPE: LazyLock<Arc<l::Type>> =
-    LazyLock::new(|| Arc::new(l::Type::Base(Arc::new(l::BaseType::Num))));
+    LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Num)));
 
 static INT_TYPE: LazyLock<Arc<l::Type>> =
-    LazyLock::new(|| Arc::new(l::Type::Base(Arc::new(l::BaseType::Int))));
+    LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Int)));
 
 static UINT_TYPE: LazyLock<Arc<l::Type>> =
-    LazyLock::new(|| Arc::new(l::Type::Base(Arc::new(l::BaseType::Uint))));
+    LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Uint)));
 
 static BOOL_TYPE: LazyLock<Arc<l::Type>> =
-    LazyLock::new(|| Arc::new(l::Type::Base(Arc::new(l::BaseType::Bool))));
+    LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Bool)));
 
 type IdentToType = HashMap<Arc<str>, Arc<l::Type>>;
 type FuncToParams = HashMap<Arc<str>, l::Ref<Vec<l::Ref<l::IdentDeclaration>>>>;
@@ -93,7 +92,7 @@ fn typecheck_if(
     func_to_params: &FuncToParams,
 ) -> Result<(), CompileErrorSet> {
     let condition_type = eval_expr(&item.val.condition, ident_to_type)?;
-    if condition_type.is_assignable_to(&VAL_TYPE).not() {
+    if condition_type.is_subtype_of(&VAL_TYPE).not() {
         return Err(CompileErrorSet::new_error(
             item.val.condition.range,
             CompileError::Type(TypeError::Mismatch {
@@ -117,7 +116,7 @@ fn typecheck_while(
     func_to_params: &FuncToParams,
 ) -> Result<(), CompileErrorSet> {
     let condition_type = eval_expr(&item.val.condition, ident_to_type)?;
-    if condition_type.is_assignable_to(&VAL_TYPE).not() {
+    if condition_type.is_subtype_of(&VAL_TYPE).not() {
         return Err(CompileErrorSet::new_error(
             item.val.condition.range,
             CompileError::Type(TypeError::Mismatch {
@@ -151,7 +150,7 @@ fn typecheck_assign(
     let place_type = eval_place(&item.val.place, ident_to_type)?;
     let expr = &item.val.expr;
     let expr_type = eval_assign_expr(expr, &place_type, ident_to_type)?;
-    if expr_type.is_assignable_to(&place_type).not() {
+    if expr_type.is_subtype_of(&place_type).not() {
         return Err(CompileErrorSet::new_error(
             expr.range,
             CompileError::Type(TypeError::Mismatch {
@@ -186,7 +185,7 @@ fn typecheck_call(
             (None, None) => break,
             (Some(expr), Some(decl)) => {
                 let expr_type = eval_assign_expr(expr, &decl.val.ty, ident_to_type)?;
-                if expr_type.is_assignable_to(&decl.val.ty).not() {
+                if expr_type.is_subtype_of(&decl.val.ty).not() {
                     return Err(CompileErrorSet::new_error(
                         expr.range,
                         CompileError::Type(TypeError::Mismatch {
@@ -303,7 +302,7 @@ fn eval_assign_expr(
 
             for el in elements.val.iter() {
                 let el_type = eval_expr(el, ident_to_type)?;
-                if el_type.is_assignable_to(expected_el_type).not() {
+                if el_type.is_subtype_of(expected_el_type).not() {
                     return Err(CompileErrorSet::new_error(
                         el.range,
                         CompileError::Type(TypeError::Mismatch {
@@ -344,8 +343,8 @@ fn eval_expr(
                 return Err(CompileErrorSet::new_error(
                     item.range,
                     CompileError::Type(TypeError::InvalidCast {
-                        from: vague(ty),
-                        to: vague(&expr_ty),
+                        from: vague(&expr_ty),
+                        to: vague(ty),
                     }),
                 ));
             }
@@ -358,8 +357,8 @@ fn eval_expr(
                 return Err(CompileErrorSet::new_error(
                     item.range,
                     CompileError::Type(TypeError::InvalidTransmute {
-                        from: vague(ty),
-                        to: vague(&expr_ty),
+                        from: vague(&expr_ty),
+                        to: vague(ty),
                     }),
                 ));
             }
@@ -387,7 +386,7 @@ fn eval_unary_expr(
     let operand_type = eval_expr(operand, ident_to_type)?;
     match item.val.op.val {
         l::UnaryParenExprOp::Not => {
-            if operand_type.is_assignable_to(&BOOL_TYPE).not() {
+            if operand_type.is_subtype_of(&BOOL_TYPE).not() {
                 return Err(CompileErrorSet::new_error(
                     item.range,
                     CompileError::Type(TypeError::Mismatch {
@@ -415,7 +414,7 @@ fn eval_binary_expr(
             $($left:expr, $right:expr => $out:expr;)*
         ) => {'expect: {
             $(
-                if left_type.is_assignable_to(&$left) && right_type.is_assignable_to(&$right) {
+                if left_type.is_subtype_of(&$left) && right_type.is_subtype_of(&$right) {
                     break 'expect Ok($out.clone());
                 }
             )*
