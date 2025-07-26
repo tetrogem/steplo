@@ -42,6 +42,7 @@ Its goals include:
 
 * A 1:1 syntax of Scratch blocks as text
 * An emulator for existing CPU architectures
+* A programming language made _using_ scratch
 
 ---
 
