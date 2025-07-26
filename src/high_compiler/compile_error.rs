@@ -4,7 +4,7 @@ use colored::Colorize;
 use itertools::Itertools;
 
 use crate::{
-    logic_ast::{BaseType, Type},
+    logic_ast::{PrimitiveType, Type},
     srced::SrcRange,
     token::TokenKind,
 };
@@ -79,7 +79,8 @@ pub(crate) enum TypeError {
 #[derive(Debug)]
 pub enum VagueType {
     Unknown,
-    Base(Arc<BaseType>),
+    Any,
+    Primitive(PrimitiveType),
     Ref(Arc<VagueType>),
     Array { ty: Arc<VagueType>, len: Option<u32> },
 }
@@ -87,7 +88,8 @@ pub enum VagueType {
 impl From<&Type> for VagueType {
     fn from(value: &Type) -> Self {
         match value {
-            Type::Base(base) => Self::Base(base.clone()),
+            Type::Any => Self::Any,
+            Type::Primitive(base) => Self::Primitive(*base),
             Type::Ref(ty) => Self::Ref(Arc::new(ty.as_ref().into())),
             Type::Array { ty, len } => {
                 Self::Array { ty: Arc::new(ty.as_ref().into()), len: Some(*len) }
@@ -99,15 +101,15 @@ impl From<&Type> for VagueType {
 impl Display for VagueType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Any => write!(f, "any"),
             Self::Unknown => write!(f, "_"),
-            Self::Base(base) => {
-                let base = match base.as_ref() {
-                    BaseType::Any => "any",
-                    BaseType::Val => "val",
-                    BaseType::Num => "num",
-                    BaseType::Int => "int",
-                    BaseType::Uint => "uint",
-                    BaseType::Bool => "bool",
+            Self::Primitive(base) => {
+                let base = match base {
+                    PrimitiveType::Val => "val",
+                    PrimitiveType::Num => "num",
+                    PrimitiveType::Int => "int",
+                    PrimitiveType::Uint => "uint",
+                    PrimitiveType::Bool => "bool",
                 };
 
                 write!(f, "{base}")

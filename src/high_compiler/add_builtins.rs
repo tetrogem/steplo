@@ -52,7 +52,7 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
     // add built-in native functions
     top_items.push(func(l::Func {
         name: name("out"),
-        params: rf(Vec::from([decl("val", l::Type::Base(Arc::new(l::BaseType::Any)))])),
+        params: rf(Vec::from([decl("val", l::Type::Any)])),
         proc: rf(l::Proc {
             idents: rf(Vec::from([])),
             body: body([stmt(l::Statement::Native(rf(l::NativeOperation::Out {
@@ -65,10 +65,10 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         name: name("in"),
         params: rf(Vec::from([decl(
             "dest_ref",
-            ref_ty(l::Type::Base(Arc::new(l::BaseType::Val))),
+            ref_ty(l::Type::Primitive(l::PrimitiveType::Val)),
         )])),
         proc: rf(l::Proc {
-            idents: rf(Vec::from([decl("answer", l::Type::Base(Arc::new(l::BaseType::Val)))])),
+            idents: rf(Vec::from([decl("answer", l::Type::Primitive(l::PrimitiveType::Val))])),
             body: body([
                 stmt(l::Statement::Native(rf(l::NativeOperation::In {
                     dest_ident: ident("answer"),
@@ -84,12 +84,12 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
     top_items.push(func(l::Func {
         name: name("random_num"),
         params: rf(Vec::from([
-            decl("dest_ref", ref_ty(l::Type::Base(Arc::new(l::BaseType::Num)))),
-            decl("min", l::Type::Base(Arc::new(l::BaseType::Num))),
-            decl("max", l::Type::Base(Arc::new(l::BaseType::Num))),
+            decl("dest_ref", ref_ty(l::Type::Primitive(l::PrimitiveType::Num))),
+            decl("min", l::Type::Primitive(l::PrimitiveType::Num)),
+            decl("max", l::Type::Primitive(l::PrimitiveType::Num)),
         ])),
         proc: rf(l::Proc {
-            idents: rf(Vec::from([decl("generated", l::Type::Base(Arc::new(l::BaseType::Num)))])),
+            idents: rf(Vec::from([decl("generated", l::Type::Primitive(l::PrimitiveType::Num))])),
             body: body([
                 stmt(l::Statement::Native(rf(l::NativeOperation::Random {
                     dest_ident: ident("generated"),
@@ -125,12 +125,12 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
     top_items.push(func(l::Func {
         name: name("random_int"),
         params: rf(Vec::from([
-            decl("dest_ref", ref_ty(l::Type::Base(Arc::new(l::BaseType::Int)))),
-            decl("min", l::Type::Base(Arc::new(l::BaseType::Int))),
-            decl("max", l::Type::Base(Arc::new(l::BaseType::Int))),
+            decl("dest_ref", ref_ty(l::Type::Primitive(l::PrimitiveType::Int))),
+            decl("min", l::Type::Primitive(l::PrimitiveType::Int)),
+            decl("max", l::Type::Primitive(l::PrimitiveType::Int)),
         ])),
         proc: rf(l::Proc {
-            idents: rf(Vec::from([decl("generated", l::Type::Base(Arc::new(l::BaseType::Int)))])),
+            idents: rf(Vec::from([decl("generated", l::Type::Primitive(l::PrimitiveType::Int))])),
             body: body([
                 stmt(l::Statement::Native(rf(l::NativeOperation::Random {
                     dest_ident: ident("generated"),
@@ -148,12 +148,12 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
     top_items.push(func(l::Func {
         name: name("random_uint"),
         params: rf(Vec::from([
-            decl("dest_ref", ref_ty(l::Type::Base(Arc::new(l::BaseType::Uint)))),
-            decl("min", l::Type::Base(Arc::new(l::BaseType::Uint))),
-            decl("max", l::Type::Base(Arc::new(l::BaseType::Uint))),
+            decl("dest_ref", ref_ty(l::Type::Primitive(l::PrimitiveType::Uint))),
+            decl("min", l::Type::Primitive(l::PrimitiveType::Uint)),
+            decl("max", l::Type::Primitive(l::PrimitiveType::Uint)),
         ])),
         proc: rf(l::Proc {
-            idents: rf(Vec::from([decl("generated", l::Type::Base(Arc::new(l::BaseType::Uint)))])),
+            idents: rf(Vec::from([decl("generated", l::Type::Primitive(l::PrimitiveType::Uint))])),
             body: body([
                 stmt(l::Statement::Native(rf(l::NativeOperation::Random {
                     dest_ident: ident("generated"),

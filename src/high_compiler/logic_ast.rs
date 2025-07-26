@@ -1,4 +1,6 @@
-use std::sync::Arc;
+use std::{ops::Not, sync::Arc};
+
+use itertools::{EitherOrBoth, Itertools};
 
 use crate::srced::Srced;
 
@@ -29,65 +31,87 @@ pub struct Name {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Type {
+    Any,
+    Primitive(PrimitiveType),
     Ref(Arc<Type>),
     Array { ty: Arc<Type>, len: u32 },
-    Base(Arc<BaseType>),
 }
 
 impl Type {
     pub fn size(&self) -> u32 {
         match self {
+            Self::Any => 1,
+            Self::Primitive(_) => 1,
             Self::Ref(_) => 1,
-            Self::Base(_) => 1,
             Self::Array { ty, len } => ty.size() * len,
         }
     }
 
-    pub fn is_assignable_to(&self, other: &Self) -> bool {
+    pub fn is_isomorphic_with(&self, other: &Self) -> bool {
+        self.is_subtype_of(other) && other.is_subtype_of(self)
+    }
+
+    pub fn is_subtype_of(&self, other: &Self) -> bool {
+        if self == other {
+            return true;
+        }
+
+        // special `any` type
+        if self.size() == 1 && matches!(other, Self::Any) {
+            return true;
+        }
+
         match (self, other) {
-            (Self::Ref(a), Self::Ref(b)) => a.is_assignable_to(b) && b.is_assignable_to(a),
-            (Self::Ref(_), Self::Base(b)) => matches!(b.as_ref(), BaseType::Any),
+            (Self::Any, Self::Any) => true,
+            (Self::Ref(a), Self::Ref(b)) => a.is_isomorphic_with(b),
             (Self::Array { ty: a, len: a_len }, Self::Array { ty: b, len: b_len }) => {
-                a_len == b_len && a.is_assignable_to(b) && b.is_assignable_to(a)
+                a_len == b_len && a.is_isomorphic_with(b)
             },
-            (Self::Base(a), Self::Base(b)) => {
-                use BaseType::*;
-                matches!(
-                    (a.as_ref(), b.as_ref()),
-                    (Any, Any)
-                        | (Val, Val | Any)
-                        | (Num, Num | Val | Any)
-                        | (Int, Int | Num | Val | Any)
-                        | (Uint, Uint | Int | Num | Val | Any)
-                        | (Bool, Bool | Val | Any)
-                )
-            },
+            (Self::Primitive(a), Self::Primitive(b)) => a.is_subtype_of(*b),
             _ => false,
+        }
+    }
+
+    pub fn cells_repr(&self) -> Vec<CellType> {
+        match self {
+            Self::Any => Vec::from([CellType::Any]),
+            Self::Primitive(x) => Vec::from([CellType::Primitive(*x)]),
+            Self::Ref(_) => Vec::from([CellType::Primitive(PrimitiveType::Uint)]),
+            Self::Array { ty, len } => (0..*len).flat_map(|_| ty.cells_repr()).collect(),
+        }
+    }
+
+    pub fn contains_ref(&self) -> bool {
+        match self {
+            Self::Any => false,
+            Self::Primitive(_) => false,
+            Self::Ref(_) => true,
+            Self::Array { ty, .. } => ty.contains_ref(),
         }
     }
 
     // cast: may break invariant of type casting to
     pub fn can_cast_to(&self, other: &Self) -> bool {
         // can always cast to current type or subtype
-        if self.is_assignable_to(other) {
+        if self.is_subtype_of(other) {
             return true;
         }
 
         // cannot cast safely to refs, as they can write to memory with any original type
         // breaking the original invariant of that memory location
-        if matches!(other, Self::Ref(_)) {
-            return false;
-        }
-
-        // refs can be cast to uints safely (and by proxy, every supertype of a uint)
-        if matches!(self, Self::Ref(_))
-            && Self::Base(Arc::new(BaseType::Uint)).is_assignable_to(other)
+        // but, we can cast to types that *don't* contain refs, but have the same
+        // in-memory representation
+        if other.contains_ref().not()
+            && self.cells_repr().into_iter().zip_longest(other.cells_repr()).all(|cells| {
+                let EitherOrBoth::Both(self_cell, other_cell) = cells else { return false };
+                Type::from(self_cell).is_subtype_of(&Type::from(other_cell))
+            })
         {
             return true;
         }
 
         // otherwise, casts can be used to perform inverses of type coercion
-        other.is_assignable_to(self)
+        other.is_subtype_of(self)
     }
 
     // transmute: may break invariant of type casting to AND the value casting from
@@ -96,14 +120,48 @@ impl Type {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum BaseType {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum CellType {
     Any,
+    Primitive(PrimitiveType),
+}
+
+impl From<CellType> for Type {
+    fn from(value: CellType) -> Self {
+        match value {
+            CellType::Any => Self::Any,
+            CellType::Primitive(x) => Self::Primitive(x),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum PrimitiveType {
     Val,
     Num,
     Int,
     Uint,
     Bool,
+}
+
+impl PrimitiveType {
+    pub fn supertype(&self) -> Option<PrimitiveType> {
+        Some(match self {
+            Self::Val => return None,
+            Self::Num => Self::Val,
+            Self::Int => Self::Num,
+            Self::Uint => Self::Int,
+            Self::Bool => Self::Val,
+        })
+    }
+
+    pub fn is_subtype_of(&self, other: PrimitiveType) -> bool {
+        if *self == other {
+            return true;
+        }
+
+        self.supertype().is_some_and(|supertype| supertype.is_subtype_of(other))
+    }
 }
 
 #[derive(Debug)]
