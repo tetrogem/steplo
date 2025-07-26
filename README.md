@@ -22,7 +22,7 @@
 ---
 ## 🚀 Quickstart
 
-Want to jump straight into using Steplo? Check out the Steplo book for a guide to installing the compiler and the language's syntax and features 👉 [steplo.tetro.dev](https://steplo.tetro.dev)
+Want to jump straight into using Steplo? Check out the Steplo book for a guide to installing the compiler and the language's syntax and features 👉 [https://steplo.tetro.dev/](https://steplo.tetro.dev/)
 
 ## 💡 What is Steplo?
 
@@ -95,7 +95,7 @@ The upside to this is that core functionality is still up for design changes. Yo
 
 ```bash
 # Clone the repo
-git clone https://github.com/yourname/steplo.git
+git clone https://github.com/tetrogem/steplo.git
 cd steplo
 
 # (Optional) Create an output folder, or use an already existing folder
@@ -120,4 +120,4 @@ Run the following to see all CLI options:
 cargo run -- -h
 ```
 
-See additional documentation on all of Steplo's language features in the Steplo book 👉 [steplo.tetro.dev](https://steplo.tetro.dev)
+See additional documentation on all of Steplo's language features in the Steplo book 👉 [https://steplo.tetro.dev/](https://steplo.tetro.dev/)
