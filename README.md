@@ -20,6 +20,9 @@
 </p>
 
 ---
+## 🚀 Quickstart
+
+Want to jump straight into using Steplo? Check out the Steplo book for a guide to installing the compiler and the language's syntax and features 👉 [steplo.tetro.dev](https://steplo.tetro.dev)
 
 ## 💡 What is Steplo?
 
@@ -117,4 +120,4 @@ Run the following to see all CLI options:
 cargo run -- -h
 ```
 
-See additional documentation on all of Steplo's language features here: https://steplo.tetro.dev/
+See additional documentation on all of Steplo's language features in the Steplo book 👉 [steplo.tetro.dev](https://steplo.tetro.dev)
