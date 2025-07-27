@@ -1,4 +1,9 @@
-main |user1: { id: uint, name: val }, user2: { id: uint, name: val }| {
+main || {
+    test_user();
+    test_cast();
+}
+
+func test_user() |user1: { id: uint, name: val }, user2: { id: uint, name: val }| {
     user1.id = 1234;
     user1.name = "Steplo";
     out(user1.id);
@@ -8,15 +13,24 @@ main |user1: { id: uint, name: val }, user2: { id: uint, name: val }| {
     out(user2.id);
     out(user2.name);
 
-    // User_new(&user, 1234, "Steplo");
-    // User_print(user);
+    User_new(&user1, 5678, "Steplo2");
+    User_print(user1);
 }
 
-// func User_new(return: &{ id: uint, name: val }, id: uint, name: val) || {
-//     (*return).id = id;
-//     (*return).name = name;
-// }
+func User_new(return: &{ id: uint, name: val }, id: uint, name: val) || {
+    (*return).id = id;
+    (*return).name = name;
+}
 
-// func User_print(user: { id: uint, name: val }) || {
-//     out((((user.name ~ " (ID: ") ~ user.id) ~ ")"));
-// }
+func User_print(user: { id: uint, name: val }) || {
+    out((((user.name ~ " (ID: ") ~ user.id) ~ ")"));
+}
+
+func test_cast() |coords: { x: num, y: num }, nums2: [num; 2], uints2: [uint; 2]| {
+    // coords = { x: 5.5, y: -0.9 };
+    coords.x = 5.5;
+    coords.y = -0.9;
+    nums2 = <[num; 2]>coords;
+    coords = <{ x: num, y: num }>nums2;
+    uints2 = <<[uint; 2]>>coords;
+}

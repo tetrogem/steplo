@@ -314,7 +314,7 @@ fn typecheck_assign(
 
     Ok(t::Assign {
         place: try_tr(&item.val.place, |x| typecheck_place(x, ident_to_type))?,
-        expr: try_tr(&item.val.expr, |x| typecheck_assign_expr(x, ident_to_type))?,
+        expr: try_tr(&item.val.expr, |x| typecheck_assign_expr(x, &place_type, ident_to_type))?,
     })
 }
 
@@ -333,10 +333,11 @@ fn typecheck_call(
 
     let mut expr_iter = item.val.param_exprs.val.iter();
     let mut decl_iter = param_decls.val.iter();
+    let mut typechecked_param_exprs = Vec::new();
 
     loop {
         let (expr, decl) = (expr_iter.next(), decl_iter.next());
-        match (expr, decl) {
+        let typechecked_param_expr = match (expr, decl) {
             (None, None) => break,
             (Some(expr), Some(decl)) => {
                 let expr_type = eval_assign_expr(expr, &decl.val.ty, ident_to_type)?;
@@ -349,6 +350,8 @@ fn typecheck_call(
                         }),
                     ));
                 }
+
+                try_tr(expr, |x| typecheck_assign_expr(x, &decl.val.ty, ident_to_type))?
             },
             _ => {
                 return Err(CompileErrorSet::new_error(
@@ -360,14 +363,14 @@ fn typecheck_call(
                     }),
                 ));
             },
-        }
+        };
+
+        typechecked_param_exprs.push(typechecked_param_expr);
     }
 
     Ok(t::FunctionCall {
         func_name: tr(&item.val.func_name, typecheck_name),
-        param_exprs: try_tr_vec(&item.val.param_exprs, |x| {
-            typecheck_assign_expr(x, ident_to_type)
-        })?,
+        param_exprs: tr(&item.val.param_exprs, |_| typechecked_param_exprs),
     })
 }
 
@@ -552,19 +555,46 @@ fn eval_deref(
 
 fn typecheck_assign_expr(
     item: &l::Ref<l::AssignExpr>,
+    expected_type: &Arc<l::Type>,
     ident_to_type: &IdentToType,
 ) -> Result<t::AssignExpr, CompileErrorSet> {
     Ok(match &item.val {
-        l::AssignExpr::Expr(x) => {
-            t::AssignExpr::Expr(try_tr(x, |x| typecheck_expr(x, ident_to_type))?)
+        l::AssignExpr::Expr(x) => match expected_type.size() {
+            1 => t::AssignExpr::Expr(try_tr(x, |x| typecheck_expr(x, ident_to_type))?),
+            size => {
+                fn typecheck_copy(
+                    expr: &l::Ref<l::Expr>,
+                    size: u32,
+                    ident_to_type: &IdentToType,
+                ) -> Result<t::AssignExpr, CompileErrorSet> {
+                    Ok(match &expr.val {
+                        l::Expr::Place(place) => t::AssignExpr::Copy {
+                            place: try_tr(place, |x| typecheck_place(x, ident_to_type))?,
+                            start_in: 0,
+                            end_ex: size,
+                        },
+                        l::Expr::Cast { expr, .. } | l::Expr::Transmute { expr, .. } => {
+                            typecheck_copy(expr, size, ident_to_type)?
+                        },
+                        _ => {
+                            todo!() // cannot assign expr to non-size 1 type
+                        },
+                    })
+                }
+
+                typecheck_copy(x, size, ident_to_type)?
+            },
         },
         l::AssignExpr::Span(x) => {
             t::AssignExpr::Span(try_tr_vec(x, |x| typecheck_expr(x, ident_to_type))?)
         },
-        l::AssignExpr::Slice { place, start_in, end_ex } => t::AssignExpr::Slice {
-            place: try_tr(place, |x| typecheck_place(x, ident_to_type))?,
-            start_in: *start_in,
-            end_ex: *end_ex,
+        l::AssignExpr::Slice { place, start_in, end_ex } => {
+            let place_eval = eval_place(place, ident_to_type)?;
+            t::AssignExpr::Copy {
+                place: try_tr(place, |x| typecheck_place(x, ident_to_type))?,
+                start_in: *start_in * place_eval.ty.size(),
+                end_ex: *end_ex * place_eval.ty.size(),
+            }
         },
     })
 }

@@ -123,7 +123,7 @@ pub struct Assign {
 pub enum AssignExpr {
     Expr(Ref<Expr>),
     Span(Ref<Vec<Ref<Expr>>>),
-    Slice { place: Ref<Place>, start_in: u32, end_ex: u32 },
+    Copy { place: Ref<Place>, start_in: u32, end_ex: u32 },
 }
 
 #[derive(Debug)]

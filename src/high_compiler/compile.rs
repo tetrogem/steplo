@@ -623,7 +623,7 @@ fn compile_assign_expr_elements(
             .collect::<anyhow::Result<Vec<_>>>()?
             .into_iter()
             .collect(),
-        hast::AssignExpr::Slice { place, start_in, end_ex } => {
+        hast::AssignExpr::Copy { place, start_in, end_ex } => {
             let elements = (*start_in..*end_ex).map(|i| {
                 let ident_addr = compile_place_to_addr(stack_frame, &place.val)?;
                 let offset = compile_expr(
