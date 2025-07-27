@@ -39,6 +39,8 @@ pub enum Token {
     Digits(String),
     True,
     False,
+    Struct,
+    Enum,
 }
 
 fn consume_char(
@@ -111,6 +113,8 @@ fn consume_word(
         "while" => Token::While,
         "true" => Token::True,
         "false" => Token::False,
+        "struct" => Token::Struct,
+        "enum" => Token::Enum,
         _ => {
             if word.is_empty() {
                 bail!("Word is empty");

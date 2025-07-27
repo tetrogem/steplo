@@ -10,6 +10,7 @@ pub type Ref<T> = Arc<Srced<T>>;
 pub enum TopItem {
     Main(Ref<Main>),
     Func(Ref<Func>),
+    Struct(Ref<Struct>),
 }
 
 #[derive(Debug)]
@@ -25,15 +26,27 @@ pub struct Func {
 }
 
 #[derive(Debug)]
+pub struct Struct {
+    pub name: Ref<Name>,
+    pub fields: Ref<CommaList<IdentDeclaration>>,
+}
+
+#[derive(Debug)]
 pub struct Name {
     pub str: Arc<str>,
 }
 
 #[derive(Debug)]
 pub enum Type {
+    Base(Ref<BaseType>),
     Ref(Ref<RefType>),
     Array(Ref<ArrayType>),
-    Base(Ref<BaseType>),
+    Struct(Ref<StructType>),
+}
+
+#[derive(Debug)]
+pub struct BaseType {
+    pub name: Ref<Name>,
 }
 
 #[derive(Debug)]
@@ -48,8 +61,8 @@ pub struct ArrayType {
 }
 
 #[derive(Debug)]
-pub struct BaseType {
-    pub name: Ref<Name>,
+pub struct StructType {
+    pub fields: Ref<CommaList<IdentDeclaration>>,
 }
 
 #[derive(Debug)]
@@ -59,9 +72,21 @@ pub struct IdentDeclaration {
 }
 
 #[derive(Debug)]
+pub struct PlaceIndexLink {
+    pub index: Ref<PlaceIndex>,
+    pub next_link: Ref<Maybe<PlaceIndexLink>>,
+}
+
+#[derive(Debug)]
 pub struct Place {
     pub head: Ref<ParensNest<PlaceHead>>,
-    pub offset: Ref<Maybe<Offset>>,
+    pub index_link: Ref<Maybe<PlaceIndexLink>>,
+}
+
+#[derive(Debug)]
+pub enum PlaceIndex {
+    Offset(Ref<Offset>),
+    Field(Ref<Field>),
 }
 
 #[derive(Debug)]
@@ -91,6 +116,11 @@ pub enum PlaceHead {
 #[derive(Debug)]
 pub struct Offset {
     pub expr: Ref<Expr>,
+}
+
+#[derive(Debug)]
+pub struct Field {
+    pub name: Ref<Name>,
 }
 
 #[derive(Debug)]

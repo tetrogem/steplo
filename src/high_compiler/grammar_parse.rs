@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use crate::high_compiler::grammar_ast::{Field, PlaceIndex, PlaceIndexLink, Struct, StructType};
+
 use super::{
     compile_error::{CompileError, CompileErrorSet, GrammarError},
     grammar_ast::{
@@ -176,6 +178,7 @@ impl AstParse for TopItem {
             parse tokens => x {
                 Self::Main(Arc::new(x)),
                 Self::Func(Arc::new(x)),
+                Self::Struct(Arc::new(x)),
             } else {
                 "Expected top item"
             }
@@ -209,6 +212,20 @@ impl AstParse for Func {
     }
 }
 
+impl AstParse for Struct {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Struct => (); as [TokenKind::Struct]];
+            [struct name];
+            [match _ = Token::LeftBrace => (); as [TokenKind::LeftBrace]];
+            [struct fields];
+            [match _ = Token::RightBrace => (); as [TokenKind::RightBrace]];
+            [return Self { name: Arc::new(name), fields: Arc::new(fields) }];
+        }
+    }
+}
+
 impl AstParse for Name {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_struct! {
@@ -238,6 +255,7 @@ impl AstParse for Type {
                 Self::Base(Arc::new(x)),
                 Self::Ref(Arc::new(x)),
                 Self::Array(Arc::new(x)),
+                Self::Struct(Arc::new(x)),
             } else {
                 "Expected type"
             }
@@ -276,6 +294,18 @@ impl AstParse for ArrayType {
             [struct len];
             [match _ = Token::RightBracket => (); as [TokenKind::RightBracket]];
             [return Self { ty: Arc::new(ty), len: Arc::new(len) }];
+        }
+    }
+}
+
+impl AstParse for StructType {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::LeftBrace => (); as [TokenKind::LeftBrace]];
+            [struct fields];
+            [match _ = Token::RightBrace => (); as [TokenKind::RightBrace]];
+            [return Self { fields: Arc::new(fields) }];
         }
     }
 }
@@ -612,8 +642,43 @@ impl AstParse for Place {
         parse_struct! {
             parse tokens;
             [struct head];
-            [struct offset];
-            [return Self { head: Arc::new(head), offset: Arc::new(offset) }];
+            [struct index_link];
+            [return Self { head: Arc::new(head), index_link: Arc::new(index_link) }];
+        }
+    }
+}
+
+impl AstParse for PlaceIndexLink {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Period => (); as [TokenKind::Period]];
+            [struct index];
+            [struct next_link];
+            [return Self { index: Arc::new(index), next_link: Arc::new(next_link) }];
+        }
+    }
+}
+
+impl AstParse for PlaceIndex {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
+            parse tokens => x {
+                Self::Offset(Arc::new(x)),
+                Self::Field(Arc::new(x)),
+            } else {
+                "Expected place index"
+            }
+        }
+    }
+}
+
+impl AstParse for Field {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct name];
+            [return Self { name: Arc::new(name) }];
         }
     }
 }

@@ -1,0 +1,22 @@
+main |user1: { id: uint, name: val }, user2: { id: uint, name: val }| {
+    user1.id = 1234;
+    user1.name = "Steplo";
+    out(user1.id);
+    out(user1.name);
+
+    user2 = user1;
+    out(user2.id);
+    out(user2.name);
+
+    // User_new(&user, 1234, "Steplo");
+    // User_print(user);
+}
+
+// func User_new(return: &{ id: uint, name: val }, id: uint, name: val) || {
+//     (*return).id = id;
+//     (*return).name = name;
+// }
+
+// func User_print(user: { id: uint, name: val }) || {
+//     out((((user.name ~ " (ID: ") ~ user.id) ~ ")"));
+// }

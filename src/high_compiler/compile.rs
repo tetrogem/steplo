@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
+use super::type_resolved_ast as hast;
 use crate::link;
-use crate::logic_ast as hast;
 use crate::mem_opt::ast;
 use crate::mem_opt::ast as opt;
 use crate::srced::Srced;
@@ -25,7 +25,7 @@ impl StackFrame {
         let mut total_offset = 0;
 
         for ident in idents.iter().rev() {
-            let size = ident.val.ty.size();
+            let size = ident.val.size;
             total_offset += size;
             let info = StackVarInfo { size, offset: total_offset - 1 };
 
@@ -353,7 +353,7 @@ fn compile_call(
                     param_setup_commands.extend(assign_commands);
                 }
 
-                param_stack_offset += ident.val.ty.size();
+                param_stack_offset += ident.val.size;
             }
 
             let return_setup_commands = {
@@ -552,7 +552,7 @@ fn compile_statement(
             element_assignments
         },
         link::Statement::Native(native) => match &native.val {
-            hast::NativeOperation::Out { ident } => {
+            hast::NativeOperation::Out { place: ident } => {
                 let compiled_ident_addr = compile_place_to_addr(stack_frame, &ident.val)?;
                 let ident_value_loc = temp();
 
@@ -570,7 +570,7 @@ fn compile_statement(
                 )
                 .collect()
             },
-            hast::NativeOperation::In { dest_ident } => {
+            hast::NativeOperation::In { dest_place: dest_ident } => {
                 let compiled_ident_addr = compile_place_to_addr(stack_frame, &dest_ident.val)?;
 
                 chain!(
@@ -682,8 +682,6 @@ fn compile_expr(
         },
         hast::Expr::Ref(place) => compile_place_to_addr(stack_frame, &place.val)?,
         hast::Expr::Paren(expr) => compile_paren_expr(stack_frame, &expr.val)?,
-        hast::Expr::Cast { expr, .. } => compile_expr(stack_frame, expr)?,
-        hast::Expr::Transmute { expr, .. } => compile_expr(stack_frame, expr)?,
     };
 
     Ok(compiled)
@@ -852,7 +850,7 @@ fn compile_place_to_addr(
     let compiled_place = match &place.offset {
         None => compiled_head,
         Some(offset) => {
-            let compiled_index = compile_expr(stack_frame, &offset.val.expr)?;
+            let compiled_index = compile_expr(stack_frame, &offset)?;
             let offset_addr = compile_addr_offset(compiled_head.mem_loc, compiled_index.mem_loc)?;
 
             let commands =

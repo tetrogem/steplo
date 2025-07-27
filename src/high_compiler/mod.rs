@@ -9,4 +9,5 @@ pub mod logic_ast;
 pub mod srced;
 pub mod token;
 pub mod token_feed;
+pub mod type_resolved_ast;
 pub mod typecheck;

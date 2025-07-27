@@ -83,6 +83,13 @@ pub enum VagueType {
     Primitive(PrimitiveType),
     Ref(Arc<VagueType>),
     Array { ty: Arc<VagueType>, len: Option<u32> },
+    Struct(Arc<Vec<Arc<VagueTypeField>>>),
+}
+
+#[derive(Debug)]
+pub struct VagueTypeField {
+    name: Arc<str>,
+    ty: Arc<VagueType>,
 }
 
 impl From<&Type> for VagueType {
@@ -94,6 +101,17 @@ impl From<&Type> for VagueType {
             Type::Array { ty, len } => {
                 Self::Array { ty: Arc::new(ty.as_ref().into()), len: Some(*len) }
             },
+            Type::Struct(fields) => Self::Struct(Arc::new(
+                fields
+                    .iter()
+                    .map(|field| {
+                        Arc::new(VagueTypeField {
+                            name: field.name.clone(),
+                            ty: Arc::new(field.ty.as_ref().into()),
+                        })
+                    })
+                    .collect(),
+            )),
         }
     }
 }
@@ -122,6 +140,11 @@ impl Display for VagueType {
                 };
 
                 write!(f, "[{ty}; {len}]")
+            },
+            Self::Struct(fields) => {
+                let fields =
+                    fields.iter().map(|field| format!("{}: {}", field.name, field.ty)).join(", ");
+                write!(f, "{{ {} }}", fields)
             },
         }
     }
@@ -319,6 +342,8 @@ impl CollapsedCompileError {
                     TokenKind::Digits => TokenString::Punctuation("number"),
                     TokenKind::True => TokenString::Keyword("true"),
                     TokenKind::False => TokenString::Keyword("false"),
+                    TokenKind::Struct => TokenString::Keyword("struct"),
+                    TokenKind::Enum => TokenString::Keyword("enum"),
                 }
             }
 

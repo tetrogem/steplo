@@ -2,10 +2,14 @@ use std::collections::VecDeque;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use itertools::Itertools;
+
 use crate::compile_error::CompileError;
 use crate::compile_error::CompileErrorSet;
 use crate::compile_error::LogicError;
 use crate::grammar_ast as g;
+use crate::high_compiler::logic_ast::FieldType;
+use crate::high_compiler::srced::SrcRange;
 use crate::logic_ast as l;
 use crate::srced::Srced;
 
@@ -106,8 +110,18 @@ impl TryFrom<&g::Ref<g::TopItem>> for l::TopItem {
 
     fn try_from(value: &g::Ref<g::TopItem>) -> Result<Self, Self::Error> {
         Ok(match &value.val {
-            g::TopItem::Main(main) => Self::Main(try_convert(main)?),
-            g::TopItem::Func(func) => Self::Func(try_convert(func)?),
+            g::TopItem::Main(x) => Self::Exe(Arc::new(Srced {
+                range: value.range,
+                val: l::ExeItem::Main(try_convert(x)?),
+            })),
+            g::TopItem::Func(x) => Self::Exe(Arc::new(Srced {
+                range: value.range,
+                val: l::ExeItem::Func(try_convert(x)?),
+            })),
+            g::TopItem::Struct(x) => Self::Type(Arc::new(Srced {
+                range: value.range,
+                val: l::TypeItem::Struct(try_convert(x)?),
+            })),
         })
     }
 }
@@ -132,6 +146,14 @@ impl TryFrom<&g::Ref<g::Func>> for l::Func {
     }
 }
 
+impl TryFrom<&g::Ref<g::Struct>> for l::Struct {
+    type Error = CompileErrorSet;
+
+    fn try_from(value: &g::Ref<g::Struct>) -> Result<Self, Self::Error> {
+        Ok(Self { name: convert(&value.val.name), fields: try_convert_list(&value.val.fields)? })
+    }
+}
+
 impl From<&g::Ref<g::Name>> for l::Name {
     fn from(value: &g::Ref<g::Name>) -> Self {
         Self { str: value.val.str.clone() }
@@ -152,6 +174,7 @@ impl TryFrom<&g::Ref<g::Type>> for l::Type {
     fn try_from(value: &g::Ref<g::Type>) -> Result<Self, Self::Error> {
         Ok(match &value.val {
             g::Type::Base(base) => base.try_into()?,
+            g::Type::Ref(ref_ty) => Self::Ref(try_convert_type(&ref_ty.val.ty)?),
             g::Type::Array(array) => {
                 let len = &array.val.len;
                 let Ok(len) = parse_num_literal(&array.val.len) else {
@@ -163,7 +186,23 @@ impl TryFrom<&g::Ref<g::Type>> for l::Type {
 
                 Self::Array { ty: try_convert_type(&array.val.ty)?, len }
             },
-            g::Type::Ref(ref_ty) => Self::Ref(try_convert_type(&ref_ty.val.ty)?),
+            g::Type::Struct(struct_ty) => {
+                let fields: l::Ref<Vec<l::Ref<l::IdentDeclaration>>> =
+                    try_convert_list(&struct_ty.val.fields)?;
+
+                let fields = fields
+                    .val
+                    .iter()
+                    .map(|field| {
+                        Ok(FieldType {
+                            name: field.val.name.val.str.clone(),
+                            ty: field.val.ty.clone(),
+                        })
+                    })
+                    .collect::<Result<_, _>>()?;
+
+                Self::Struct(Arc::new(fields))
+            },
         })
     }
 }
@@ -363,12 +402,30 @@ impl TryFrom<&g::Ref<g::Place>> for l::Place {
     type Error = CompileErrorSet;
 
     fn try_from(value: &g::Ref<g::Place>) -> Result<Self, Self::Error> {
-        Ok(Self {
-            head: try_convert(unnest(&value.val.head))?,
-            offset: match convert_maybe(&value.val.offset) {
-                None => None,
-                Some(offset) => Some(try_convert(offset)?),
-            },
+        let mut index_chain = Vec::new();
+        let mut index_link = convert_maybe(&value.val.index_link);
+
+        while let Some(link) = index_link {
+            index_chain.push(try_convert(&link.val.index)?);
+            index_link = convert_maybe(&link.val.next_link);
+        }
+
+        let index_chain = Arc::new(Srced {
+            range: index_chain.iter().fold(SrcRange::default(), |acc, x| acc.merge(x.range)),
+            val: index_chain,
+        });
+
+        Ok(Self { head: try_convert(unnest(&value.val.head))?, index_chain })
+    }
+}
+
+impl TryFrom<&g::Ref<g::PlaceIndex>> for l::PlaceIndex {
+    type Error = CompileErrorSet;
+
+    fn try_from(value: &g::Ref<g::PlaceIndex>) -> Result<Self, Self::Error> {
+        Ok(match &value.val {
+            g::PlaceIndex::Offset(x) => Self::Offset(try_convert(&x.val.expr)?),
+            g::PlaceIndex::Field(x) => Self::Field(convert(&x.val.name)),
         })
     }
 }
@@ -452,14 +509,6 @@ fn unnest<T>(nest: &g::Ref<g::ParensNest<T>>) -> &g::Ref<T> {
     match &nest.val {
         g::ParensNest::Root(x) => x,
         g::ParensNest::Wrapped(wrapped) => unnest(&wrapped.val.item),
-    }
-}
-
-impl TryFrom<&g::Ref<g::Offset>> for l::Offset {
-    type Error = CompileErrorSet;
-
-    fn try_from(value: &g::Ref<g::Offset>) -> Result<Self, Self::Error> {
-        Ok(Self { expr: try_convert(&value.val.expr)? })
     }
 }
 

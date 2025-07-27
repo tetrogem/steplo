@@ -70,6 +70,7 @@ Its goals include:
 | 🚧 | External Linking / Libraries |
 | 🚧 | More Scratch Native Features (e.g., sprites, key events, sounds, pen) |
 | 🚧 | Language Server |
+| 🚧 | Standard Formatter |
 | 🚧 | VS Code (and possibly other IDEs) Extension |
 | 🚧 | Standard Library |
 | 🚧 | Built-in Heap Memory Support |
