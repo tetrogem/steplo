@@ -4,8 +4,7 @@ main || {
 }
 
 func test_user() |user1: { id: uint, name: val }, user2: { id: uint, name: val }| {
-    user1.id = 1234;
-    user1.name = "Steplo";
+    user1 = { name: "Steplo", id: 1234 };
     out(user1.id);
     out(user1.name);
 
@@ -18,8 +17,7 @@ func test_user() |user1: { id: uint, name: val }, user2: { id: uint, name: val }
 }
 
 func User_new(return: &{ id: uint, name: val }, id: uint, name: val) || {
-    (*return).id = id;
-    (*return).name = name;
+    (*return) = { id: id, name: name };
 }
 
 func User_print(user: { id: uint, name: val }) || {
@@ -27,9 +25,7 @@ func User_print(user: { id: uint, name: val }) || {
 }
 
 func test_cast() |coords: { x: num, y: num }, nums2: [num; 2], uints2: [uint; 2]| {
-    // coords = { x: 5.5, y: -0.9 };
-    coords.x = 5.5;
-    coords.y = -0.9;
+    coords = { x: 5.5, y: -0.9 };
     nums2 = <[num; 2]>coords;
     coords = <{ x: num, y: num }>nums2;
     uints2 = <<[uint; 2]>>coords;

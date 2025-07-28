@@ -314,7 +314,12 @@ fn typecheck_assign(
 
     Ok(t::Assign {
         place: try_tr(&item.val.place, |x| typecheck_place(x, ident_to_type))?,
-        expr: try_tr(&item.val.expr, |x| typecheck_assign_expr(x, &place_type, ident_to_type))?,
+        expr: try_tr(&item.val.expr, |x| {
+            Ok(typecheck_assign_expr(x, &place_type, ident_to_type)?
+                .into_iter()
+                .map(|expr| tr(x, |_| expr))
+                .collect())
+        })?,
     })
 }
 
@@ -333,11 +338,11 @@ fn typecheck_call(
 
     let mut expr_iter = item.val.param_exprs.val.iter();
     let mut decl_iter = param_decls.val.iter();
-    let mut typechecked_param_exprs = Vec::new();
+    let mut typechecked_param_exprs_vec = Vec::new();
 
     loop {
         let (expr, decl) = (expr_iter.next(), decl_iter.next());
-        let typechecked_param_expr = match (expr, decl) {
+        let typechecked_param_exprs = match (expr, decl) {
             (None, None) => break,
             (Some(expr), Some(decl)) => {
                 let expr_type = eval_assign_expr(expr, &decl.val.ty, ident_to_type)?;
@@ -351,7 +356,12 @@ fn typecheck_call(
                     ));
                 }
 
-                try_tr(expr, |x| typecheck_assign_expr(x, &decl.val.ty, ident_to_type))?
+                try_tr(expr, |x| {
+                    Ok(typecheck_assign_expr(x, &decl.val.ty, ident_to_type)?
+                        .into_iter()
+                        .map(|expr| tr(x, |_| expr))
+                        .collect())
+                })?
             },
             _ => {
                 return Err(CompileErrorSet::new_error(
@@ -365,12 +375,12 @@ fn typecheck_call(
             },
         };
 
-        typechecked_param_exprs.push(typechecked_param_expr);
+        typechecked_param_exprs_vec.push(typechecked_param_exprs);
     }
 
     Ok(t::FunctionCall {
         func_name: tr(&item.val.func_name, typecheck_name),
-        param_exprs: tr(&item.val.param_exprs, |_| typechecked_param_exprs),
+        param_exprs: tr(&item.val.param_exprs, |_| typechecked_param_exprs_vec),
     })
 }
 
@@ -385,7 +395,6 @@ fn typecheck_place(
     let place_eval = eval_place(item, ident_to_type)?;
     Ok(t::Place {
         head: try_tr(&item.val.head, |x| typecheck_place_head(x, ident_to_type))?,
-        size: place_eval.ty.size(),
         offset: match place_eval.offset {
             None => None,
             Some(offset) => Some(try_tr(&offset, |x| typecheck_expr(x, ident_to_type))?),
@@ -553,48 +562,120 @@ fn eval_deref(
     Ok(deref_type.clone())
 }
 
+fn typecheck_copy(
+    expr: &l::Ref<l::Expr>,
+    size: u32,
+    ident_to_type: &IdentToType,
+) -> Result<Vec<t::AssignExpr>, CompileErrorSet> {
+    Ok(match &expr.val {
+        l::Expr::Place(place) => {
+            let place = try_tr(place, |x| typecheck_place(x, ident_to_type))?;
+            (0..size)
+                .map(|offset| t::AssignExpr {
+                    offset,
+                    expr: tr(&place, |x| {
+                        t::Expr::Place(tr(x, |x| {
+                            let offset_expr =
+                                t::Expr::Literal(tr(x, |_| t::Literal::Uint(offset as f64)));
+
+                            let offset_expr = match &place.val.offset {
+                                None => offset_expr,
+                                Some(place_offset_expr) => t::Expr::Paren(tr(x, |x| {
+                                    t::ParenExpr::Binary(tr(x, |x| t::BinaryParenExpr {
+                                        left: tr(x, |_| offset_expr),
+                                        op: tr(x, |_| t::BinaryParenExprOp::Add),
+                                        right: place_offset_expr.clone(),
+                                    }))
+                                })),
+                            };
+
+                            t::Place {
+                                head: x.val.head.clone(),
+                                offset: Some(tr(x, |_| offset_expr)),
+                            }
+                        }))
+                    }),
+                })
+                .collect()
+        },
+        l::Expr::Cast { expr, .. } | l::Expr::Transmute { expr, .. } => {
+            typecheck_copy(expr, size, ident_to_type)?
+        },
+        _ => {
+            todo!() // cannot assign expr to non-size 1 type
+        },
+    })
+}
+
 fn typecheck_assign_expr(
     item: &l::Ref<l::AssignExpr>,
     expected_type: &Arc<l::Type>,
     ident_to_type: &IdentToType,
-) -> Result<t::AssignExpr, CompileErrorSet> {
+) -> Result<Vec<t::AssignExpr>, CompileErrorSet> {
     Ok(match &item.val {
         l::AssignExpr::Expr(x) => match expected_type.size() {
-            1 => t::AssignExpr::Expr(try_tr(x, |x| typecheck_expr(x, ident_to_type))?),
-            size => {
-                fn typecheck_copy(
-                    expr: &l::Ref<l::Expr>,
-                    size: u32,
-                    ident_to_type: &IdentToType,
-                ) -> Result<t::AssignExpr, CompileErrorSet> {
-                    Ok(match &expr.val {
-                        l::Expr::Place(place) => t::AssignExpr::Copy {
-                            place: try_tr(place, |x| typecheck_place(x, ident_to_type))?,
-                            start_in: 0,
-                            end_ex: size,
-                        },
-                        l::Expr::Cast { expr, .. } | l::Expr::Transmute { expr, .. } => {
-                            typecheck_copy(expr, size, ident_to_type)?
-                        },
-                        _ => {
-                            todo!() // cannot assign expr to non-size 1 type
-                        },
+            1 => Vec::from([t::AssignExpr {
+                offset: 0,
+                expr: try_tr(x, |x| typecheck_expr(x, ident_to_type))?,
+            }]),
+            size => typecheck_copy(x, size, ident_to_type)?,
+        },
+        l::AssignExpr::Array(elements) => {
+            let l::Type::Array { ty: expected_el_type, .. } = expected_type.as_ref() else {
+                todo!() // expected array type
+            };
+
+            let el_size = expected_el_type.size();
+
+            elements
+                .val
+                .iter()
+                .map(|el| typecheck_assign_expr(el, expected_el_type, ident_to_type))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .enumerate()
+                .flat_map(|(i, els)| {
+                    els.into_iter().map(move |el| t::AssignExpr {
+                        offset: (i as u32) * el_size + el.offset,
+                        expr: el.expr,
                     })
+                })
+                .collect()
+        },
+        l::AssignExpr::Struct(assign_fields) => {
+            let l::Type::Struct(expected_fields) = expected_type.as_ref() else {
+                todo!() // not expecting a struct
+            };
+
+            let mut struct_assign_exprs = Vec::new();
+            let mut field_offset = 0;
+
+            for expected_field in expected_fields.iter() {
+                let Some(assign_field) = assign_fields
+                    .val
+                    .iter()
+                    .find(|assign_field| assign_field.val.name.val.str == expected_field.name)
+                else {
+                    todo!() // missing field
+                };
+
+                let field_assign_exprs = typecheck_assign_expr(
+                    &assign_field.val.assign,
+                    &expected_field.ty,
+                    ident_to_type,
+                )?;
+
+                for field_assign_expr in field_assign_exprs {
+                    struct_assign_exprs.push(t::AssignExpr {
+                        offset: field_offset + field_assign_expr.offset,
+                        expr: field_assign_expr.expr,
+                    });
                 }
 
-                typecheck_copy(x, size, ident_to_type)?
-            },
-        },
-        l::AssignExpr::Span(x) => {
-            t::AssignExpr::Span(try_tr_vec(x, |x| typecheck_expr(x, ident_to_type))?)
-        },
-        l::AssignExpr::Slice { place, start_in, end_ex } => {
-            let place_eval = eval_place(place, ident_to_type)?;
-            t::AssignExpr::Copy {
-                place: try_tr(place, |x| typecheck_place(x, ident_to_type))?,
-                start_in: *start_in * place_eval.ty.size(),
-                end_ex: *end_ex * place_eval.ty.size(),
+                field_offset += expected_field.ty.size();
             }
+
+            struct_assign_exprs
         },
     })
 }
@@ -606,7 +687,7 @@ fn eval_assign_expr(
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
     match &item.val {
         l::AssignExpr::Expr(x) => eval_expr(x, ident_to_type),
-        l::AssignExpr::Span(elements) => {
+        l::AssignExpr::Array(elements) => {
             let len = elements.val.len() as u32;
 
             let l::Type::Array { ty: expected_el_type, .. } = expected_type.as_ref() else {
@@ -623,7 +704,7 @@ fn eval_assign_expr(
             };
 
             for el in elements.val.iter() {
-                let el_type = eval_expr(el, ident_to_type)?;
+                let el_type = eval_assign_expr(el, expected_el_type, ident_to_type)?;
                 if el_type.is_subtype_of(expected_el_type).not() {
                     return Err(CompileErrorSet::new_error(
                         el.range,
@@ -637,18 +718,38 @@ fn eval_assign_expr(
 
             Ok(Arc::new(l::Type::Array { ty: expected_el_type.clone(), len }))
         },
-        l::AssignExpr::Slice { place, start_in, end_ex } => {
-            let place_res = eval_place(place, ident_to_type)?;
-
-            let Some(len) = end_ex.checked_sub(*start_in) else {
-                todo!() // error, negative length
+        l::AssignExpr::Struct(assign_fields) => {
+            let l::Type::Struct(expected_fields) = expected_type.as_ref() else {
+                todo!() // didn't expect struct type
             };
 
-            let l::Type::Array { ty: el_type, .. } = place_res.ty.as_ref() else {
-                todo!() // error, cannot slice non-array
-            };
+            Ok(Arc::new(l::Type::Struct(Arc::new(
+                expected_fields
+                    .iter()
+                    .map(|expected_field| {
+                        let Some(assign_field) = assign_fields.val.iter().find(|assign_field| {
+                            expected_field.name == assign_field.val.name.val.str
+                        }) else {
+                            todo!() // field doesn't exist on struct type
+                        };
 
-            Ok(Arc::new(l::Type::Array { ty: el_type.clone(), len }))
+                        let assign_field_ty = eval_assign_expr(
+                            &assign_field.val.assign,
+                            &expected_field.ty,
+                            ident_to_type,
+                        )?;
+
+                        if assign_field_ty.is_subtype_of(&expected_field.ty).not() {
+                            todo!() // wrong type for field
+                        }
+
+                        Ok(Arc::new(l::FieldType {
+                            name: expected_field.name.clone(),
+                            ty: expected_field.ty.clone(),
+                        }))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            ))))
         },
     }
 }

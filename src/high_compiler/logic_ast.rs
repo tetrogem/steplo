@@ -52,7 +52,7 @@ pub enum Type {
     Primitive(PrimitiveType),
     Ref(Arc<Type>),
     Array { ty: Arc<Type>, len: u32 },
-    Struct(Arc<Vec<FieldType>>),
+    Struct(Arc<Vec<Arc<FieldType>>>),
 }
 
 impl Type {
@@ -283,8 +283,14 @@ pub struct Assign {
 #[derive(Debug)]
 pub enum AssignExpr {
     Expr(Ref<Expr>),
-    Span(Ref<Vec<Ref<Expr>>>),
-    Slice { place: Ref<Place>, start_in: u32, end_ex: u32 },
+    Array(Ref<Vec<Ref<AssignExpr>>>),
+    Struct(Ref<Vec<Ref<StructAssignField>>>),
+}
+
+#[derive(Debug)]
+pub struct StructAssignField {
+    pub name: Ref<Name>,
+    pub assign: Ref<AssignExpr>,
 }
 
 #[derive(Debug)]

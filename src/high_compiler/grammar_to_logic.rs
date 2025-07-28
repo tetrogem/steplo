@@ -2,8 +2,6 @@ use std::collections::VecDeque;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use itertools::Itertools;
-
 use crate::compile_error::CompileError;
 use crate::compile_error::CompileErrorSet;
 use crate::compile_error::LogicError;
@@ -194,10 +192,10 @@ impl TryFrom<&g::Ref<g::Type>> for l::Type {
                     .val
                     .iter()
                     .map(|field| {
-                        Ok(FieldType {
+                        Ok(Arc::new(FieldType {
                             name: field.val.name.val.str.clone(),
                             ty: field.val.ty.clone(),
-                        })
+                        }))
                     })
                     .collect::<Result<_, _>>()?;
 
@@ -367,34 +365,17 @@ impl TryFrom<&g::Ref<g::AssignExpr>> for l::AssignExpr {
     fn try_from(value: &g::Ref<g::AssignExpr>) -> Result<Self, Self::Error> {
         Ok(match &value.val {
             g::AssignExpr::Expr(expr) => Self::Expr(try_convert(expr)?),
-            g::AssignExpr::Span(span) => Self::Span(try_convert_list(&span.val.elements)?),
-            g::AssignExpr::Slice(slice) => {
-                let start_in = convert_maybe(&slice.val.start_in);
-
-                let start_in = match start_in {
-                    None => 0,
-                    Some(x) => match parse_num_literal(x) {
-                        Ok(x) => x,
-                        Err(_) => {
-                            return Err(CompileErrorSet::new_error(
-                                x.range,
-                                CompileError::Convert(LogicError::InvalidRangeStartIncl),
-                            ));
-                        },
-                    },
-                };
-
-                let end_ex = &slice.val.end_ex;
-                let Ok(end_ex) = parse_num_literal(end_ex) else {
-                    return Err(CompileErrorSet::new_error(
-                        end_ex.range,
-                        CompileError::Convert(LogicError::InvalidRangeEndExcl),
-                    ));
-                };
-
-                Self::Slice { place: try_convert(&slice.val.place)?, start_in, end_ex }
-            },
+            g::AssignExpr::Array(array) => Self::Array(try_convert_list(&array.val.elements)?),
+            g::AssignExpr::Struct(st) => Self::Struct(try_convert_list(&st.val.fields)?),
         })
+    }
+}
+
+impl TryFrom<&g::Ref<g::StructAssignField>> for l::StructAssignField {
+    type Error = CompileErrorSet;
+
+    fn try_from(value: &g::Ref<g::StructAssignField>) -> Result<Self, Self::Error> {
+        Ok(Self { name: convert(&value.val.name), assign: try_convert(&value.val.assign)? })
     }
 }
 

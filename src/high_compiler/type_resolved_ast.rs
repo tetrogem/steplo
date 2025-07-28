@@ -1,6 +1,4 @@
-use std::{ops::Not, sync::Arc};
-
-use itertools::{EitherOrBoth, Itertools};
+use std::sync::Arc;
 
 use crate::srced::Srced;
 
@@ -45,7 +43,6 @@ pub struct IdentDeclaration {
 pub struct Place {
     pub head: Ref<PlaceHead>,
     pub offset: Option<Ref<Expr>>,
-    pub size: u32,
 }
 
 #[derive(Debug)]
@@ -110,20 +107,19 @@ pub enum Statement {
 #[derive(Debug)]
 pub struct FunctionCall {
     pub func_name: Ref<Name>,
-    pub param_exprs: Ref<Vec<Ref<AssignExpr>>>,
+    pub param_exprs: Ref<Vec<Ref<Vec<Ref<AssignExpr>>>>>,
 }
 
 #[derive(Debug)]
 pub struct Assign {
     pub place: Ref<Place>,
-    pub expr: Ref<AssignExpr>,
+    pub expr: Ref<Vec<Ref<AssignExpr>>>,
 }
 
 #[derive(Debug)]
-pub enum AssignExpr {
-    Expr(Ref<Expr>),
-    Span(Ref<Vec<Ref<Expr>>>),
-    Copy { place: Ref<Place>, start_in: u32, end_ex: u32 },
+pub struct AssignExpr {
+    pub offset: u32,
+    pub expr: Ref<Expr>,
 }
 
 #[derive(Debug)]

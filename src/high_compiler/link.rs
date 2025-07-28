@@ -29,7 +29,7 @@ pub struct SubProc {
 pub enum Call {
     Func {
         name: ast::Ref<ast::Name>,
-        param_exprs: ast::Ref<Vec<ast::Ref<ast::AssignExpr>>>,
+        param_exprs: ast::Ref<Vec<ast::Ref<Vec<ast::Ref<ast::AssignExpr>>>>>,
         return_sub_proc: Uuid,
     },
     SubProc(Uuid),

@@ -201,8 +201,8 @@ pub struct Assign {
 #[derive(Debug)]
 pub enum AssignExpr {
     Expr(Ref<Expr>),
-    Span(Ref<Span>),
-    Slice(Ref<Slice>),
+    Array(Ref<ArrayAssign>),
+    Struct(Ref<StructAssign>),
 }
 
 #[derive(Debug)]
@@ -278,15 +278,19 @@ pub enum Literal {
 }
 
 #[derive(Debug)]
-pub struct Span {
-    pub elements: Ref<CommaList<Expr>>,
+pub struct ArrayAssign {
+    pub elements: Ref<CommaList<AssignExpr>>,
 }
 
 #[derive(Debug)]
-pub struct Slice {
-    pub place: Ref<Place>,
-    pub start_in: Ref<Maybe<NumLiteral>>,
-    pub end_ex: Ref<NumLiteral>,
+pub struct StructAssign {
+    pub fields: Ref<CommaList<StructAssignField>>,
+}
+
+#[derive(Debug)]
+pub struct StructAssignField {
+    pub name: Ref<Name>,
+    pub assign: Ref<AssignExpr>,
 }
 
 #[derive(Debug)]
