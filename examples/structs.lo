@@ -3,7 +3,10 @@ main || {
     test_cast();
 }
 
-type User = { id: uint, name: val };
+type User = {
+    id: uint,
+    name: val,
+};
 
 func test_user() |user1: User, user2: User| {
     user1 = { name: "Steplo", id: 1234 };
