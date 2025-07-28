@@ -33,8 +33,6 @@ pub(crate) enum GrammarError {
 pub(crate) enum LogicError {
     InvalidArrayTypeLen,
     InvalidType,
-    InvalidRangeStartIncl,
-    InvalidRangeEndExcl,
     InvalidNumLiteral,
 }
 
@@ -144,7 +142,7 @@ impl Display for VagueType {
             Self::Struct(fields) => {
                 let fields =
                     fields.iter().map(|field| format!("{}: {}", field.name, field.ty)).join(", ");
-                write!(f, "{{ {} }}", fields)
+                write!(f, "{{ {fields} }}")
             },
         }
     }
@@ -186,8 +184,6 @@ enum CollapsedGrammarError {
 enum CollapsedLogicError {
     InvalidArrayTypeLen,
     InvalidType,
-    InvalidRangeStartIncl,
-    InvalidRangeEndExcl,
     InvalidNumLiteral,
 }
 
@@ -267,8 +263,6 @@ impl CollapsedLogicError {
                 return Ok(());
             },
             (Self::InvalidType, LogicError::InvalidType) => return Ok(()),
-            (Self::InvalidRangeStartIncl, LogicError::InvalidRangeStartIncl) => return Ok(()),
-            (Self::InvalidRangeEndExcl, LogicError::InvalidRangeEndExcl) => return Ok(()),
             (Self::InvalidNumLiteral, LogicError::InvalidNumLiteral) => return Ok(()),
             _ => {},
         }
@@ -344,6 +338,7 @@ impl CollapsedCompileError {
                     TokenKind::False => TokenString::Keyword("false"),
                     TokenKind::Struct => TokenString::Keyword("struct"),
                     TokenKind::Enum => TokenString::Keyword("enum"),
+                    TokenKind::Type => TokenString::Keyword("type"),
                 }
             }
 
@@ -426,12 +421,6 @@ impl CollapsedCompileError {
                     "Array length should be a positive integer".into()
                 },
                 CollapsedLogicError::InvalidType => "This type does not exist".into(),
-                CollapsedLogicError::InvalidRangeStartIncl => {
-                    "Inclusive start of range must be a positive integer".into()
-                },
-                CollapsedLogicError::InvalidRangeEndExcl => {
-                    "Exclusive end of range must be a positive integer".into()
-                },
                 CollapsedLogicError::InvalidNumLiteral => "Invalid number literal".into(),
             },
             Self::Type(ty) => match ty {
@@ -502,8 +491,6 @@ impl From<CompileError> for CollapsedCompileError {
             CompileError::Convert(convert) => Self::Logic(match convert {
                 LogicError::InvalidArrayTypeLen => CollapsedLogicError::InvalidArrayTypeLen,
                 LogicError::InvalidType => CollapsedLogicError::InvalidType,
-                LogicError::InvalidRangeStartIncl => CollapsedLogicError::InvalidRangeStartIncl,
-                LogicError::InvalidRangeEndExcl => CollapsedLogicError::InvalidRangeEndExcl,
                 LogicError::InvalidNumLiteral => CollapsedLogicError::InvalidNumLiteral,
             }),
             CompileError::Type(ty) => Self::Type(match ty {

@@ -3,7 +3,9 @@ main || {
     test_cast();
 }
 
-func test_user() |user1: { id: uint, name: val }, user2: { id: uint, name: val }| {
+type User = { id: uint, name: val };
+
+func test_user() |user1: User, user2: User| {
     user1 = { name: "Steplo", id: 1234 };
     out(user1.id);
     out(user1.name);
@@ -16,17 +18,19 @@ func test_user() |user1: { id: uint, name: val }, user2: { id: uint, name: val }
     User_print(user1);
 }
 
-func User_new(return: &{ id: uint, name: val }, id: uint, name: val) || {
+func User_new(return: &User, id: uint, name: val) || {
     (*return) = { id: id, name: name };
 }
 
-func User_print(user: { id: uint, name: val }) || {
+func User_print(user: User) || {
     out((((user.name ~ " (ID: ") ~ user.id) ~ ")"));
 }
 
-func test_cast() |coords: { x: num, y: num }, nums2: [num; 2], uints2: [uint; 2]| {
+type Coords = { x: num, y: num };
+
+func test_cast() |coords: Coords, nums2: [num; 2], uints2: [uint; 2]| {
     coords = { x: 5.5, y: -0.9 };
     nums2 = <[num; 2]>coords;
-    coords = <{ x: num, y: num }>nums2;
+    coords = <Coords>nums2;
     uints2 = <<[uint; 2]>>coords;
 }

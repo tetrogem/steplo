@@ -20,7 +20,13 @@ pub enum ExeItem {
 
 #[derive(Debug)]
 pub enum TypeItem {
-    Struct(Ref<Struct>),
+    Alias(Ref<TypeAlias>),
+}
+
+#[derive(Debug)]
+pub struct TypeAlias {
+    pub name: Ref<Name>,
+    pub ty: Ref<TypeHint>,
 }
 
 #[derive(Debug)]
@@ -36,14 +42,42 @@ pub struct Func {
 }
 
 #[derive(Debug)]
-pub struct Struct {
-    pub name: Ref<Name>,
-    pub fields: Ref<Vec<Ref<IdentDeclaration>>>,
+pub struct Name {
+    pub str: Arc<str>,
 }
 
 #[derive(Debug)]
-pub struct Name {
-    pub str: Arc<str>,
+pub enum TypeHint {
+    Any,
+    Primitive(PrimitiveType),
+    Ref(Ref<TypeHint>),
+    Array { ty: Ref<TypeHint>, len: u32 },
+    Struct(Ref<Vec<Ref<FieldTypeHint>>>),
+    Alias(Ref<Name>),
+}
+
+impl TypeHint {
+    pub fn as_type(&self) -> Option<Type> {
+        Some(match self {
+            Self::Alias(_) => return None,
+            Self::Any => Type::Any,
+            Self::Primitive(p) => Type::Primitive(*p),
+            Self::Ref(ty) => Type::Ref(Arc::new(ty.val.as_type()?)),
+            Self::Array { ty, len } => Type::Array { ty: Arc::new(ty.val.as_type()?), len: *len },
+            Self::Struct(fields) => Type::Struct(Arc::new(
+                fields
+                    .val
+                    .iter()
+                    .map(|field| {
+                        Some(Arc::new(FieldType {
+                            name: field.val.name.val.str.clone(),
+                            ty: Arc::new(field.val.ty.val.as_type()?),
+                        }))
+                    })
+                    .collect::<Option<Vec<_>>>()?,
+            )),
+        })
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -192,9 +226,15 @@ pub struct FieldType {
 }
 
 #[derive(Debug)]
+pub struct FieldTypeHint {
+    pub name: Ref<Name>,
+    pub ty: Ref<TypeHint>,
+}
+
+#[derive(Debug)]
 pub struct IdentDeclaration {
     pub name: Ref<Name>,
-    pub ty: Arc<Type>,
+    pub ty: Ref<TypeHint>,
 }
 
 #[derive(Debug)]
@@ -299,8 +339,8 @@ pub enum Expr {
     Place(Ref<Place>),
     Ref(Ref<Place>),
     Paren(Ref<ParenExpr>),
-    Cast { ty: Arc<Type>, expr: Ref<Expr> },
-    Transmute { ty: Arc<Type>, expr: Ref<Expr> },
+    Cast { ty: Ref<TypeHint>, expr: Ref<Expr> },
+    Transmute { ty: Ref<TypeHint>, expr: Ref<Expr> },
 }
 
 #[derive(Debug)]

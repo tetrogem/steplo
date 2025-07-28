@@ -591,7 +591,7 @@ fn compile_addr_assignment(
     compiled_head_loc: &Arc<opt::UMemLoc>,
     assign_exprs: &hast::Ref<Vec<hast::Ref<hast::AssignExpr>>>,
 ) -> anyhow::Result<Vec<Arc<opt::Command<opt::UMemLoc>>>> {
-    let assign_exprs = compile_assign_exprs(stack_frame, &assign_exprs)?;
+    let assign_exprs = compile_assign_exprs(stack_frame, assign_exprs)?;
     let mut assignment_commands = Vec::new();
 
     for assign_expr in assign_exprs.into_iter() {
@@ -838,7 +838,7 @@ fn compile_place_to_addr(
     let compiled_place = match &place.offset {
         None => compiled_head,
         Some(offset) => {
-            let compiled_index = compile_expr(stack_frame, &offset)?;
+            let compiled_index = compile_expr(stack_frame, offset)?;
             let offset_addr = compile_addr_offset(compiled_head.mem_loc, compiled_index.mem_loc)?;
 
             let commands =

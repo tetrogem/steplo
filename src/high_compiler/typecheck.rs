@@ -6,7 +6,10 @@ use std::{
 
 use itertools::Itertools;
 
-use crate::high_compiler::srced::{SrcRange, Srced};
+use crate::high_compiler::{
+    logic_ast::TypeHint,
+    srced::{SrcRange, Srced},
+};
 
 use super::{
     compile_error::{CompileError, CompileErrorSet, TypeError, VagueType},
@@ -30,7 +33,7 @@ static UINT_TYPE: LazyLock<Arc<l::Type>> =
 static BOOL_TYPE: LazyLock<Arc<l::Type>> =
     LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Bool)));
 
-type IdentToType = HashMap<Arc<str>, Arc<l::Type>>;
+type IdentToTypeHint = HashMap<Arc<str>, l::Ref<l::TypeHint>>;
 type FuncToParams = HashMap<Arc<str>, l::Ref<Vec<l::Ref<l::IdentDeclaration>>>>;
 
 fn tr<L, T, F: FnOnce(&l::Ref<L>) -> T>(l_ref: &l::Ref<L>, f: F) -> t::Ref<T> {
@@ -44,6 +47,58 @@ fn try_tr<L, T, Error, F: FnOnce(&l::Ref<L>) -> Result<T, Error>>(
 ) -> Result<t::Ref<T>, Error> {
     let t = f(l_ref)?;
     Ok(Arc::new(Srced { val: t, range: l_ref.range }))
+}
+
+struct TypeAliasManager {
+    alias_to_type_hint: HashMap<Arc<str>, l::Ref<TypeHint>>,
+}
+
+impl TypeAliasManager {
+    pub fn new(program: &l::Ref<l::Program>) -> Self {
+        let aliases = program.val.items.val.iter().filter_map(|item| match &item.val {
+            l::TopItem::Exe(_) => None,
+            l::TopItem::Type(item) => match &item.val {
+                l::TypeItem::Alias(alias) => Some(alias),
+            },
+        });
+
+        Self {
+            alias_to_type_hint: aliases
+                .map(|alias| (alias.val.name.val.str.clone(), alias.val.ty.clone()))
+                .collect(),
+        }
+    }
+
+    pub fn resolve(&self, hint: &l::Ref<l::TypeHint>) -> Result<l::Type, CompileErrorSet> {
+        Ok(match &hint.val {
+            l::TypeHint::Alias(name) => match self.alias_to_type_hint.get(&name.val.str) {
+                Some(hint) => self.resolve(hint)?,
+                None => {
+                    todo!() // alias does not exist
+                },
+            },
+            l::TypeHint::Any => l::Type::Any,
+            l::TypeHint::Primitive(p) => l::Type::Primitive(*p),
+            l::TypeHint::Ref(hint) => l::Type::Ref(Arc::new(self.resolve(hint)?)),
+            l::TypeHint::Array { ty, len } => {
+                l::Type::Array { ty: Arc::new(self.resolve(ty)?), len: *len }
+            },
+            l::TypeHint::Struct(fields) => {
+                let fields = fields
+                    .val
+                    .iter()
+                    .map(|field| {
+                        Ok(Arc::new(l::FieldType {
+                            name: field.val.name.val.str.clone(),
+                            ty: Arc::new(self.resolve(&field.val.ty)?),
+                        }))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                l::Type::Struct(Arc::new(fields))
+            },
+        })
+    }
 }
 
 pub fn typecheck(program: &l::Ref<l::Program>) -> Result<t::Ref<t::Program>, CompileErrorSet> {
@@ -63,17 +118,12 @@ pub fn typecheck(program: &l::Ref<l::Program>) -> Result<t::Ref<t::Program>, Com
         })
         .collect::<FuncToParams>();
 
-    // let typename_to_type = program.val.items.val.iter().filter_map(|item| {
-    //     let l::TopItem::Type(item) = item else { return None };
-    //     match &item.val {
-    //         l::TypeItem::Struct(x) =>
-    //     }
-    // });
+    let type_alias_m = TypeAliasManager::new(program);
 
     let items = try_tr(&program.val.items, |x| {
         Ok(x.val
             .iter()
-            .map(|x| try_tr(x, |x| typecheck_top_item(x, &func_to_params)))
+            .map(|x| try_tr(x, |x| typecheck_top_item(x, &func_to_params, &type_alias_m)))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .filter_map(|x| x.val.clone())
@@ -86,9 +136,12 @@ pub fn typecheck(program: &l::Ref<l::Program>) -> Result<t::Ref<t::Program>, Com
 fn typecheck_top_item(
     item: &l::Ref<l::TopItem>,
     func_to_params: &FuncToParams,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<Option<t::Ref<t::ExeItem>>, CompileErrorSet> {
     Ok(match &item.val {
-        l::TopItem::Exe(x) => Some(try_tr(x, |x| typecheck_exe_item(x, func_to_params))?),
+        l::TopItem::Exe(x) => {
+            Some(try_tr(x, |x| typecheck_exe_item(x, func_to_params, type_alias_m))?)
+        },
         l::TopItem::Type(x) => {
             typecheck_type_item(x);
             None
@@ -99,10 +152,15 @@ fn typecheck_top_item(
 fn typecheck_exe_item(
     item: &l::Ref<l::ExeItem>,
     func_to_params: &FuncToParams,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::ExeItem, CompileErrorSet> {
     Ok(match &item.val {
-        l::ExeItem::Main(x) => t::ExeItem::Main(try_tr(x, |x| typecheck_main(x, func_to_params))?),
-        l::ExeItem::Func(x) => t::ExeItem::Func(try_tr(x, |x| typecheck_func(x, func_to_params))?),
+        l::ExeItem::Main(x) => {
+            t::ExeItem::Main(try_tr(x, |x| typecheck_main(x, func_to_params, type_alias_m))?)
+        },
+        l::ExeItem::Func(x) => {
+            t::ExeItem::Func(try_tr(x, |x| typecheck_func(x, func_to_params, type_alias_m))?)
+        },
     })
 }
 
@@ -111,8 +169,13 @@ fn typecheck_type_item(_item: &l::Ref<l::TypeItem>) {}
 fn typecheck_main(
     item: &l::Ref<l::Main>,
     func_to_params: &FuncToParams,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::Main, CompileErrorSet> {
-    Ok(t::Main { proc: try_tr(&item.val.proc, |x| typecheck_proc(x, [].iter(), func_to_params))? })
+    Ok(t::Main {
+        proc: try_tr(&item.val.proc, |x| {
+            typecheck_proc(x, [].iter(), func_to_params, type_alias_m)
+        })?,
+    })
 }
 
 fn tr_vec<L, T>(
@@ -134,12 +197,13 @@ fn try_tr_vec<L, T, Error>(
 fn typecheck_func(
     item: &l::Ref<l::Func>,
     func_to_params: &FuncToParams,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::Func, CompileErrorSet> {
     Ok(t::Func {
         name: tr(&item.val.name, typecheck_name),
-        params: tr_vec(&item.val.params, typecheck_ident_decl),
+        params: try_tr_vec(&item.val.params, |x| typecheck_ident_decl(x, type_alias_m))?,
         proc: try_tr(&item.val.proc, |x| {
-            typecheck_proc(x, item.val.params.val.iter(), func_to_params)
+            typecheck_proc(x, item.val.params.val.iter(), func_to_params, type_alias_m)
         })?,
     })
 }
@@ -148,35 +212,49 @@ fn typecheck_name(item: &l::Ref<l::Name>) -> t::Name {
     t::Name { str: item.val.str.clone() }
 }
 
-fn typecheck_ident_decl(item: &l::Ref<l::IdentDeclaration>) -> t::IdentDeclaration {
-    t::IdentDeclaration { name: tr(&item.val.name, typecheck_name), size: item.val.ty.size() }
+fn typecheck_ident_decl(
+    item: &l::Ref<l::IdentDeclaration>,
+    type_alias_m: &TypeAliasManager,
+) -> Result<t::IdentDeclaration, CompileErrorSet> {
+    Ok(t::IdentDeclaration {
+        name: tr(&item.val.name, typecheck_name),
+        size: type_alias_m.resolve(&item.val.ty)?.size(),
+    })
 }
 
 fn typecheck_proc<'a>(
     item: &'a l::Ref<l::Proc>,
     params: impl Iterator<Item = &'a l::Ref<l::IdentDeclaration>>,
     func_to_params: &FuncToParams,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::Proc, CompileErrorSet> {
     let idents = item.val.idents.val.iter().chain(params).map(AsRef::as_ref);
     let ident_to_type =
-        idents.map(|i| (i.val.name.val.str.clone(), i.val.ty.clone())).collect::<IdentToType>();
+        idents.map(|i| (i.val.name.val.str.clone(), i.val.ty.clone())).collect::<IdentToTypeHint>();
 
     Ok(t::Proc {
-        idents: tr_vec(&item.val.idents, typecheck_ident_decl),
-        body: try_tr(&item.val.body, |x| typecheck_body(x, &ident_to_type, func_to_params))?,
+        idents: try_tr_vec(&item.val.idents, |x| typecheck_ident_decl(x, type_alias_m))?,
+        body: try_tr(&item.val.body, |x| {
+            typecheck_body(x, &ident_to_type, func_to_params, type_alias_m)
+        })?,
     })
 }
 
 fn typecheck_body(
     item: &l::Ref<l::Body>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
     func_to_params: &FuncToParams,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::Body, CompileErrorSet> {
     Ok(t::Body {
         items: try_tr(&item.val.items, |x| {
             x.val
                 .iter()
-                .map(|x| try_tr(x, |x| typecheck_body_item(x, ident_to_type, func_to_params)))
+                .map(|x| {
+                    try_tr(x, |x| {
+                        typecheck_body_item(x, ident_to_type, func_to_params, type_alias_m)
+                    })
+                })
                 .collect::<Result<_, _>>()
         })?,
     })
@@ -184,28 +262,30 @@ fn typecheck_body(
 
 fn typecheck_body_item(
     item: &l::Ref<l::BodyItem>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
     func_to_params: &FuncToParams,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::BodyItem, CompileErrorSet> {
     Ok(match &item.val {
         l::BodyItem::Statement(x) => t::BodyItem::Statement(try_tr(x, |x| {
-            typecheck_statement(x, ident_to_type, func_to_params)
+            typecheck_statement(x, ident_to_type, func_to_params, type_alias_m)
         })?),
-        l::BodyItem::If(x) => {
-            t::BodyItem::If(try_tr(x, |x| typecheck_if(x, ident_to_type, func_to_params))?)
-        },
-        l::BodyItem::While(x) => {
-            t::BodyItem::While(try_tr(x, |x| typecheck_while(x, ident_to_type, func_to_params))?)
-        },
+        l::BodyItem::If(x) => t::BodyItem::If(try_tr(x, |x| {
+            typecheck_if(x, ident_to_type, func_to_params, type_alias_m)
+        })?),
+        l::BodyItem::While(x) => t::BodyItem::While(try_tr(x, |x| {
+            typecheck_while(x, ident_to_type, func_to_params, type_alias_m)
+        })?),
     })
 }
 
 fn typecheck_if(
     item: &l::Ref<l::IfItem>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
     func_to_params: &FuncToParams,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::IfItem, CompileErrorSet> {
-    let condition_type = eval_expr(&item.val.condition, ident_to_type)?;
+    let condition_type = eval_expr(&item.val.condition, ident_to_type, type_alias_m)?;
     if condition_type.is_subtype_of(&VAL_TYPE).not() {
         return Err(CompileErrorSet::new_error(
             item.val.condition.range,
@@ -217,16 +297,16 @@ fn typecheck_if(
     };
 
     Ok(t::IfItem {
-        condition: try_tr(&item.val.condition, |x| typecheck_expr(x, ident_to_type))?,
+        condition: try_tr(&item.val.condition, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
         then_body: try_tr(&item.val.then_body, |x| {
-            typecheck_body(x, ident_to_type, func_to_params)
+            typecheck_body(x, ident_to_type, func_to_params, type_alias_m)
         })?,
         else_item: match &item.val.else_item {
             None => None,
             Some(x) => Some(try_tr(x, |x| {
                 Ok(t::ElseItem {
                     body: try_tr(&x.val.body, |x| {
-                        typecheck_body(x, ident_to_type, func_to_params)
+                        typecheck_body(x, ident_to_type, func_to_params, type_alias_m)
                     })?,
                 })
             })?),
@@ -236,10 +316,11 @@ fn typecheck_if(
 
 fn typecheck_while(
     item: &l::Ref<l::WhileItem>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
     func_to_params: &FuncToParams,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::WhileItem, CompileErrorSet> {
-    let condition_type = eval_expr(&item.val.condition, ident_to_type)?;
+    let condition_type = eval_expr(&item.val.condition, ident_to_type, type_alias_m)?;
     if condition_type.is_subtype_of(&VAL_TYPE).not() {
         return Err(CompileErrorSet::new_error(
             item.val.condition.range,
@@ -250,58 +331,63 @@ fn typecheck_while(
         ));
     }
 
-    typecheck_body(&item.val.body, ident_to_type, func_to_params)?;
+    typecheck_body(&item.val.body, ident_to_type, func_to_params, type_alias_m)?;
 
     Ok(t::WhileItem {
-        condition: try_tr(&item.val.condition, |x| typecheck_expr(x, ident_to_type))?,
-        body: try_tr(&item.val.body, |x| typecheck_body(x, ident_to_type, func_to_params))?,
+        condition: try_tr(&item.val.condition, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+        body: try_tr(&item.val.body, |x| {
+            typecheck_body(x, ident_to_type, func_to_params, type_alias_m)
+        })?,
     })
 }
 
 fn typecheck_statement(
     item: &l::Ref<l::Statement>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
     func_to_params: &FuncToParams,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::Statement, CompileErrorSet> {
     Ok(match &item.val {
         l::Statement::Assign(x) => {
-            t::Statement::Assign(try_tr(x, |x| typecheck_assign(x, ident_to_type))?)
+            t::Statement::Assign(try_tr(x, |x| typecheck_assign(x, ident_to_type, type_alias_m))?)
         },
-        l::Statement::Call(x) => {
-            t::Statement::Call(try_tr(x, |x| typecheck_call(x, ident_to_type, func_to_params))?)
-        },
-        l::Statement::Native(x) => {
-            t::Statement::Native(try_tr(x, |x| typecheck_native_op(x, ident_to_type))?)
-        },
+        l::Statement::Call(x) => t::Statement::Call(try_tr(x, |x| {
+            typecheck_call(x, ident_to_type, func_to_params, type_alias_m)
+        })?),
+        l::Statement::Native(x) => t::Statement::Native(try_tr(x, |x| {
+            typecheck_native_op(x, ident_to_type, type_alias_m)
+        })?),
     })
 }
 
 fn typecheck_native_op(
     item: &l::Ref<l::NativeOperation>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::NativeOperation, CompileErrorSet> {
     Ok(match &item.val {
-        l::NativeOperation::Out { place } => {
-            t::NativeOperation::Out { place: try_tr(place, |x| typecheck_place(x, ident_to_type))? }
+        l::NativeOperation::Out { place } => t::NativeOperation::Out {
+            place: try_tr(place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
         },
         l::NativeOperation::In { dest_place } => t::NativeOperation::In {
-            dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type))?,
+            dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
         },
         l::NativeOperation::Random { dest_place, min, max } => t::NativeOperation::Random {
-            dest_ident: try_tr(dest_place, |x| typecheck_place(x, ident_to_type))?,
-            min: try_tr(min, |x| typecheck_expr(x, ident_to_type))?,
-            max: try_tr(max, |x| typecheck_expr(x, ident_to_type))?,
+            dest_ident: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
+            min: try_tr(min, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+            max: try_tr(max, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
         },
     })
 }
 
 fn typecheck_assign(
     item: &l::Ref<l::Assign>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::Assign, CompileErrorSet> {
-    let place_type = eval_place(&item.val.place, ident_to_type)?.ty;
+    let place_type = eval_place(&item.val.place, ident_to_type, type_alias_m)?.ty;
     let expr = &item.val.expr;
-    let expr_type = eval_assign_expr(expr, &place_type, ident_to_type)?;
+    let expr_type = eval_assign_expr(expr, &place_type, ident_to_type, type_alias_m)?;
     if expr_type.is_subtype_of(&place_type).not() {
         return Err(CompileErrorSet::new_error(
             expr.range,
@@ -313,9 +399,9 @@ fn typecheck_assign(
     }
 
     Ok(t::Assign {
-        place: try_tr(&item.val.place, |x| typecheck_place(x, ident_to_type))?,
+        place: try_tr(&item.val.place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
         expr: try_tr(&item.val.expr, |x| {
-            Ok(typecheck_assign_expr(x, &place_type, ident_to_type)?
+            Ok(typecheck_assign_expr(x, &place_type, ident_to_type, type_alias_m)?
                 .into_iter()
                 .map(|expr| tr(x, |_| expr))
                 .collect())
@@ -325,8 +411,9 @@ fn typecheck_assign(
 
 fn typecheck_call(
     item: &l::Ref<l::FunctionCall>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
     func_to_params: &FuncToParams,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::FunctionCall, CompileErrorSet> {
     let func_name = &item.val.func_name;
     let Some(param_decls) = func_to_params.get(func_name.val.str.as_ref()) else {
@@ -345,19 +432,20 @@ fn typecheck_call(
         let typechecked_param_exprs = match (expr, decl) {
             (None, None) => break,
             (Some(expr), Some(decl)) => {
-                let expr_type = eval_assign_expr(expr, &decl.val.ty, ident_to_type)?;
-                if expr_type.is_subtype_of(&decl.val.ty).not() {
+                let decl_type = Arc::new(type_alias_m.resolve(&decl.val.ty)?);
+                let expr_type = eval_assign_expr(expr, &decl_type, ident_to_type, type_alias_m)?;
+                if expr_type.is_subtype_of(&decl_type).not() {
                     return Err(CompileErrorSet::new_error(
                         expr.range,
                         CompileError::Type(TypeError::Mismatch {
-                            expected: vague(&decl.val.ty),
+                            expected: vague(&decl_type),
                             found: vague(&expr_type),
                         }),
                     ));
                 }
 
                 try_tr(expr, |x| {
-                    Ok(typecheck_assign_expr(x, &decl.val.ty, ident_to_type)?
+                    Ok(typecheck_assign_expr(x, &decl_type, ident_to_type, type_alias_m)?
                         .into_iter()
                         .map(|expr| tr(x, |_| expr))
                         .collect())
@@ -390,14 +478,17 @@ fn vague(ty: &Arc<l::Type>) -> Arc<VagueType> {
 
 fn typecheck_place(
     item: &l::Ref<l::Place>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::Place, CompileErrorSet> {
-    let place_eval = eval_place(item, ident_to_type)?;
+    let place_eval = eval_place(item, ident_to_type, type_alias_m)?;
     Ok(t::Place {
-        head: try_tr(&item.val.head, |x| typecheck_place_head(x, ident_to_type))?,
+        head: try_tr(&item.val.head, |x| typecheck_place_head(x, ident_to_type, type_alias_m))?,
         offset: match place_eval.offset {
             None => None,
-            Some(offset) => Some(try_tr(&offset, |x| typecheck_expr(x, ident_to_type))?),
+            Some(offset) => {
+                Some(try_tr(&offset, |x| typecheck_expr(x, ident_to_type, type_alias_m))?)
+            },
         },
     })
 }
@@ -438,9 +529,10 @@ impl EvalPlaceRes {
 
 fn eval_place(
     item: &l::Ref<l::Place>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<EvalPlaceRes, CompileErrorSet> {
-    let ty = eval_place_head(&item.val.head, ident_to_type)?;
+    let ty = eval_place_head(&item.val.head, ident_to_type, type_alias_m)?;
     let mut res = EvalPlaceRes { ty: ty.clone(), offset: None };
 
     for index in item.val.index_chain.val.iter() {
@@ -500,23 +592,25 @@ fn eval_place(
 
 fn typecheck_place_head(
     item: &l::Ref<l::PlaceHead>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::PlaceHead, CompileErrorSet> {
     Ok(match &item.val {
         l::PlaceHead::Ident(x) => t::PlaceHead::Ident(tr(x, typecheck_ident)),
         l::PlaceHead::Deref(x) => {
-            t::PlaceHead::Deref(try_tr(x, |x| typecheck_deref(x, ident_to_type))?)
+            t::PlaceHead::Deref(try_tr(x, |x| typecheck_deref(x, ident_to_type, type_alias_m))?)
         },
     })
 }
 
 fn eval_place_head(
     item: &l::Ref<l::PlaceHead>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
     match &item.val {
-        l::PlaceHead::Ident(ident) => eval_ident(ident, ident_to_type),
-        l::PlaceHead::Deref(deref) => eval_deref(deref, ident_to_type),
+        l::PlaceHead::Ident(ident) => eval_ident(ident, ident_to_type, type_alias_m),
+        l::PlaceHead::Deref(deref) => eval_deref(deref, ident_to_type, type_alias_m),
     }
 }
 
@@ -526,32 +620,39 @@ fn typecheck_ident(item: &l::Ref<l::Ident>) -> t::Ident {
 
 fn eval_ident(
     item: &l::Ref<l::Ident>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
     let name_str = &item.val.name.val.str;
-    ident_to_type
-        .get(name_str.as_ref())
-        .ok_or_else(|| {
-            CompileErrorSet::new_error(
+    let type_hint = match ident_to_type.get(name_str.as_ref()) {
+        Some(hint) => hint,
+        None => {
+            return Err(CompileErrorSet::new_error(
                 item.range,
                 CompileError::Type(TypeError::IdentNotFound { name: name_str.clone() }),
-            )
-        })
-        .cloned()
+            ));
+        },
+    };
+
+    type_alias_m.resolve(type_hint).map(Arc::new)
 }
 
 fn typecheck_deref(
     item: &l::Ref<l::Deref>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::Deref, CompileErrorSet> {
-    Ok(t::Deref { addr: try_tr(&item.val.addr, |x| typecheck_expr(x, ident_to_type))? })
+    Ok(t::Deref {
+        addr: try_tr(&item.val.addr, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+    })
 }
 
 fn eval_deref(
     item: &l::Ref<l::Deref>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
-    let addr_type = eval_expr(&item.val.addr, ident_to_type)?;
+    let addr_type = eval_expr(&item.val.addr, ident_to_type, type_alias_m)?;
     let l::Type::Ref(deref_type) = addr_type.as_ref() else {
         return Err(CompileErrorSet::new_error(
             item.range,
@@ -565,11 +666,12 @@ fn eval_deref(
 fn typecheck_copy(
     expr: &l::Ref<l::Expr>,
     size: u32,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<Vec<t::AssignExpr>, CompileErrorSet> {
     Ok(match &expr.val {
         l::Expr::Place(place) => {
-            let place = try_tr(place, |x| typecheck_place(x, ident_to_type))?;
+            let place = try_tr(place, |x| typecheck_place(x, ident_to_type, type_alias_m))?;
             (0..size)
                 .map(|offset| t::AssignExpr {
                     offset,
@@ -599,7 +701,7 @@ fn typecheck_copy(
                 .collect()
         },
         l::Expr::Cast { expr, .. } | l::Expr::Transmute { expr, .. } => {
-            typecheck_copy(expr, size, ident_to_type)?
+            typecheck_copy(expr, size, ident_to_type, type_alias_m)?
         },
         _ => {
             todo!() // cannot assign expr to non-size 1 type
@@ -610,15 +712,16 @@ fn typecheck_copy(
 fn typecheck_assign_expr(
     item: &l::Ref<l::AssignExpr>,
     expected_type: &Arc<l::Type>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<Vec<t::AssignExpr>, CompileErrorSet> {
     Ok(match &item.val {
         l::AssignExpr::Expr(x) => match expected_type.size() {
             1 => Vec::from([t::AssignExpr {
                 offset: 0,
-                expr: try_tr(x, |x| typecheck_expr(x, ident_to_type))?,
+                expr: try_tr(x, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
             }]),
-            size => typecheck_copy(x, size, ident_to_type)?,
+            size => typecheck_copy(x, size, ident_to_type, type_alias_m)?,
         },
         l::AssignExpr::Array(elements) => {
             let l::Type::Array { ty: expected_el_type, .. } = expected_type.as_ref() else {
@@ -630,7 +733,7 @@ fn typecheck_assign_expr(
             elements
                 .val
                 .iter()
-                .map(|el| typecheck_assign_expr(el, expected_el_type, ident_to_type))
+                .map(|el| typecheck_assign_expr(el, expected_el_type, ident_to_type, type_alias_m))
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
                 .enumerate()
@@ -663,6 +766,7 @@ fn typecheck_assign_expr(
                     &assign_field.val.assign,
                     &expected_field.ty,
                     ident_to_type,
+                    type_alias_m,
                 )?;
 
                 for field_assign_expr in field_assign_exprs {
@@ -683,10 +787,11 @@ fn typecheck_assign_expr(
 fn eval_assign_expr(
     item: &l::Ref<l::AssignExpr>,
     expected_type: &Arc<l::Type>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
     match &item.val {
-        l::AssignExpr::Expr(x) => eval_expr(x, ident_to_type),
+        l::AssignExpr::Expr(x) => eval_expr(x, ident_to_type, type_alias_m),
         l::AssignExpr::Array(elements) => {
             let len = elements.val.len() as u32;
 
@@ -704,7 +809,7 @@ fn eval_assign_expr(
             };
 
             for el in elements.val.iter() {
-                let el_type = eval_assign_expr(el, expected_el_type, ident_to_type)?;
+                let el_type = eval_assign_expr(el, expected_el_type, ident_to_type, type_alias_m)?;
                 if el_type.is_subtype_of(expected_el_type).not() {
                     return Err(CompileErrorSet::new_error(
                         el.range,
@@ -737,6 +842,7 @@ fn eval_assign_expr(
                             &assign_field.val.assign,
                             &expected_field.ty,
                             ident_to_type,
+                            type_alias_m,
                         )?;
 
                         if assign_field_ty.is_subtype_of(&expected_field.ty).not() {
@@ -756,7 +862,8 @@ fn eval_assign_expr(
 
 fn typecheck_expr(
     item: &l::Ref<l::Expr>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::Expr, CompileErrorSet> {
     Ok(match &item.val {
         l::Expr::Literal(x) => t::Expr::Literal(tr(x, |x| match &x.val {
@@ -766,17 +873,24 @@ fn typecheck_expr(
             l::Literal::Uint(x) => t::Literal::Uint(*x),
             l::Literal::Bool(x) => t::Literal::Bool(*x),
         })),
-        l::Expr::Place(x) => t::Expr::Place(try_tr(x, |x| typecheck_place(x, ident_to_type))?),
-        l::Expr::Ref(x) => t::Expr::Ref(try_tr(x, |x| typecheck_place(x, ident_to_type))?),
-        l::Expr::Paren(x) => t::Expr::Paren(try_tr(x, |x| typecheck_paren_expr(x, ident_to_type))?),
-        l::Expr::Cast { expr, .. } => typecheck_expr(expr, ident_to_type)?,
-        l::Expr::Transmute { expr, .. } => typecheck_expr(expr, ident_to_type)?,
+        l::Expr::Place(x) => {
+            t::Expr::Place(try_tr(x, |x| typecheck_place(x, ident_to_type, type_alias_m))?)
+        },
+        l::Expr::Ref(x) => {
+            t::Expr::Ref(try_tr(x, |x| typecheck_place(x, ident_to_type, type_alias_m))?)
+        },
+        l::Expr::Paren(x) => {
+            t::Expr::Paren(try_tr(x, |x| typecheck_paren_expr(x, ident_to_type, type_alias_m))?)
+        },
+        l::Expr::Cast { expr, .. } => typecheck_expr(expr, ident_to_type, type_alias_m)?,
+        l::Expr::Transmute { expr, .. } => typecheck_expr(expr, ident_to_type, type_alias_m)?,
     })
 }
 
 fn eval_expr(
     item: &l::Ref<l::Expr>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
     match &item.val {
         l::Expr::Literal(x) => Ok(match &x.val {
@@ -786,64 +900,68 @@ fn eval_expr(
             l::Literal::Uint(_) => UINT_TYPE.clone(),
             l::Literal::Bool(_) => BOOL_TYPE.clone(),
         }),
-        l::Expr::Place(x) => eval_place(x, ident_to_type).map(|res| res.ty),
+        l::Expr::Place(x) => eval_place(x, ident_to_type, type_alias_m).map(|res| res.ty),
         l::Expr::Ref(place) => {
-            let place_type = eval_place(place, ident_to_type)?;
+            let place_type = eval_place(place, ident_to_type, type_alias_m)?;
             Ok(Arc::new(l::Type::Ref(place_type.ty)))
         },
-        l::Expr::Paren(x) => eval_paren_expr(x, ident_to_type),
+        l::Expr::Paren(x) => eval_paren_expr(x, ident_to_type, type_alias_m),
         l::Expr::Cast { ty, expr } => {
-            let expr_ty = eval_expr(expr, ident_to_type)?;
-            if expr_ty.can_cast_to(ty).not() {
+            let cast_ty = Arc::new(type_alias_m.resolve(&ty)?);
+            let expr_ty = eval_expr(expr, ident_to_type, type_alias_m)?;
+            if expr_ty.can_cast_to(&cast_ty).not() {
                 return Err(CompileErrorSet::new_error(
                     item.range,
                     CompileError::Type(TypeError::InvalidCast {
                         from: vague(&expr_ty),
-                        to: vague(ty),
+                        to: vague(&cast_ty),
                     }),
                 ));
             }
 
-            Ok(ty.clone())
+            Ok(cast_ty.clone())
         },
         l::Expr::Transmute { ty, expr } => {
-            let expr_ty = eval_expr(expr, ident_to_type)?;
-            if ty.can_transmute_to(&expr_ty).not() {
+            let cast_ty = Arc::new(type_alias_m.resolve(&ty)?);
+            let expr_ty = eval_expr(expr, ident_to_type, type_alias_m)?;
+            if expr_ty.can_transmute_to(&cast_ty).not() {
                 return Err(CompileErrorSet::new_error(
                     item.range,
                     CompileError::Type(TypeError::InvalidTransmute {
                         from: vague(&expr_ty),
-                        to: vague(ty),
+                        to: vague(&cast_ty),
                     }),
                 ));
             }
 
-            Ok(ty.clone())
+            Ok(cast_ty.clone())
         },
     }
 }
 
 fn typecheck_paren_expr(
     item: &l::Ref<l::ParenExpr>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::ParenExpr, CompileErrorSet> {
     Ok(match &item.val {
-        l::ParenExpr::Unary(x) => {
-            t::ParenExpr::Unary(try_tr(x, |x| typecheck_unary_expr(x, ident_to_type))?)
-        },
-        l::ParenExpr::Binary(x) => {
-            t::ParenExpr::Binary(try_tr(x, |x| typecheck_binary_expr(x, ident_to_type))?)
-        },
+        l::ParenExpr::Unary(x) => t::ParenExpr::Unary(try_tr(x, |x| {
+            typecheck_unary_expr(x, ident_to_type, type_alias_m)
+        })?),
+        l::ParenExpr::Binary(x) => t::ParenExpr::Binary(try_tr(x, |x| {
+            typecheck_binary_expr(x, ident_to_type, type_alias_m)
+        })?),
     })
 }
 
 fn eval_paren_expr(
     item: &l::Ref<l::ParenExpr>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
     match &item.val {
-        l::ParenExpr::Unary(x) => eval_unary_expr(x, ident_to_type),
-        l::ParenExpr::Binary(x) => eval_binary_expr(x, ident_to_type),
+        l::ParenExpr::Unary(x) => eval_unary_expr(x, ident_to_type, type_alias_m),
+        l::ParenExpr::Binary(x) => eval_binary_expr(x, ident_to_type, type_alias_m),
     }
 }
 
@@ -859,20 +977,22 @@ macro_rules! typecheck_variants {
 
 fn typecheck_unary_expr(
     item: &l::Ref<l::UnaryParenExpr>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::UnaryParenExpr, CompileErrorSet> {
     Ok(t::UnaryParenExpr {
-        operand: try_tr(&item.val.operand, |x| typecheck_expr(x, ident_to_type))?,
+        operand: try_tr(&item.val.operand, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
         op: tr(&item.val.op, |x| typecheck_variants!(&x.val, UnaryParenExprOp => [Not])),
     })
 }
 
 fn eval_unary_expr(
     item: &l::Ref<l::UnaryParenExpr>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
     let operand = &item.val.operand;
-    let operand_type = eval_expr(operand, ident_to_type)?;
+    let operand_type = eval_expr(operand, ident_to_type, type_alias_m)?;
     match item.val.op.val {
         l::UnaryParenExprOp::Not => {
             if operand_type.is_subtype_of(&BOOL_TYPE).not() {
@@ -892,11 +1012,12 @@ fn eval_unary_expr(
 
 fn typecheck_binary_expr(
     item: &l::Ref<l::BinaryParenExpr>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<t::BinaryParenExpr, CompileErrorSet> {
     Ok(t::BinaryParenExpr {
-        left: try_tr(&item.val.left, |x| typecheck_expr(x, ident_to_type))?,
-        right: try_tr(&item.val.right, |x| typecheck_expr(x, ident_to_type))?,
+        left: try_tr(&item.val.left, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+        right: try_tr(&item.val.right, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
         op: tr(&item.val.op, |x| {
             typecheck_variants!(&x.val, BinaryParenExprOp => [
                 Add,
@@ -920,10 +1041,11 @@ fn typecheck_binary_expr(
 
 fn eval_binary_expr(
     item: &l::Ref<l::BinaryParenExpr>,
-    ident_to_type: &IdentToType,
+    ident_to_type: &IdentToTypeHint,
+    type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
-    let left_type = eval_expr(&item.val.left, ident_to_type)?;
-    let right_type = eval_expr(&item.val.right, ident_to_type)?;
+    let left_type = eval_expr(&item.val.left, ident_to_type, type_alias_m)?;
+    let right_type = eval_expr(&item.val.right, ident_to_type, type_alias_m)?;
 
     macro_rules! expect_types {
         (

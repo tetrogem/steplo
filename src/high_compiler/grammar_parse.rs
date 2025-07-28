@@ -1,22 +1,19 @@
 use std::sync::Arc;
 
 use crate::high_compiler::grammar_ast::{
-    Field, PlaceIndex, PlaceIndexLink, Struct, StructAssign, StructAssignField, StructType,
+    AddOp, AndOp, ArrayAssign, ArrayType, Assign, AssignExpr, BaseType, BinaryParenExpr,
+    BinaryParenExprOp, Body, BodyItem, BoolLiteral, CastExpr, CommaList, CommaListLink, Comment,
+    Decimal, Deref, Digits, DivOp, ElseBodyItem, ElseIfItem, ElseItem, Empty, EqOp, Expr,
+    FalseLiteral, Field, Func, FunctionCall, GtOp, GteOp, Ident, IdentDeclaration, IfItem, JoinOp,
+    List, ListLink, Literal, LtOp, LteOp, Main, Maybe, ModOp, MulOp, Name, Negative, NeqOp, NotOp,
+    NumLiteral, Offset, OrOp, ParenExpr, ParensNest, ParensWrapped, Place, PlaceHead, PlaceIndex,
+    PlaceIndexLink, Proc, Program, RefExpr, RefType, SemiList, SemiListLink, Statement, StrLiteral,
+    StructAssign, StructAssignField, StructType, SubOp, TopItem, TransmuteExpr, TrueLiteral, Type,
+    TypeAlias, UnaryParenExpr, UnaryParenExprOp, WhileItem,
 };
 
 use super::{
     compile_error::{CompileError, CompileErrorSet, GrammarError},
-    grammar_ast::{
-        AddOp, AndOp, ArrayAssign, ArrayType, Assign, AssignExpr, BaseType, BinaryParenExpr,
-        BinaryParenExprOp, Body, BodyItem, BoolLiteral, CastExpr, CommaList, CommaListLink,
-        Comment, Decimal, Deref, Digits, DivOp, ElseBodyItem, ElseIfItem, ElseItem, Empty, EqOp,
-        Expr, FalseLiteral, Func, FunctionCall, GtOp, GteOp, Ident, IdentDeclaration, IfItem,
-        JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, Maybe, ModOp, MulOp, Name, Negative,
-        NeqOp, NotOp, NumLiteral, Offset, OrOp, ParenExpr, ParensNest, ParensWrapped, Place,
-        PlaceHead, Proc, Program, RefExpr, RefType, SemiList, SemiListLink, Statement, StrLiteral,
-        SubOp, TopItem, TransmuteExpr, TrueLiteral, Type, UnaryParenExpr, UnaryParenExprOp,
-        WhileItem,
-    },
     srced::{SrcRange, Srced},
     token::{Token, TokenKind},
     token_feed::TokenFeed,
@@ -181,7 +178,7 @@ impl AstParse for TopItem {
             parse tokens => x {
                 Self::Main(Arc::new(x)),
                 Self::Func(Arc::new(x)),
-                Self::Struct(Arc::new(x)),
+                Self::TypeAlias(Arc::new(x)),
             } else {
                 "Expected top item"
             }
@@ -215,16 +212,16 @@ impl AstParse for Func {
     }
 }
 
-impl AstParse for Struct {
+impl AstParse for TypeAlias {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_struct! {
             parse tokens;
-            [match _ = Token::Struct => (); as [TokenKind::Struct]];
+            [match _ = Token::Type => (); as [TokenKind::Type]];
             [struct name];
-            [match _ = Token::LeftBrace => (); as [TokenKind::LeftBrace]];
-            [struct fields];
-            [match _ = Token::RightBrace => (); as [TokenKind::RightBrace]];
-            [return Self { name: Arc::new(name), fields: Arc::new(fields) }];
+            [match _ = Token::Eq => (); as [TokenKind::Eq]];
+            [struct ty];
+            [match _ = Token::Semi => (); as [TokenKind::Semi]];
+            [return Self { name: Arc::new(name), ty: Arc::new(ty) }];
         }
     }
 }

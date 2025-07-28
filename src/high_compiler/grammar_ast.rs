@@ -10,7 +10,7 @@ pub type Ref<T> = Arc<Srced<T>>;
 pub enum TopItem {
     Main(Ref<Main>),
     Func(Ref<Func>),
-    Struct(Ref<Struct>),
+    TypeAlias(Ref<TypeAlias>),
 }
 
 #[derive(Debug)]
@@ -26,9 +26,9 @@ pub struct Func {
 }
 
 #[derive(Debug)]
-pub struct Struct {
+pub struct TypeAlias {
     pub name: Ref<Name>,
-    pub fields: Ref<CommaList<IdentDeclaration>>,
+    pub ty: Ref<Type>,
 }
 
 #[derive(Debug)]

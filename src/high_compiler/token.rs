@@ -41,6 +41,7 @@ pub enum Token {
     False,
     Struct,
     Enum,
+    Type,
 }
 
 fn consume_char(
@@ -115,6 +116,7 @@ fn consume_word(
         "false" => Token::False,
         "struct" => Token::Struct,
         "enum" => Token::Enum,
+        "type" => Token::Type,
         _ => {
             if word.is_empty() {
                 bail!("Word is empty");
