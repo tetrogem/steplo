@@ -1,5 +1,5 @@
 main |arr: [val; 99], vec: [val; 3]| {
-    arr = [0, 10, "a", "-5", 283, 2, 6, 4, "what", "-1", 20, 7, 8, 2];
+    arr = [0, 10, "a", "-5", 283, 2, 6, 4, "what", "-1", 20, 7, 8, 2, 0...];
     Vec_new(&vec, &arr, 99, 14);
 
     out("Unsorted:");
@@ -57,12 +57,12 @@ func Vec_print(self_r: &[val; 3]) |i: val, len: val, val_r: &val, str: val| {
     while (i < len) {
         if (i != 0) {
             str = (str ~ ", ");
-        };
+        }
 
         Vec_entry(&val_r, self_r, i);
         str = (str ~ *val_r);
         i = (i + 1);
-    };
+    }
 
     out(str);
 }
@@ -81,13 +81,13 @@ func Vec_sort(self_r: &[val; 3]) |i: val, j: val, len: val, a_r: &val, b_r: &val
 
             if (b < a) {
                 swap(a_r, b_r);
-            };
+            }
 
             j = (j + 1);
-        };
+        }
 
         i = (i + 1);
-    };
+    }
 }
 
 func swap(a_r: &val, b_r: &val) |temp: val| {

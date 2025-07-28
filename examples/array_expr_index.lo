@@ -1,4 +1,4 @@
-main |arr: [vec; 5]| {
+main |arr: [val; 5]| {
     arr[0] = "Hello";
     out(arr[0]);
 

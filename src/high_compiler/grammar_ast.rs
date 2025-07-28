@@ -141,12 +141,12 @@ pub struct Proc {
 
 #[derive(Debug)]
 pub struct Body {
-    pub items: Ref<SemiList<BodyItem>>,
+    pub items: Ref<List<BodyItem>>,
 }
 
 #[derive(Debug)]
 pub enum BodyItem {
-    Statement(Ref<Statement>),
+    Statement(Ref<StatementItem>),
     If(Ref<IfItem>),
     While(Ref<WhileItem>),
 }
@@ -178,6 +178,11 @@ pub struct ElseIfItem {
 pub struct WhileItem {
     pub condition: Ref<Expr>,
     pub body: Ref<Body>,
+}
+
+#[derive(Debug)]
+pub struct StatementItem {
+    pub statement: Ref<Statement>,
 }
 
 #[derive(Debug)]

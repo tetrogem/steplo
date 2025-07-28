@@ -452,7 +452,7 @@ impl CollapsedCompileError {
                 },
                 CollapsedTypeError::BinaryOpOperandsMismatch { op, expected, found } => {
                     let fmt_binary_op_expr =
-                        |(left, right): &(_, _)| format!("{left:?} {op} {right:?}");
+                        |(left, right): &(_, _)| format!("`{left}` {op} `{right}`");
 
                     let expected = expected.iter().map(fmt_binary_op_expr).join(", ");
                     let found = fmt_binary_op_expr(found);

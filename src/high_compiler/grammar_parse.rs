@@ -7,9 +7,9 @@ use crate::high_compiler::grammar_ast::{
     FalseLiteral, Field, Func, FunctionCall, GtOp, GteOp, Ident, IdentDeclaration, IfItem, JoinOp,
     List, ListLink, Literal, LtOp, LteOp, Main, Maybe, ModOp, MulOp, Name, Negative, NeqOp, NotOp,
     NumLiteral, Offset, OrOp, ParenExpr, ParensNest, ParensWrapped, Place, PlaceHead, PlaceIndex,
-    PlaceIndexLink, Proc, Program, RefExpr, RefType, SemiList, SemiListLink, Statement, StrLiteral,
-    StructAssign, StructAssignField, StructType, SubOp, TopItem, TransmuteExpr, TrueLiteral, Type,
-    TypeAlias, UnaryParenExpr, UnaryParenExprOp, WhileItem,
+    PlaceIndexLink, Proc, Program, RefExpr, RefType, SemiList, SemiListLink, Statement,
+    StatementItem, StrLiteral, StructAssign, StructAssignField, StructType, SubOp, TopItem,
+    TransmuteExpr, TrueLiteral, Type, TypeAlias, UnaryParenExpr, UnaryParenExprOp, WhileItem,
 };
 
 use super::{
@@ -595,6 +595,17 @@ impl AstParse for WhileItem {
             [struct condition];
             [struct body];
             [return Self { condition: Arc::new(condition), body: Arc::new(body) }];
+        }
+    }
+}
+
+impl AstParse for StatementItem {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct statement];
+            [match _ = Token::Semi => (); as [TokenKind::Semi]];
+            [return Self { statement: Arc::new(statement) }];
         }
     }
 }

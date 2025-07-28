@@ -169,14 +169,11 @@
       ]
     },
     "casts": {
-      "begin": "(<)",
-      "beginCaptures": {
-        "1": { "name": "keyword.operator.steplo" }
-      },
-      "patterns": [{ "include": "#casts" }, { "include": "#types" }],
-      "end": "(>)",
-      "endCaptures": {
-        "1": { "name": "keyword.operator.steplo" }
+      "match": "(<)([_a-zA-Z0-9&\\[\\];{}:&\\s]*)(>)",
+      "captures": {
+        "1": { "name": "keyword.operator.steplo" },
+        "2": { "patterns": [{ "include": "#casts" }, { "include": "#types" }] },
+        "3": { "name": "keyword.operator.steplo" }
       }
     },
     "variables": {
@@ -191,8 +188,10 @@
       },
       "patterns": [
         { "include": "#typeHints" },
+        { "include": "#casts" },
         { "include": "#variables" },
         { "include": "#punctuation" },
+        { "include": "#operators" },
         { "include": "#numbers" },
         { "include": "#strings" },
         { "include": "#booleans" }

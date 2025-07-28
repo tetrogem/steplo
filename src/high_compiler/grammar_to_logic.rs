@@ -220,7 +220,7 @@ impl From<&g::Ref<g::BaseType>> for l::TypeHint {
             "int" => Self::Primitive(l::PrimitiveType::Int),
             "uint" => Self::Primitive(l::PrimitiveType::Uint),
             "bool" => Self::Primitive(l::PrimitiveType::Bool),
-            _ => Self::Alias(convert(&name)),
+            _ => Self::Alias(convert(name)),
         }
     }
 }
@@ -253,6 +253,14 @@ impl TryFrom<&g::Ref<g::BodyItem>> for l::BodyItem {
             g::BodyItem::If(x) => Self::If(try_convert(x)?),
             g::BodyItem::While(x) => Self::While(try_convert(x)?),
         })
+    }
+}
+
+impl TryFrom<&g::Ref<g::StatementItem>> for l::Statement {
+    type Error = CompileErrorSet;
+
+    fn try_from(value: &g::Ref<g::StatementItem>) -> Result<Self, Self::Error> {
+        (&value.val.statement).try_into()
     }
 }
 
