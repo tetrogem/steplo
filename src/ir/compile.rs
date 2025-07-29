@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use serde_json::{json, Map as JsMap, Value as JsVal};
+use serde_json::{Map as JsMap, Value as JsVal, json};
 use uuid::Uuid;
 
 use super::{
@@ -20,7 +20,7 @@ impl Program {
             "meta": {
                 "semver": "3.0.0",
                 "vm": "2.3.4",
-                "agent": "Steplo-indev" // TODO: put version number of language back here in the future
+                "agent": "Steplo-v0.0.1" // TODO: Update version number each release
             }
         })
     }

@@ -74,7 +74,10 @@ impl TypeAliasManager {
             l::TypeHint::Alias(name) => match self.alias_to_type_hint.get(&name.val.str) {
                 Some(hint) => self.resolve(hint)?,
                 None => {
-                    todo!() // alias does not exist
+                    return Err(CompileErrorSet::new_error(
+                        name.range,
+                        CompileError::Type(TypeError::UnknownAlias { name: name.val.str.clone() }),
+                    ));
                 },
             },
             l::TypeHint::Any => l::Type::Any,
@@ -178,6 +181,7 @@ fn typecheck_main(
     })
 }
 
+#[expect(unused)]
 fn tr_vec<L, T>(
     ts: &l::Ref<Vec<l::Ref<L>>>,
     typechecker: impl Fn(&l::Ref<L>) -> T,
@@ -541,7 +545,7 @@ fn eval_place(
                 let l::Type::Array { ty, .. } = res.ty.as_ref() else {
                     return Err(CompileErrorSet::new_error(
                         offset.range,
-                        CompileError::Type(TypeError::IndexNonArray { found: vague(&ty) }),
+                        CompileError::Type(TypeError::OffsetIndexNonArray { found: vague(&ty) }),
                     ));
                 };
 
@@ -559,7 +563,10 @@ fn eval_place(
             },
             l::PlaceIndex::Field(index_field) => {
                 let l::Type::Struct(struct_fields) = ty.as_ref() else {
-                    todo!() // cannot index field of non-struct
+                    return Err(CompileErrorSet::new_error(
+                        index_field.range,
+                        CompileError::Type(TypeError::FieldIndexNonStruct { found: vague(&ty) }),
+                    ));
                 };
 
                 let mut index_field_ty: Option<Arc<l::Type>> = None;
@@ -574,7 +581,13 @@ fn eval_place(
                 }
 
                 let Some(index_field_ty) = index_field_ty else {
-                    todo!(); // field is not in struct type
+                    return Err(CompileErrorSet::new_error(
+                        index_field.range,
+                        CompileError::Type(TypeError::IndexInvalidField {
+                            struct_type: vague(&ty),
+                            field_name: index_field.val.str.clone(),
+                        }),
+                    ));
                 };
 
                 let lr = LReffer { range: index.range };
@@ -665,14 +678,14 @@ fn eval_deref(
 
 fn typecheck_copy(
     expr: &l::Ref<l::Expr>,
-    size: u32,
+    expected_place_size: u32,
     ident_to_type: &IdentToTypeHint,
     type_alias_m: &TypeAliasManager,
 ) -> Result<Vec<t::AssignExpr>, CompileErrorSet> {
     Ok(match &expr.val {
         l::Expr::Place(place) => {
             let place = try_tr(place, |x| typecheck_place(x, ident_to_type, type_alias_m))?;
-            (0..size)
+            (0..expected_place_size)
                 .map(|offset| t::AssignExpr {
                     offset,
                     expr: tr(&place, |x| {
@@ -701,10 +714,15 @@ fn typecheck_copy(
                 .collect()
         },
         l::Expr::Cast { expr, .. } | l::Expr::Transmute { expr, .. } => {
-            typecheck_copy(expr, size, ident_to_type, type_alias_m)?
+            typecheck_copy(expr, expected_place_size, ident_to_type, type_alias_m)?
         },
         _ => {
-            todo!() // cannot assign expr to non-size 1 type
+            return Err(CompileErrorSet::new_error(
+                expr.range,
+                CompileError::Type(TypeError::AssignCellExprToCompoundPlace {
+                    place_size: expected_place_size,
+                }),
+            ));
         },
     })
 }
@@ -715,6 +733,8 @@ fn typecheck_assign_expr(
     ident_to_type: &IdentToTypeHint,
     type_alias_m: &TypeAliasManager,
 ) -> Result<Vec<t::AssignExpr>, CompileErrorSet> {
+    let assign_expr_ty = eval_assign_expr(item, expected_type, ident_to_type, type_alias_m)?;
+
     Ok(match &item.val {
         l::AssignExpr::Expr(x) => match expected_type.size() {
             1 => Vec::from([t::AssignExpr {
@@ -726,7 +746,13 @@ fn typecheck_assign_expr(
         l::AssignExpr::Array { single_exprs, spread_expr } => {
             let l::Type::Array { ty: expected_el_type, len: expected_len } = expected_type.as_ref()
             else {
-                todo!() // expected array type
+                return Err(CompileErrorSet::new_error(
+                    item.range,
+                    CompileError::Type(TypeError::Mismatch {
+                        expected: vague(expected_type),
+                        found: vague(&assign_expr_ty),
+                    }),
+                ));
             };
 
             let el_size = expected_el_type.size();
@@ -739,7 +765,13 @@ fn typecheck_assign_expr(
                     None => match spread_expr {
                         Some(x) => x,
                         None => {
-                            todo!(); // out of elements and no spread element
+                            return Err(CompileErrorSet::new_error(
+                                item.range,
+                                CompileError::Type(TypeError::Mismatch {
+                                    expected: vague(expected_type),
+                                    found: vague(&assign_expr_ty),
+                                }),
+                            ));
                         },
                     },
                 };
@@ -759,7 +791,13 @@ fn typecheck_assign_expr(
         },
         l::AssignExpr::Struct(assign_fields) => {
             let l::Type::Struct(expected_fields) = expected_type.as_ref() else {
-                todo!() // not expecting a struct
+                return Err(CompileErrorSet::new_error(
+                    item.range,
+                    CompileError::Type(TypeError::Mismatch {
+                        expected: vague(expected_type),
+                        found: vague(&assign_expr_ty),
+                    }),
+                ));
             };
 
             let mut struct_assign_exprs = Vec::new();
@@ -771,7 +809,13 @@ fn typecheck_assign_expr(
                     .iter()
                     .find(|assign_field| assign_field.val.name.val.str == expected_field.name)
                 else {
-                    todo!() // missing field
+                    return Err(CompileErrorSet::new_error(
+                        assign_fields.range,
+                        CompileError::Type(TypeError::StructLiteralMissingField {
+                            field_type: vague(&expected_field.ty),
+                            field_name: expected_field.name.clone(),
+                        }),
+                    ));
                 };
 
                 let field_assign_exprs = typecheck_assign_expr(
@@ -847,7 +891,13 @@ fn eval_assign_expr(
         },
         l::AssignExpr::Struct(assign_fields) => {
             let l::Type::Struct(expected_fields) = expected_type.as_ref() else {
-                todo!() // didn't expect struct type
+                return Err(CompileErrorSet::new_error(
+                    item.range,
+                    CompileError::Type(TypeError::Mismatch {
+                        expected: vague(expected_type),
+                        found: Arc::new(VagueType::Struct(None)),
+                    }),
+                ));
             };
 
             Ok(Arc::new(l::Type::Struct(Arc::new(
@@ -857,7 +907,13 @@ fn eval_assign_expr(
                         let Some(assign_field) = assign_fields.val.iter().find(|assign_field| {
                             expected_field.name == assign_field.val.name.val.str
                         }) else {
-                            todo!() // field doesn't exist on struct type
+                            return Err(CompileErrorSet::new_error(
+                                assign_fields.range,
+                                CompileError::Type(TypeError::StructLiteralMissingField {
+                                    field_type: vague(&expected_field.ty),
+                                    field_name: expected_field.name.clone(),
+                                }),
+                            ));
                         };
 
                         let assign_field_ty = eval_assign_expr(
@@ -868,7 +924,13 @@ fn eval_assign_expr(
                         )?;
 
                         if assign_field_ty.is_subtype_of(&expected_field.ty).not() {
-                            todo!() // wrong type for field
+                            return Err(CompileErrorSet::new_error(
+                                assign_field.val.assign.range,
+                                CompileError::Type(TypeError::Mismatch {
+                                    expected: vague(&expected_field.ty),
+                                    found: vague(&assign_field_ty),
+                                }),
+                            ));
                         }
 
                         Ok(Arc::new(l::FieldType {
@@ -929,7 +991,7 @@ fn eval_expr(
         },
         l::Expr::Paren(x) => eval_paren_expr(x, ident_to_type, type_alias_m),
         l::Expr::Cast { ty, expr } => {
-            let cast_ty = Arc::new(type_alias_m.resolve(&ty)?);
+            let cast_ty = Arc::new(type_alias_m.resolve(ty)?);
             let expr_ty = eval_expr(expr, ident_to_type, type_alias_m)?;
             if expr_ty.can_cast_to(&cast_ty).not() {
                 return Err(CompileErrorSet::new_error(
@@ -944,7 +1006,7 @@ fn eval_expr(
             Ok(cast_ty.clone())
         },
         l::Expr::Transmute { ty, expr } => {
-            let cast_ty = Arc::new(type_alias_m.resolve(&ty)?);
+            let cast_ty = Arc::new(type_alias_m.resolve(ty)?);
             let expr_ty = eval_expr(expr, ident_to_type, type_alias_m)?;
             if expr_ty.can_transmute_to(&cast_ty).not() {
                 return Err(CompileErrorSet::new_error(

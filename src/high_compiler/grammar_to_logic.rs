@@ -28,13 +28,6 @@ where
     from.try_into().map(|val| Arc::new(Srced { val, range: from.range }))
 }
 
-fn try_convert_type<From, To, Error>(from: &g::Ref<From>) -> Result<Arc<To>, Error>
-where
-    for<'a> &'a g::Ref<From>: TryInto<To, Error = Error>,
-{
-    from.try_into().map(Arc::new)
-}
-
 fn try_convert_list<List, From, To, Error>(
     list: &g::Ref<List>,
 ) -> Result<l::Ref<Vec<l::Ref<To>>>, Error>
@@ -305,7 +298,10 @@ impl TryFrom<&g::Ref<g::Assign>> for l::Assign {
     type Error = CompileErrorSet;
 
     fn try_from(value: &g::Ref<g::Assign>) -> Result<Self, Self::Error> {
-        Ok(Self { place: try_convert(&value.val.place)?, expr: try_convert(&value.val.expr)? })
+        Ok(Self {
+            place: try_convert(&value.val.place)?,
+            expr: try_convert(unnest(&value.val.expr))?,
+        })
     }
 }
 
@@ -378,7 +374,10 @@ impl TryFrom<&g::Ref<g::AssignExpr>> for l::AssignExpr {
                 let mut spread: Option<g::Ref<g::AssignExpr>> = None;
                 for assign_expr in assign_exprs {
                     if spread.is_some() {
-                        todo!() // error, element can't come after spread
+                        return Err(CompileErrorSet::new_error(
+                            assign_expr.range,
+                            CompileError::Convert(LogicError::ElementAfterSpread),
+                        ));
                     }
 
                     match &assign_expr.val {

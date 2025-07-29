@@ -56,30 +56,6 @@ pub enum TypeHint {
     Alias(Ref<Name>),
 }
 
-impl TypeHint {
-    pub fn as_type(&self) -> Option<Type> {
-        Some(match self {
-            Self::Alias(_) => return None,
-            Self::Any => Type::Any,
-            Self::Primitive(p) => Type::Primitive(*p),
-            Self::Ref(ty) => Type::Ref(Arc::new(ty.val.as_type()?)),
-            Self::Array { ty, len } => Type::Array { ty: Arc::new(ty.val.as_type()?), len: *len },
-            Self::Struct(fields) => Type::Struct(Arc::new(
-                fields
-                    .val
-                    .iter()
-                    .map(|field| {
-                        Some(Arc::new(FieldType {
-                            name: field.val.name.val.str.clone(),
-                            ty: Arc::new(field.val.ty.val.as_type()?),
-                        }))
-                    })
-                    .collect::<Option<Vec<_>>>()?,
-            )),
-        })
-    }
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum Type {
     Any,

@@ -200,7 +200,7 @@ pub struct FunctionCall {
 #[derive(Debug)]
 pub struct Assign {
     pub place: Ref<Place>,
-    pub expr: Ref<AssignExpr>,
+    pub expr: Ref<ParensNest<AssignExpr>>,
 }
 
 #[derive(Debug)]

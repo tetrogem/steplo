@@ -23,12 +23,6 @@ pub struct Func {
 }
 
 #[derive(Debug)]
-pub struct Struct {
-    pub name: Ref<Name>,
-    pub fields: Ref<Vec<Ref<IdentDeclaration>>>,
-}
-
-#[derive(Debug)]
 pub struct Name {
     pub str: Arc<str>,
 }

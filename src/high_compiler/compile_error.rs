@@ -32,8 +32,8 @@ pub(crate) enum GrammarError {
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum LogicError {
     InvalidArrayTypeLen,
-    InvalidType,
     InvalidNumLiteral,
+    ElementAfterSpread,
 }
 
 #[derive(Debug)]
@@ -50,7 +50,10 @@ pub(crate) enum TypeError {
         from: Arc<VagueType>,
         to: Arc<VagueType>,
     },
-    IndexNonArray {
+    OffsetIndexNonArray {
+        found: Arc<VagueType>,
+    },
+    FieldIndexNonStruct {
         found: Arc<VagueType>,
     },
     IdentNotFound {
@@ -72,6 +75,20 @@ pub(crate) enum TypeError {
         expected: Arc<[(Arc<VagueType>, Arc<VagueType>)]>,
         found: (Arc<VagueType>, Arc<VagueType>),
     },
+    UnknownAlias {
+        name: Arc<str>,
+    },
+    IndexInvalidField {
+        struct_type: Arc<VagueType>,
+        field_name: Arc<str>,
+    },
+    AssignCellExprToCompoundPlace {
+        place_size: u32,
+    },
+    StructLiteralMissingField {
+        field_type: Arc<VagueType>,
+        field_name: Arc<str>,
+    },
 }
 
 #[derive(Debug)]
@@ -81,7 +98,7 @@ pub enum VagueType {
     Primitive(PrimitiveType),
     Ref(Arc<VagueType>),
     Array { ty: Arc<VagueType>, len: Option<u32> },
-    Struct(Arc<Vec<Arc<VagueTypeField>>>),
+    Struct(Option<Arc<Vec<Arc<VagueTypeField>>>>),
 }
 
 #[derive(Debug)]
@@ -99,7 +116,7 @@ impl From<&Type> for VagueType {
             Type::Array { ty, len } => {
                 Self::Array { ty: Arc::new(ty.as_ref().into()), len: Some(*len) }
             },
-            Type::Struct(fields) => Self::Struct(Arc::new(
+            Type::Struct(fields) => Self::Struct(Some(Arc::new(
                 fields
                     .iter()
                     .map(|field| {
@@ -109,7 +126,7 @@ impl From<&Type> for VagueType {
                         })
                     })
                     .collect(),
-            )),
+            ))),
         }
     }
 }
@@ -140,8 +157,14 @@ impl Display for VagueType {
                 write!(f, "[{ty}; {len}]")
             },
             Self::Struct(fields) => {
-                let fields =
-                    fields.iter().map(|field| format!("{}: {}", field.name, field.ty)).join(", ");
+                let fields = match fields {
+                    None => "...",
+                    Some(fields) => &fields
+                        .iter()
+                        .map(|field| format!("{}: {}", field.name, field.ty))
+                        .join(", "),
+                };
+
                 write!(f, "{{ {fields} }}")
             },
         }
@@ -183,8 +206,8 @@ enum CollapsedGrammarError {
 #[allow(clippy::enum_variant_names)]
 enum CollapsedLogicError {
     InvalidArrayTypeLen,
-    InvalidType,
     InvalidNumLiteral,
+    ElementAfterSpread,
 }
 
 enum CollapsedTypeError {
@@ -200,7 +223,10 @@ enum CollapsedTypeError {
         from: Arc<VagueType>,
         to: Arc<VagueType>,
     },
-    IndexNonArray {
+    OffsetIndexNonArray {
+        found: Arc<VagueType>,
+    },
+    FieldIndexNonStruct {
         found: Arc<VagueType>,
     },
     IdentNotFound {
@@ -221,6 +247,20 @@ enum CollapsedTypeError {
         op: Arc<str>,
         expected: Arc<[(Arc<VagueType>, Arc<VagueType>)]>,
         found: (Arc<VagueType>, Arc<VagueType>),
+    },
+    UnknownAlias {
+        name: Arc<str>,
+    },
+    IndexInvalidField {
+        struct_type: Arc<VagueType>,
+        field_name: Arc<str>,
+    },
+    AssignCellExprToCompoundPlace {
+        place_size: u32,
+    },
+    StructLiteralMissingField {
+        field_name: Arc<str>,
+        field_type: Arc<VagueType>,
     },
 }
 
@@ -262,7 +302,6 @@ impl CollapsedLogicError {
             (Self::InvalidArrayTypeLen, LogicError::InvalidArrayTypeLen) => {
                 return Ok(());
             },
-            (Self::InvalidType, LogicError::InvalidType) => return Ok(()),
             (Self::InvalidNumLiteral, LogicError::InvalidNumLiteral) => return Ok(()),
             _ => {},
         }
@@ -420,8 +459,10 @@ impl CollapsedCompileError {
                 CollapsedLogicError::InvalidArrayTypeLen => {
                     "Array length should be a positive integer".into()
                 },
-                CollapsedLogicError::InvalidType => "This type does not exist".into(),
                 CollapsedLogicError::InvalidNumLiteral => "Invalid number literal".into(),
+                CollapsedLogicError::ElementAfterSpread => {
+                    "Additional array elements cannot come after spread element".into()
+                },
             },
             Self::Type(ty) => match ty {
                 CollapsedTypeError::Mismatch { expected, found } => {
@@ -433,8 +474,11 @@ impl CollapsedCompileError {
                 CollapsedTypeError::InvalidTransmute { from, to } => {
                     format!("Unable to transmute `{from}` to `{to}`")
                 },
-                CollapsedTypeError::IndexNonArray { found } => {
+                CollapsedTypeError::OffsetIndexNonArray { found } => {
                     format!("Unable to index a type that isn't an array; Found: `{found}`")
+                },
+                CollapsedTypeError::FieldIndexNonStruct { found } => {
+                    format!("Unable to get field of type that isn't a struct; Found: `{found}`")
                 },
                 CollapsedTypeError::IdentNotFound { name } => {
                     format!("Identifier `{name}` was not found in scope")
@@ -458,6 +502,18 @@ impl CollapsedCompileError {
                     let found = fmt_binary_op_expr(found);
 
                     format!("Expected one of: {expected}; Found {found}")
+                },
+                CollapsedTypeError::UnknownAlias { name } => {
+                    format!("Unable to find type alias `{name}`")
+                },
+                CollapsedTypeError::IndexInvalidField { struct_type, field_name } => {
+                    format!("Field `{field_name}` is not in type `{struct_type}`")
+                },
+                CollapsedTypeError::AssignCellExprToCompoundPlace { place_size } => {
+                    format!("Cannot assign cell expression to place with size {place_size}")
+                },
+                CollapsedTypeError::StructLiteralMissingField { field_name, field_type } => {
+                    format!("Struct literal is missing field `{field_name}: {field_type}`")
                 },
             },
         }
@@ -490,8 +546,8 @@ impl From<CompileError> for CollapsedCompileError {
             }),
             CompileError::Convert(convert) => Self::Logic(match convert {
                 LogicError::InvalidArrayTypeLen => CollapsedLogicError::InvalidArrayTypeLen,
-                LogicError::InvalidType => CollapsedLogicError::InvalidType,
                 LogicError::InvalidNumLiteral => CollapsedLogicError::InvalidNumLiteral,
+                LogicError::ElementAfterSpread => CollapsedLogicError::ElementAfterSpread,
             }),
             CompileError::Type(ty) => Self::Type(match ty {
                 TypeError::Mismatch { expected, found } => {
@@ -501,7 +557,12 @@ impl From<CompileError> for CollapsedCompileError {
                 TypeError::InvalidTransmute { from, to } => {
                     CollapsedTypeError::InvalidTransmute { from, to }
                 },
-                TypeError::IndexNonArray { found } => CollapsedTypeError::IndexNonArray { found },
+                TypeError::OffsetIndexNonArray { found } => {
+                    CollapsedTypeError::OffsetIndexNonArray { found }
+                },
+                TypeError::FieldIndexNonStruct { found } => {
+                    CollapsedTypeError::FieldIndexNonStruct { found }
+                },
                 TypeError::IdentNotFound { name } => CollapsedTypeError::IdentNotFound { name },
                 TypeError::DerefNonRef { found } => CollapsedTypeError::DerefNonRef { found },
                 TypeError::FuncNotFound { name } => CollapsedTypeError::FuncNotFound { name },
@@ -510,6 +571,16 @@ impl From<CompileError> for CollapsedCompileError {
                 },
                 TypeError::BinaryOpOperandsMismatch { op, expected, found } => {
                     CollapsedTypeError::BinaryOpOperandsMismatch { op, expected, found }
+                },
+                TypeError::UnknownAlias { name } => CollapsedTypeError::UnknownAlias { name },
+                TypeError::IndexInvalidField { struct_type, field_name } => {
+                    CollapsedTypeError::IndexInvalidField { struct_type, field_name }
+                },
+                TypeError::AssignCellExprToCompoundPlace { place_size } => {
+                    CollapsedTypeError::AssignCellExprToCompoundPlace { place_size }
+                },
+                TypeError::StructLiteralMissingField { field_name, field_type } => {
+                    CollapsedTypeError::StructLiteralMissingField { field_name, field_type }
                 },
             }),
         }
