@@ -13,4 +13,6 @@ main |foo: val, bar: [val; 5], ints: [int; 6]| {
     out(bar[4]);
 
     ints = [1, 2, 3, 4, 5, 6];
+
+    ints = [10, 20, 30, 0...];
 }

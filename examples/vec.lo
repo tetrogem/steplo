@@ -87,7 +87,7 @@ func Vec_insert(self: &Vec, val: any, index: uint)
         *next_entry = *entry;
 
         i = <uint>(i - 1);
-    };
+    }
 
     Vec_get_mut(&entry, self, index);
     *entry = val;
@@ -106,7 +106,7 @@ func Vec_remove(ret: &any, self: &Vec, index: uint)
         *entry = *next_entry;
 
         i = (i + 1);
-    };
+    }
 }
 
 func Vec_clear(self: &Vec) || {
@@ -122,10 +122,10 @@ func Vec_to_str(ret: &val, self: &Vec) |str: val, i: uint, val: val| {
         str = (str ~ val);
         if (i != ((*self).len - 1)) {
             str = (str ~ ", ");
-        };
+        }
 
         i = (i + 1);
-    };
+    }
 
     str = (str ~ "]");
     *ret = str;

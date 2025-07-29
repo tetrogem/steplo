@@ -723,27 +723,39 @@ fn typecheck_assign_expr(
             }]),
             size => typecheck_copy(x, size, ident_to_type, type_alias_m)?,
         },
-        l::AssignExpr::Array(elements) => {
-            let l::Type::Array { ty: expected_el_type, .. } = expected_type.as_ref() else {
+        l::AssignExpr::Array { single_exprs, spread_expr } => {
+            let l::Type::Array { ty: expected_el_type, len: expected_len } = expected_type.as_ref()
+            else {
                 todo!() // expected array type
             };
 
             let el_size = expected_el_type.size();
+            let mut single_expr_iter = single_exprs.val.iter();
+            let mut typechecked_assign_exprs = Vec::new();
 
-            elements
-                .val
-                .iter()
-                .map(|el| typecheck_assign_expr(el, expected_el_type, ident_to_type, type_alias_m))
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .enumerate()
-                .flat_map(|(i, els)| {
-                    els.into_iter().map(move |el| t::AssignExpr {
-                        offset: (i as u32) * el_size + el.offset,
-                        expr: el.expr,
-                    })
-                })
-                .collect()
+            for i in 0..(*expected_len) {
+                let el = match single_expr_iter.next() {
+                    Some(x) => x,
+                    None => match spread_expr {
+                        Some(x) => x,
+                        None => {
+                            todo!(); // out of elements and no spread element
+                        },
+                    },
+                };
+
+                let exprs =
+                    typecheck_assign_expr(el, expected_el_type, ident_to_type, type_alias_m)?;
+
+                let el_assign_exprs = exprs.iter().map(|el| t::AssignExpr {
+                    offset: i * el_size + el.offset,
+                    expr: el.expr.clone(),
+                });
+
+                typechecked_assign_exprs.extend(el_assign_exprs);
+            }
+
+            typechecked_assign_exprs
         },
         l::AssignExpr::Struct(assign_fields) => {
             let l::Type::Struct(expected_fields) = expected_type.as_ref() else {
@@ -792,23 +804,26 @@ fn eval_assign_expr(
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
     match &item.val {
         l::AssignExpr::Expr(x) => eval_expr(x, ident_to_type, type_alias_m),
-        l::AssignExpr::Array(elements) => {
-            let len = elements.val.len() as u32;
+        l::AssignExpr::Array { single_exprs, spread_expr } => {
+            let l::Type::Array { ty: expected_el_type, len: expected_len } = expected_type.as_ref()
+            else {
+                let len = match spread_expr {
+                    None => Some(single_exprs.val.len() as u32),
+                    Some(_) => None,
+                };
 
-            let l::Type::Array { ty: expected_el_type, .. } = expected_type.as_ref() else {
                 return Err(CompileErrorSet::new_error(
                     item.range,
                     CompileError::Type(TypeError::Mismatch {
                         expected: vague(expected_type),
-                        found: Arc::new(VagueType::Array {
-                            ty: Arc::new(VagueType::Unknown),
-                            len: Some(len),
-                        }),
+                        found: Arc::new(VagueType::Array { ty: Arc::new(VagueType::Unknown), len }),
                     }),
                 ));
             };
 
-            for el in elements.val.iter() {
+            let elements = single_exprs.val.iter().chain(spread_expr.as_ref());
+
+            for el in elements {
                 let el_type = eval_assign_expr(el, expected_el_type, ident_to_type, type_alias_m)?;
                 if el_type.is_subtype_of(expected_el_type).not() {
                     return Err(CompileErrorSet::new_error(
@@ -820,6 +835,13 @@ fn eval_assign_expr(
                     ));
                 }
             }
+
+            let min_len = single_exprs.val.len() as u32;
+
+            let len = match spread_expr {
+                None => min_len,
+                Some(_) => min_len.max(*expected_len),
+            };
 
             Ok(Arc::new(l::Type::Array { ty: expected_el_type.clone(), len }))
         },

@@ -323,7 +323,7 @@ pub struct Assign {
 #[derive(Debug)]
 pub enum AssignExpr {
     Expr(Ref<Expr>),
-    Array(Ref<Vec<Ref<AssignExpr>>>),
+    Array { single_exprs: Ref<Vec<Ref<AssignExpr>>>, spread_expr: Option<Ref<AssignExpr>> },
     Struct(Ref<Vec<Ref<StructAssignField>>>),
 }
 

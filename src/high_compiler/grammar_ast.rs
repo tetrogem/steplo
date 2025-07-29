@@ -284,7 +284,18 @@ pub enum Literal {
 
 #[derive(Debug)]
 pub struct ArrayAssign {
-    pub elements: Ref<CommaList<AssignExpr>>,
+    pub elements: Ref<CommaList<ArrayAssignExpr>>,
+}
+
+#[derive(Debug)]
+pub enum ArrayAssignExpr {
+    Single(Ref<AssignExpr>),
+    Spread(Ref<SpreadAssignExpr>),
+}
+
+#[derive(Debug)]
+pub struct SpreadAssignExpr {
+    pub expr: Ref<AssignExpr>,
 }
 
 #[derive(Debug)]

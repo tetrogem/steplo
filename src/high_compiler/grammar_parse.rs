@@ -1,15 +1,16 @@
 use std::sync::Arc;
 
 use crate::high_compiler::grammar_ast::{
-    AddOp, AndOp, ArrayAssign, ArrayType, Assign, AssignExpr, BaseType, BinaryParenExpr,
-    BinaryParenExprOp, Body, BodyItem, BoolLiteral, CastExpr, CommaList, CommaListLink, Comment,
-    Decimal, Deref, Digits, DivOp, ElseBodyItem, ElseIfItem, ElseItem, Empty, EqOp, Expr,
-    FalseLiteral, Field, Func, FunctionCall, GtOp, GteOp, Ident, IdentDeclaration, IfItem, JoinOp,
-    List, ListLink, Literal, LtOp, LteOp, Main, Maybe, ModOp, MulOp, Name, Negative, NeqOp, NotOp,
-    NumLiteral, Offset, OrOp, ParenExpr, ParensNest, ParensWrapped, Place, PlaceHead, PlaceIndex,
-    PlaceIndexLink, Proc, Program, RefExpr, RefType, SemiList, SemiListLink, Statement,
-    StatementItem, StrLiteral, StructAssign, StructAssignField, StructType, SubOp, TopItem,
-    TransmuteExpr, TrueLiteral, Type, TypeAlias, UnaryParenExpr, UnaryParenExprOp, WhileItem,
+    AddOp, AndOp, ArrayAssign, ArrayAssignExpr, ArrayType, Assign, AssignExpr, BaseType,
+    BinaryParenExpr, BinaryParenExprOp, Body, BodyItem, BoolLiteral, CastExpr, CommaList,
+    CommaListLink, Comment, Decimal, Deref, Digits, DivOp, ElseBodyItem, ElseIfItem, ElseItem,
+    Empty, EqOp, Expr, FalseLiteral, Field, Func, FunctionCall, GtOp, GteOp, Ident,
+    IdentDeclaration, IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, Maybe, ModOp,
+    MulOp, Name, Negative, NeqOp, NotOp, NumLiteral, Offset, OrOp, ParenExpr, ParensNest,
+    ParensWrapped, Place, PlaceHead, PlaceIndex, PlaceIndexLink, Proc, Program, RefExpr, RefType,
+    SemiList, SemiListLink, SpreadAssignExpr, Statement, StatementItem, StrLiteral, StructAssign,
+    StructAssignField, StructType, SubOp, TopItem, TransmuteExpr, TrueLiteral, Type, TypeAlias,
+    UnaryParenExpr, UnaryParenExprOp, WhileItem,
 };
 
 use super::{
@@ -800,6 +801,32 @@ impl AstParse for ArrayAssign {
             [struct elements];
             [match _ = Token::RightBracket => (); as [TokenKind::RightBracket]];
             [return Self { elements: Arc::new(elements) }];
+        }
+    }
+}
+
+impl AstParse for ArrayAssignExpr {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
+            parse tokens => x {
+                Self::Spread(Arc::new(x)),
+                Self::Single(Arc::new(x)),
+            } else {
+                "Expected array assign expr"
+            }
+        }
+    }
+}
+
+impl AstParse for SpreadAssignExpr {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct expr];
+            [match _ = Token::Period => (); as [TokenKind::Period, TokenKind::Period, TokenKind::Period]];
+            [match _ = Token::Period => (); as [TokenKind::Period, TokenKind::Period, TokenKind::Period]];
+            [match _ = Token::Period => (); as [TokenKind::Period, TokenKind::Period, TokenKind::Period]];
+            [return Self { expr: Arc::new(expr) }]
         }
     }
 }

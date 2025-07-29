@@ -370,8 +370,38 @@ impl TryFrom<&g::Ref<g::AssignExpr>> for l::AssignExpr {
     fn try_from(value: &g::Ref<g::AssignExpr>) -> Result<Self, Self::Error> {
         Ok(match &value.val {
             g::AssignExpr::Expr(expr) => Self::Expr(try_convert(expr)?),
-            g::AssignExpr::Array(array) => Self::Array(try_convert_list(&array.val.elements)?),
             g::AssignExpr::Struct(st) => Self::Struct(try_convert_list(&st.val.fields)?),
+            g::AssignExpr::Array(array) => {
+                let assign_exprs = VecDeque::from_list(&array.val.elements);
+
+                let mut singles = Vec::new();
+                let mut spread: Option<g::Ref<g::AssignExpr>> = None;
+                for assign_expr in assign_exprs {
+                    if spread.is_some() {
+                        todo!() // error, element can't come after spread
+                    }
+
+                    match &assign_expr.val {
+                        g::ArrayAssignExpr::Single(x) => singles.push(x.clone()),
+                        g::ArrayAssignExpr::Spread(x) => spread = Some(x.val.expr.clone()),
+                    }
+                }
+
+                let single_exprs =
+                    singles.into_iter().map(|x| try_convert(&x)).collect::<Result<Vec<_>, _>>()?;
+
+                let spread_expr = spread.map(|x| try_convert(&x)).transpose()?;
+
+                Self::Array {
+                    single_exprs: Arc::new(Srced {
+                        range: single_exprs
+                            .iter()
+                            .fold(Default::default(), |acc, x| acc.merge(x.range)),
+                        val: single_exprs,
+                    }),
+                    spread_expr,
+                }
+            },
         })
     }
 }
