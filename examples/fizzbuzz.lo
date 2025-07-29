@@ -12,10 +12,10 @@ main |i: uint, nums: val| {
             out("Buzz");
         } else {
             out(i);
-        };
+        }
 
         i = (i + 1);
-    };
+    }
 
     out("Done!");
 }

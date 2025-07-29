@@ -7,7 +7,7 @@ main |i: uint, iters: uint, result: val| {
         fizzbuzz(&result, i);
         out(result);
         i = (i + 1);
-    };
+    }
 
     out("Done!");
 }
@@ -21,5 +21,5 @@ func fizzbuzz(return: &val, num: uint) || {
         *return = "Buzz";
     } else {
         *return = num;
-    };
+    }
 }

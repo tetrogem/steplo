@@ -1,4 +1,4 @@
-main |arr: [val; 11], new_len: val| {
+main |arr: [num; 11], new_len: uint| {
     arr = [1, 1, 2, 3, 3, 4, 5, 6, 6, 6, 7];
     out("With duplicates:");
     print_arr(&arr, 11);
@@ -13,7 +13,7 @@ main |arr: [val; 11], new_len: val| {
     print_arr(&arr, new_len);
 }
 
-func delete_duplicates(ret_new_len: &val, arr: &[val; 11]) |last: val, i: val, new_len: val| {
+func delete_duplicates(ret_new_len: &uint, arr: &[num; 11]) |last: num, i: uint, new_len: uint| {
     i = 0;
     new_len = 11;
     last = 0;
@@ -23,41 +23,41 @@ func delete_duplicates(ret_new_len: &val, arr: &[val; 11]) |last: val, i: val, n
         if ((i > 0) && ((*arr)[i] == last)) {
             // out(("Dupe " ~ last));
             delete_index(arr, i);
-            i = (i - 1);
-            new_len = (new_len - 1);
+            i = <uint>(i - 1);
+            new_len = <uint>(new_len - 1);
         } else {
             last = (*arr)[i];
             // out(("Not dupe " ~ last));
-        };
+        }
 
         i = (i + 1);
-    };
+    }
 
     *ret_new_len = new_len;
 }
 
-func delete_index(arr: &[val; 11], index: val) |i: val| {
+func delete_index(arr: &[num; 11], index: uint) |i: uint| {
     i = 0;
     while (i < 11) {
         if (i > index) {
             (*arr)[(i - 1)] = (*arr)[i];
-        };
+        }
 
         i = (i + 1);
     }
 }
 
-func print_arr(arr: &[val; 11], len: val) |i: val, str: val| {
+func print_arr(arr: &[num; 11], len: uint) |i: uint, str: val| {
     str = "[";
     i = 0;
     while (i < len) {
         str = (str ~ (*arr)[i]);
         if (i != (len - 1)) {
             str = (str ~ ", ");
-        };
+        }
 
         i = (i + 1);
-    };
+    }
 
     str = (str ~ "]");
     out(str);

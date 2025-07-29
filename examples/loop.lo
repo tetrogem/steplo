@@ -1,13 +1,13 @@
-main |i: val| {
+main |i: uint| {
     i = 20;
     iterate(&i);
 }
 
-func iterate(i_r: &val) |i: val| {
+func iterate(i_r: &uint) |i: uint| {
     i = *i_r;
 
     if (0 != i) {
-        *i_r = (i - 1);
+        *i_r = <uint>(i - 1);
         greet();
         iterate(i_r);
     }

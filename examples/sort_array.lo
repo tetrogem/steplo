@@ -1,93 +1,129 @@
-main |arr: [val; 99], vec: [val; 3]| {
-    arr = [0, 10, "a", "-5", 283, 2, 6, 4, "what", "-1", 20, 7, 8, 2];
-    Vec_new(&vec, &arr, 99, 14);
+main |arr: [val; 99], vec: Vec, str: val| {
+    arr = [0, 10, "a", "-5", 283, 2, 6, 4, "what", "-1", 20, 7, 8, 2, 0...];
+    Vec_new(&vec, <<&any>>&arr, 99, 14);
 
     out("Unsorted:");
-    Vec_print(&vec);
+    Vec_to_str(&str, &vec);
+    out(str);
 
     out("Sorted:");
     Vec_sort(&vec);
-    Vec_print(&vec);
+    Vec_to_str(&str, &vec);
+    out(str);
 
     out("Pushing `12.5` then sorting again:");
     Vec_push(&vec, "12.5");
     Vec_sort(&vec);
-    Vec_print(&vec);
-}
-
-func Vec_new(ret_r: &[val; 3], arr_r: &[val; 99], cap: val, len: val) || {
-    *ret_r = [arr_r, cap, len];
-}
-
-func Vec_entry(ret_r: &&val, self_r: &[val; 3], i: val) || {
-    *ret_r = &((*(*self_r)[0])[i]);
-}
-
-func Vec_cap(ret_r: &val, self_r: &[val; 3]) || {
-    *ret_r = (*self_r)[1];
-}
-
-func Vec_len_r(ret_r: &&val, self_r: &[val; 3]) || {
-    *ret_r = &((*self_r)[2]);
-}
-
-func Vec_len(ret_r: &val, self_r: &[val; 3]) |len_r: &val| {
-    Vec_len_r(&len_r, self_r);
-    *ret_r = *len_r;
-}
-
-func Vec_push(self_r: &[val; 3], val: val) |cap: val, len: val, entry_r: &val, len_r: &val| {
-    Vec_cap(&cap, self_r);
-    Vec_len(&len, self_r);
-    if (len < cap) {
-        Vec_entry(&entry_r, self_r, len);
-        *entry_r = val;
-        Vec_len_r(&len_r, self_r);
-        *len_r = (len + 1);
-    }
-}
-
-func Vec_print(self_r: &[val; 3]) |i: val, len: val, val_r: &val, str: val| {
-    i = 0;
-    str = "Vec (";
-    Vec_len(&len, self_r);
-    str = (str ~ len);
-    str = (str ~ ") ");
-
-    while (i < len) {
-        if (i != 0) {
-            str = (str ~ ", ");
-        };
-
-        Vec_entry(&val_r, self_r, i);
-        str = (str ~ *val_r);
-        i = (i + 1);
-    };
-
+    Vec_to_str(&str, &vec);
     out(str);
 }
 
-func Vec_sort(self_r: &[val; 3]) |i: val, j: val, len: val, a_r: &val, b_r: &val, a: val, b: val| {
-    i = 0;
-    Vec_len(&len, self_r);
+type Vec = {
+    arr: &any,
+    cap: uint,
+    len: uint,
+};
 
-    while (i < len) {
+func Vec_new(ret: &Vec, arr: &any, cap: uint, len: uint) || {
+    *ret = { arr: arr, cap: cap, len: len };
+}
+
+func Vec_get_mut(ret: &&any, self: &Vec, i: uint) |arr: &any| {
+    *ret = <<&any>>(<uint>(*self).arr + i);
+}
+
+func Vec_get(ret: &any, self: &Vec, i: uint) |entry: &any| {
+    Vec_get_mut(&entry, self, i);
+    *ret = *entry;
+}
+
+func Vec_push(self: &Vec, val: any) |entry: &any| {
+    Vec_get_mut(&entry, self, (*self).len);
+    *entry = val;
+    (*self).len = ((*self).len + 1);
+}
+
+func Vec_pop(ret: &any, self: &Vec) |val: any| {
+    Vec_get(&val, self, <uint>((*self).len - 1));
+    *ret = val;
+    (*self).len = <uint>((*self).len - 1);
+}
+
+func Vec_insert(self: &Vec, val: any, index: uint)
+    |i: uint, len: uint, entry: &any, next_entry: &any|
+{
+    i = (*self).len;
+    Vec_push(self, 0);
+
+    while (i >= index) {
+        Vec_get_mut(&entry, self, i);
+        Vec_get_mut(&next_entry, self, (i + 1));
+        *next_entry = *entry;
+
+        i = <uint>(i - 1);
+    }
+
+    Vec_get_mut(&entry, self, index);
+    *entry = val;
+}
+
+func Vec_remove(ret: &any, self: &Vec, index: uint)
+    |i: uint, entry: &any, next_entry: &any, len: &uint|
+{
+    Vec_get(ret, self, index);
+    i = index;
+    (*self).len = <uint>((*self).len - 1);
+
+    while (i < (*self).len) {
+        Vec_get_mut(&entry, self, i);
+        Vec_get_mut(&next_entry, self, (i + 1));
+        *entry = *next_entry;
+
+        i = (i + 1);
+    }
+}
+
+func Vec_clear(self: &Vec) || {
+    (*self).len = 0;
+}
+
+func Vec_to_str(ret: &val, self: &Vec) |str: val, i: uint, val: val| {
+    str = "[";
+    i = 0;
+
+    while (i < (*self).len) {
+        Vec_get(<<&any>>&val, self, i);
+        str = (str ~ val);
+        if (i != ((*self).len - 1)) {
+            str = (str ~ ", ");
+        }
+
+        i = (i + 1);
+    }
+
+    str = (str ~ "]");
+    *ret = str;
+}
+
+func Vec_sort(self: &Vec) |i: uint, j: uint, a_r: &val, b_r: &val, a: val, b: val| {
+    i = 0;
+    while (i < (*self).len) {
         j = i;
-        while (j < len) {
-            Vec_entry(&a_r, self_r, i);
-            Vec_entry(&b_r, self_r, j);
+        while (j < (*self).len) {
+            Vec_get_mut(<<&&any>>&a_r, self, i);
+            Vec_get_mut(<<&&any>>&b_r, self, j);
             a = *a_r;
             b = *b_r;
 
             if (b < a) {
                 swap(a_r, b_r);
-            };
+            }
 
             j = (j + 1);
-        };
+        }
 
         i = (i + 1);
-    };
+    }
 }
 
 func swap(a_r: &val, b_r: &val) |temp: val| {

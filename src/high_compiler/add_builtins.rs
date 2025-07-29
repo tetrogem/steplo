@@ -14,19 +14,22 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         Arc::new(Srced { val: t, range: *SRC_RANGE })
     }
 
-    fn decl(name: &str, ty: l::Type) -> l::Ref<l::IdentDeclaration> {
-        rf(l::IdentDeclaration { name: rf(l::Name { str: name.into() }), ty: Arc::new(ty) })
+    fn decl(name: &str, ty: l::TypeHint) -> l::Ref<l::IdentDeclaration> {
+        rf(l::IdentDeclaration { name: rf(l::Name { str: name.into() }), ty: rf(ty) })
     }
 
     fn ident(ident_name: &str) -> l::Ref<l::Place> {
         rf(l::Place {
             head: rf(l::PlaceHead::Ident(rf(l::Ident { name: name(ident_name) }))),
-            offset: None,
+            index_chain: rf(Vec::new()),
         })
     }
 
     fn deref(addr: l::Ref<l::Expr>) -> l::Ref<l::Place> {
-        rf(l::Place { head: rf(l::PlaceHead::Deref(rf(l::Deref { addr }))), offset: None })
+        rf(l::Place {
+            head: rf(l::PlaceHead::Deref(rf(l::Deref { addr }))),
+            index_chain: rf(Vec::new()),
+        })
     }
 
     fn name(name: &str) -> l::Ref<l::Name> {
@@ -42,21 +45,21 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
     }
 
     fn func(func: l::Func) -> l::Ref<l::TopItem> {
-        rf(l::TopItem::Func(rf(func)))
+        rf(l::TopItem::Exe(rf(l::ExeItem::Func(rf(func)))))
     }
 
-    fn ref_ty(ty: l::Type) -> l::Type {
-        l::Type::Ref(Arc::new(ty))
+    fn ref_ty(ty: l::TypeHint) -> l::TypeHint {
+        l::TypeHint::Ref(rf(ty))
     }
 
     // add built-in native functions
     top_items.push(func(l::Func {
         name: name("out"),
-        params: rf(Vec::from([decl("val", l::Type::Any)])),
+        params: rf(Vec::from([decl("val", l::TypeHint::Any)])),
         proc: rf(l::Proc {
             idents: rf(Vec::from([])),
             body: body([stmt(l::Statement::Native(rf(l::NativeOperation::Out {
-                ident: ident("val"),
+                place: ident("val"),
             })))]),
         }),
     }));
@@ -65,13 +68,13 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         name: name("in"),
         params: rf(Vec::from([decl(
             "dest_ref",
-            ref_ty(l::Type::Primitive(l::PrimitiveType::Val)),
+            ref_ty(l::TypeHint::Primitive(l::PrimitiveType::Val)),
         )])),
         proc: rf(l::Proc {
-            idents: rf(Vec::from([decl("answer", l::Type::Primitive(l::PrimitiveType::Val))])),
+            idents: rf(Vec::from([decl("answer", l::TypeHint::Primitive(l::PrimitiveType::Val))])),
             body: body([
                 stmt(l::Statement::Native(rf(l::NativeOperation::In {
-                    dest_ident: ident("answer"),
+                    dest_place: ident("answer"),
                 }))),
                 stmt(l::Statement::Assign(rf(l::Assign {
                     place: deref(rf(l::Expr::Place(ident("dest_ref")))),
@@ -84,15 +87,18 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
     top_items.push(func(l::Func {
         name: name("random_num"),
         params: rf(Vec::from([
-            decl("dest_ref", ref_ty(l::Type::Primitive(l::PrimitiveType::Num))),
-            decl("min", l::Type::Primitive(l::PrimitiveType::Num)),
-            decl("max", l::Type::Primitive(l::PrimitiveType::Num)),
+            decl("dest_ref", ref_ty(l::TypeHint::Primitive(l::PrimitiveType::Num))),
+            decl("min", l::TypeHint::Primitive(l::PrimitiveType::Num)),
+            decl("max", l::TypeHint::Primitive(l::PrimitiveType::Num)),
         ])),
         proc: rf(l::Proc {
-            idents: rf(Vec::from([decl("generated", l::Type::Primitive(l::PrimitiveType::Num))])),
+            idents: rf(Vec::from([decl(
+                "generated",
+                l::TypeHint::Primitive(l::PrimitiveType::Num),
+            )])),
             body: body([
                 stmt(l::Statement::Native(rf(l::NativeOperation::Random {
-                    dest_ident: ident("generated"),
+                    dest_place: ident("generated"),
                     min: rf(l::Expr::Literal(rf(l::Literal::Num(0.)))),
                     max: rf(l::Expr::Literal(rf(l::Literal::Num(1.)))),
                 }))),
@@ -125,15 +131,18 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
     top_items.push(func(l::Func {
         name: name("random_int"),
         params: rf(Vec::from([
-            decl("dest_ref", ref_ty(l::Type::Primitive(l::PrimitiveType::Int))),
-            decl("min", l::Type::Primitive(l::PrimitiveType::Int)),
-            decl("max", l::Type::Primitive(l::PrimitiveType::Int)),
+            decl("dest_ref", ref_ty(l::TypeHint::Primitive(l::PrimitiveType::Int))),
+            decl("min", l::TypeHint::Primitive(l::PrimitiveType::Int)),
+            decl("max", l::TypeHint::Primitive(l::PrimitiveType::Int)),
         ])),
         proc: rf(l::Proc {
-            idents: rf(Vec::from([decl("generated", l::Type::Primitive(l::PrimitiveType::Int))])),
+            idents: rf(Vec::from([decl(
+                "generated",
+                l::TypeHint::Primitive(l::PrimitiveType::Int),
+            )])),
             body: body([
                 stmt(l::Statement::Native(rf(l::NativeOperation::Random {
-                    dest_ident: ident("generated"),
+                    dest_place: ident("generated"),
                     min: rf(l::Expr::Place(ident("min"))),
                     max: rf(l::Expr::Place(ident("max"))),
                 }))),
@@ -148,15 +157,18 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
     top_items.push(func(l::Func {
         name: name("random_uint"),
         params: rf(Vec::from([
-            decl("dest_ref", ref_ty(l::Type::Primitive(l::PrimitiveType::Uint))),
-            decl("min", l::Type::Primitive(l::PrimitiveType::Uint)),
-            decl("max", l::Type::Primitive(l::PrimitiveType::Uint)),
+            decl("dest_ref", ref_ty(l::TypeHint::Primitive(l::PrimitiveType::Uint))),
+            decl("min", l::TypeHint::Primitive(l::PrimitiveType::Uint)),
+            decl("max", l::TypeHint::Primitive(l::PrimitiveType::Uint)),
         ])),
         proc: rf(l::Proc {
-            idents: rf(Vec::from([decl("generated", l::Type::Primitive(l::PrimitiveType::Uint))])),
+            idents: rf(Vec::from([decl(
+                "generated",
+                l::TypeHint::Primitive(l::PrimitiveType::Uint),
+            )])),
             body: body([
                 stmt(l::Statement::Native(rf(l::NativeOperation::Random {
-                    dest_ident: ident("generated"),
+                    dest_place: ident("generated"),
                     min: rf(l::Expr::Place(ident("min"))),
                     max: rf(l::Expr::Place(ident("max"))),
                 }))),

@@ -1,15 +1,13 @@
-main |i: val, cond: val| {
+main |i: int| {
     out("Enter how many iterations to do:");
-    in(&i);
+    in(<<&val>>&i);
 
     out("Start!");
 
-    cond = "true";
-    while cond {
-        // out(i);
+    while (i > 0) {
+        out(i);
         i = (i - 1);
-        cond = (i != 0);
-    };
+    }
 
     out("End!");
 }

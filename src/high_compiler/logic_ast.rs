@@ -8,8 +8,25 @@ pub type Ref<T> = Arc<Srced<T>>;
 
 #[derive(Debug)]
 pub enum TopItem {
+    Exe(Ref<ExeItem>),
+    Type(Ref<TypeItem>),
+}
+
+#[derive(Debug)]
+pub enum ExeItem {
     Main(Ref<Main>),
     Func(Ref<Func>),
+}
+
+#[derive(Debug)]
+pub enum TypeItem {
+    Alias(Ref<TypeAlias>),
+}
+
+#[derive(Debug)]
+pub struct TypeAlias {
+    pub name: Ref<Name>,
+    pub ty: Ref<TypeHint>,
 }
 
 #[derive(Debug)]
@@ -29,12 +46,23 @@ pub struct Name {
     pub str: Arc<str>,
 }
 
+#[derive(Debug)]
+pub enum TypeHint {
+    Any,
+    Primitive(PrimitiveType),
+    Ref(Ref<TypeHint>),
+    Array { ty: Ref<TypeHint>, len: u32 },
+    Struct(Ref<Vec<Ref<FieldTypeHint>>>),
+    Alias(Ref<Name>),
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Type {
     Any,
     Primitive(PrimitiveType),
     Ref(Arc<Type>),
     Array { ty: Arc<Type>, len: u32 },
+    Struct(Arc<Vec<Arc<FieldType>>>),
 }
 
 impl Type {
@@ -44,6 +72,7 @@ impl Type {
             Self::Primitive(_) => 1,
             Self::Ref(_) => 1,
             Self::Array { ty, len } => ty.size() * len,
+            Self::Struct(fields) => fields.iter().map(|field| field.ty.size()).sum(),
         }
     }
 
@@ -65,9 +94,23 @@ impl Type {
             (Self::Any, Self::Any) => true,
             (Self::Ref(a), Self::Ref(b)) => a.is_isomorphic_with(b),
             (Self::Array { ty: a, len: a_len }, Self::Array { ty: b, len: b_len }) => {
-                a_len == b_len && a.is_isomorphic_with(b)
+                a_len == b_len && a.is_subtype_of(b)
             },
             (Self::Primitive(a), Self::Primitive(b)) => a.is_subtype_of(*b),
+            (Self::Struct(a), Self::Struct(b)) => {
+                for eob in a.iter().zip_longest(b.iter()) {
+                    if let EitherOrBoth::Both(a, b) = eob
+                        && a.name == b.name
+                        && a.ty.is_subtype_of(&b.ty)
+                    {
+                        continue;
+                    }
+
+                    return false;
+                }
+
+                true
+            },
             _ => false,
         }
     }
@@ -78,6 +121,7 @@ impl Type {
             Self::Primitive(x) => Vec::from([CellType::Primitive(*x)]),
             Self::Ref(_) => Vec::from([CellType::Primitive(PrimitiveType::Uint)]),
             Self::Array { ty, len } => (0..*len).flat_map(|_| ty.cells_repr()).collect(),
+            Self::Struct(fields) => fields.iter().flat_map(|field| field.ty.cells_repr()).collect(),
         }
     }
 
@@ -87,6 +131,7 @@ impl Type {
             Self::Primitive(_) => false,
             Self::Ref(_) => true,
             Self::Array { ty, .. } => ty.contains_ref(),
+            Self::Struct(fields) => fields.iter().any(|field| field.ty.contains_ref()),
         }
     }
 
@@ -164,27 +209,40 @@ impl PrimitiveType {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct FieldType {
+    pub name: Arc<str>,
+    pub ty: Arc<Type>,
+}
+
+#[derive(Debug)]
+pub struct FieldTypeHint {
+    pub name: Ref<Name>,
+    pub ty: Ref<TypeHint>,
+}
+
 #[derive(Debug)]
 pub struct IdentDeclaration {
     pub name: Ref<Name>,
-    pub ty: Arc<Type>,
+    pub ty: Ref<TypeHint>,
 }
 
 #[derive(Debug)]
 pub struct Place {
     pub head: Ref<PlaceHead>,
-    pub offset: Option<Ref<Offset>>,
+    pub index_chain: Ref<Vec<Ref<PlaceIndex>>>,
+}
+
+#[derive(Debug)]
+pub enum PlaceIndex {
+    Offset(Ref<Expr>),
+    Field(Ref<Name>),
 }
 
 #[derive(Debug)]
 pub enum PlaceHead {
     Ident(Ref<Ident>),
     Deref(Ref<Deref>),
-}
-
-#[derive(Debug)]
-pub struct Offset {
-    pub expr: Ref<Expr>,
 }
 
 #[derive(Debug)]
@@ -255,8 +313,14 @@ pub struct Assign {
 #[derive(Debug)]
 pub enum AssignExpr {
     Expr(Ref<Expr>),
-    Span(Ref<Vec<Ref<Expr>>>),
-    Slice { place: Ref<Place>, start_in: u32, end_ex: u32 },
+    Array { single_exprs: Ref<Vec<Ref<AssignExpr>>>, spread_expr: Option<Ref<AssignExpr>> },
+    Struct(Ref<Vec<Ref<StructAssignField>>>),
+}
+
+#[derive(Debug)]
+pub struct StructAssignField {
+    pub name: Ref<Name>,
+    pub assign: Ref<AssignExpr>,
 }
 
 #[derive(Debug)]
@@ -265,8 +329,8 @@ pub enum Expr {
     Place(Ref<Place>),
     Ref(Ref<Place>),
     Paren(Ref<ParenExpr>),
-    Cast { ty: Arc<Type>, expr: Ref<Expr> },
-    Transmute { ty: Arc<Type>, expr: Ref<Expr> },
+    Cast { ty: Ref<TypeHint>, expr: Ref<Expr> },
+    Transmute { ty: Ref<TypeHint>, expr: Ref<Expr> },
 }
 
 #[derive(Debug)]
@@ -327,9 +391,9 @@ pub enum BinaryParenExprOp {
 
 #[derive(Debug)]
 pub enum NativeOperation {
-    Out { ident: Ref<Place> },
-    In { dest_ident: Ref<Place> },
-    Random { dest_ident: Ref<Place>, min: Ref<Expr>, max: Ref<Expr> },
+    Out { place: Ref<Place> },
+    In { dest_place: Ref<Place> },
+    Random { dest_place: Ref<Place>, min: Ref<Expr>, max: Ref<Expr> },
 }
 
 #[derive(Debug)]

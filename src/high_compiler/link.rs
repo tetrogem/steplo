@@ -3,7 +3,7 @@ use std::{iter::Peekable, sync::Arc};
 use itertools::Itertools;
 use uuid::Uuid;
 
-use crate::{logic_ast as ast, srced::Srced};
+use super::{srced::Srced, type_resolved_ast as ast};
 
 #[derive(Debug, Clone)]
 pub struct Proc {
@@ -29,7 +29,7 @@ pub struct SubProc {
 pub enum Call {
     Func {
         name: ast::Ref<ast::Name>,
-        param_exprs: ast::Ref<Vec<ast::Ref<ast::AssignExpr>>>,
+        param_exprs: ast::Ref<Vec<ast::Ref<Vec<ast::Ref<ast::AssignExpr>>>>>,
         return_sub_proc: Uuid,
     },
     SubProc(Uuid),
@@ -49,15 +49,15 @@ pub enum Statement {
 }
 
 pub fn link(ast: &ast::Ref<ast::Program>) -> Vec<ast::Ref<Proc>> {
-    let top_items = ast.val.items.val.iter().cloned().collect_vec();
+    let exe_items = ast.val.items.val.iter().cloned().collect_vec();
 
     // parse user top items
     let mut procs = Vec::<ast::Ref<Proc>>::new();
 
-    for top_item in top_items.iter().map(AsRef::as_ref) {
-        let (proc_kind, ast_proc) = match &top_item.val {
-            ast::TopItem::Main(main) => (ProcKind::Main, Arc::clone(&main.val.proc)),
-            ast::TopItem::Func(func) => (
+    for exe_item in exe_items.iter().map(AsRef::as_ref) {
+        let (proc_kind, ast_proc) = match &exe_item.val {
+            ast::ExeItem::Main(main) => (ProcKind::Main, Arc::clone(&main.val.proc)),
+            ast::ExeItem::Func(func) => (
                 ProcKind::Func {
                     name: Arc::clone(&func.val.name),
                     params: Arc::clone(&func.val.params),

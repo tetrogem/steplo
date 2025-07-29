@@ -10,6 +10,7 @@ pub type Ref<T> = Arc<Srced<T>>;
 pub enum TopItem {
     Main(Ref<Main>),
     Func(Ref<Func>),
+    TypeAlias(Ref<TypeAlias>),
 }
 
 #[derive(Debug)]
@@ -25,15 +26,27 @@ pub struct Func {
 }
 
 #[derive(Debug)]
+pub struct TypeAlias {
+    pub name: Ref<Name>,
+    pub ty: Ref<Type>,
+}
+
+#[derive(Debug)]
 pub struct Name {
     pub str: Arc<str>,
 }
 
 #[derive(Debug)]
 pub enum Type {
+    Base(Ref<BaseType>),
     Ref(Ref<RefType>),
     Array(Ref<ArrayType>),
-    Base(Ref<BaseType>),
+    Struct(Ref<StructType>),
+}
+
+#[derive(Debug)]
+pub struct BaseType {
+    pub name: Ref<Name>,
 }
 
 #[derive(Debug)]
@@ -48,8 +61,8 @@ pub struct ArrayType {
 }
 
 #[derive(Debug)]
-pub struct BaseType {
-    pub name: Ref<Name>,
+pub struct StructType {
+    pub fields: Ref<CommaList<IdentDeclaration>>,
 }
 
 #[derive(Debug)]
@@ -59,9 +72,21 @@ pub struct IdentDeclaration {
 }
 
 #[derive(Debug)]
+pub struct PlaceIndexLink {
+    pub index: Ref<PlaceIndex>,
+    pub next_link: Ref<Maybe<PlaceIndexLink>>,
+}
+
+#[derive(Debug)]
 pub struct Place {
     pub head: Ref<ParensNest<PlaceHead>>,
-    pub offset: Ref<Maybe<Offset>>,
+    pub index_link: Ref<Maybe<PlaceIndexLink>>,
+}
+
+#[derive(Debug)]
+pub enum PlaceIndex {
+    Offset(Ref<Offset>),
+    Field(Ref<Field>),
 }
 
 #[derive(Debug)]
@@ -94,6 +119,11 @@ pub struct Offset {
 }
 
 #[derive(Debug)]
+pub struct Field {
+    pub name: Ref<Name>,
+}
+
+#[derive(Debug)]
 pub struct Ident {
     pub name: Ref<Name>,
 }
@@ -111,12 +141,12 @@ pub struct Proc {
 
 #[derive(Debug)]
 pub struct Body {
-    pub items: Ref<SemiList<BodyItem>>,
+    pub items: Ref<List<BodyItem>>,
 }
 
 #[derive(Debug)]
 pub enum BodyItem {
-    Statement(Ref<Statement>),
+    Statement(Ref<StatementItem>),
     If(Ref<IfItem>),
     While(Ref<WhileItem>),
 }
@@ -151,6 +181,11 @@ pub struct WhileItem {
 }
 
 #[derive(Debug)]
+pub struct StatementItem {
+    pub statement: Ref<Statement>,
+}
+
+#[derive(Debug)]
 pub enum Statement {
     Assign(Ref<Assign>),
     Call(Ref<FunctionCall>),
@@ -165,14 +200,14 @@ pub struct FunctionCall {
 #[derive(Debug)]
 pub struct Assign {
     pub place: Ref<Place>,
-    pub expr: Ref<AssignExpr>,
+    pub expr: Ref<ParensNest<AssignExpr>>,
 }
 
 #[derive(Debug)]
 pub enum AssignExpr {
     Expr(Ref<Expr>),
-    Span(Ref<Span>),
-    Slice(Ref<Slice>),
+    Array(Ref<ArrayAssign>),
+    Struct(Ref<StructAssign>),
 }
 
 #[derive(Debug)]
@@ -248,15 +283,30 @@ pub enum Literal {
 }
 
 #[derive(Debug)]
-pub struct Span {
-    pub elements: Ref<CommaList<Expr>>,
+pub struct ArrayAssign {
+    pub elements: Ref<CommaList<ArrayAssignExpr>>,
 }
 
 #[derive(Debug)]
-pub struct Slice {
-    pub place: Ref<Place>,
-    pub start_in: Ref<Maybe<NumLiteral>>,
-    pub end_ex: Ref<NumLiteral>,
+pub enum ArrayAssignExpr {
+    Single(Ref<AssignExpr>),
+    Spread(Ref<SpreadAssignExpr>),
+}
+
+#[derive(Debug)]
+pub struct SpreadAssignExpr {
+    pub expr: Ref<AssignExpr>,
+}
+
+#[derive(Debug)]
+pub struct StructAssign {
+    pub fields: Ref<CommaList<StructAssignField>>,
+}
+
+#[derive(Debug)]
+pub struct StructAssignField {
+    pub name: Ref<Name>,
+    pub assign: Ref<AssignExpr>,
 }
 
 #[derive(Debug)]

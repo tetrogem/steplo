@@ -1,4 +1,10 @@
-main |arr: [any; 10], vec: [any; 3], str: val, temp: val| {
+type Vec = {
+    arr: &any,
+    cap: uint,
+    len: uint,
+};
+
+main |arr: [any; 10], vec: Vec, str: val, temp: val| {
     Vec_new(&vec, <<&any>>&arr, 10);
     Vec_to_str(&str, &vec);
     out(str);
@@ -44,55 +50,35 @@ main |arr: [any; 10], vec: [any; 3], str: val, temp: val| {
     out(str);
 }
 
-func Vec_new(ret: &[any; 3], arr: &any, cap: uint) || {
-    *ret = [arr, cap, 0];
+func Vec_new(ret: &Vec, arr: &any, cap: uint) || {
+    *ret = { arr: arr, cap: cap, len: 0 };
 }
 
-func Vec_arr(ret: &&any, self: &[any; 3]) || {
-    *ret = <<&any>>(*self)[0];
+func Vec_get_mut(ret: &&any, self: &Vec, i: uint) |arr: &any| {
+    *ret = <<&any>>(<uint>(*self).arr + i);
 }
 
-func Vec_cap(ret: &uint, self: &[any; 3]) || {
-    *ret = <uint>((*self)[1]);
-}
-
-func Vec_len_mut(ret: &&uint, self: &[any; 3]) || {
-    *ret = <<&uint>>&((*self)[2]);
-}
-
-func Vec_len(ret: &uint, self: &[any; 3]) || {
-    *ret = <uint>((*self)[2]);
-}
-
-func Vec_get_mut(ret: &&any, self: &[any; 3], i: uint) |arr: &any| {
-    Vec_arr(&arr, self);
-    *ret = <<&any>>(<uint>arr + i);
-}
-
-func Vec_get(ret: &any, self: &[any; 3], i: uint) |entry: &any| {
+func Vec_get(ret: &any, self: &Vec, i: uint) |entry: &any| {
     Vec_get_mut(&entry, self, i);
     *ret = *entry;
 }
 
-func Vec_push(self: &[any; 3], val: any) |len: &uint, entry: &any| {
-    Vec_len_mut(&len, self);
-    Vec_get_mut(&entry, self, *len);
+func Vec_push(self: &Vec, val: any) |entry: &any| {
+    Vec_get_mut(&entry, self, (*self).len);
     *entry = val;
-    *len = (*len + 1);
+    (*self).len = ((*self).len + 1);
 }
 
-func Vec_pop(ret: &any, self: &[any; 3]) |len: &uint, val: any| {
-    Vec_len_mut(&len, self);
-    Vec_get(&val, self, <uint>(*len - 1));
+func Vec_pop(ret: &any, self: &Vec) |val: any| {
+    Vec_get(&val, self, <uint>((*self).len - 1));
     *ret = val;
-    *len = <uint>(*len - 1);
+    (*self).len = <uint>((*self).len - 1);
 }
 
-func Vec_insert(self: &[any; 3], val: any, index: uint)
+func Vec_insert(self: &Vec, val: any, index: uint)
     |i: uint, len: uint, entry: &any, next_entry: &any|
 {
-    Vec_len(&len, self);
-    i = len;
+    i = (*self).len;
     Vec_push(self, 0);
 
     while (i >= index) {
@@ -101,48 +87,45 @@ func Vec_insert(self: &[any; 3], val: any, index: uint)
         *next_entry = *entry;
 
         i = <uint>(i - 1);
-    };
+    }
 
     Vec_get_mut(&entry, self, index);
     *entry = val;
 }
 
-func Vec_remove(ret: &any, self: &[any; 3], index: uint)
+func Vec_remove(ret: &any, self: &Vec, index: uint)
     |i: uint, entry: &any, next_entry: &any, len: &uint|
 {
     Vec_get(ret, self, index);
     i = index;
-    Vec_len_mut(&len, self);
-    *len = <uint>(*len - 1);
+    (*self).len = <uint>((*self).len - 1);
 
-    while (i < *len) {
+    while (i < (*self).len) {
         Vec_get_mut(&entry, self, i);
         Vec_get_mut(&next_entry, self, (i + 1));
         *entry = *next_entry;
 
         i = (i + 1);
-    };
+    }
 }
 
-func Vec_clear(self: &[any; 3]) |len: &uint| {
-    Vec_len_mut(&len, self);
-    *len = 0;
+func Vec_clear(self: &Vec) || {
+    (*self).len = 0;
 }
 
-func Vec_to_str(ret: &val, self: &[any; 3]) |str: val, len: uint, i: uint, val: val| {
+func Vec_to_str(ret: &val, self: &Vec) |str: val, i: uint, val: val| {
     str = "[";
-    Vec_len(&len, self);
     i = 0;
 
-    while (i < len) {
+    while (i < (*self).len) {
         Vec_get(<<&any>>&val, self, i);
         str = (str ~ val);
-        if (i != (len - 1)) {
+        if (i != ((*self).len - 1)) {
             str = (str ~ ", ");
-        };
+        }
 
         i = (i + 1);
-    };
+    }
 
     str = (str ~ "]");
     *ret = str;

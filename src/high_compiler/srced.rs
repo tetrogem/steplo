@@ -99,6 +99,6 @@ impl PartialOrd for SrcRange {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Srced<T> {
-    pub val: T,
     pub range: SrcRange,
+    pub val: T,
 }
