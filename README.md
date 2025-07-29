@@ -64,7 +64,8 @@ Its goals include:
 | ✅ | Typechecker |
 | ✅ | Native Scratch Functionality (e.g. RNG, user input) |
 | ✅ | Helpful Compiler Errors |
-| 🚧 | Structs |
+| ✅ | Structs |
+| 🚧 | Tuples |
 | 🚧 | Enums |
 | 🚧 | Discriminated/Tagged Unions |
 | 🚧 | Module System |
