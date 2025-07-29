@@ -562,7 +562,7 @@ fn eval_place(
                 res.update_index(ty.clone(), index_offset);
             },
             l::PlaceIndex::Field(index_field) => {
-                let l::Type::Struct(struct_fields) = ty.as_ref() else {
+                let l::Type::Struct(struct_fields) = res.ty.as_ref() else {
                     return Err(CompileErrorSet::new_error(
                         index_field.range,
                         CompileError::Type(TypeError::FieldIndexNonStruct { found: vague(&ty) }),

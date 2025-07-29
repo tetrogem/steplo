@@ -41,6 +41,27 @@ main |nums: [num; 5]| {
 }
 ```
 
+Sometimes you'll have very long arrays, where typing each individual element to set isn't feasible, especially when you'd likely want to set all of the elements to a common "default" value. Luckily, you can use the spread `...` operator in an array literal to do this for you:
+```
+main |long_arr: [int; 999], short_arr: [int; 3]| {
+    long_arr = [0...]; // sets all elements to 0
+    long_arr = [1, 2, 3, 4, 0...]; // sets the first 4 elements, then the rest to 0
+    short_arr = [1, 2, 0...]; // works on all array lengths!
+    short_arr = [1, 2, 3, 0...]; // a spread element can still be declared even if it'd go unused
+}
+```
+
+## Struct Types
+
+Struct types are denoted with braces surrounding key/value pairs: `{ <field>: <type> }`, where `<field>` is the name of a struct field, and `<type>` is the type of that field. Unlike arrays, fields in a struct can be of different types. The order and names of struct fields matter as well; If these mismatch between two types, they are not assignable to eachother.
+
+```
+main |coords: { x: num, y: num }, user: { id: uint, name: val }| {
+    coords = { x: 10, y: -5.5 };
+    user = { id: 1234, name: "Steplo" };
+}
+```
+
 ## The `any` Type
 Any is a special type that is a supertype of any type that is 1 cell in size. This includes all primitives, references, and arrays with a single 1 cell-sized element.
 
@@ -55,10 +76,36 @@ main |anything: any, integer: int| {
 }
 ```
 
-## Type Coercion
-Types are able to automatically be coerced into their supertypes.
+## Type Aliases
+Retyping complex compound types (e.g., arrays, structs) is tedious and error-prone. Instead of retyping an entire type definition each time it is used, a type alias can be declared, allowing for a shorter name to be used in-place of a more complex type:
 ```
-main |foo: int, bar: uint| {
-    bar = 10;
-    foo = bar; // `uint` is a subtype of `int`, so it can automatically be coerced to type `int`
+type Link = {
+    name: val,
+    redirect: val,
+};
+
+type Message = {
+    created_time: uint,
+    sender_name: val,
+    likes: uint,
+    content: {
+        body: val,
+        links: [Link; 2],
+    },
+};
+
+main |msg: Message| {
+    msg = {
+        created_time: 123456789,
+        sender_name: "Steplo",
+        likes: 4,
+        content: {
+            body: "Hello world!",
+            links: [
+                { name: "GitHub", redirect: "https://github.com/tetrogem/steplo" },
+                { name: "Book", redirect: "https://steplo.tetro.dev/" },
+            ],
+        },
+    };
 }
+```

@@ -1,0 +1,43 @@
+type Link = {
+    name: val,
+    redirect: val,
+};
+
+type Message = {
+    created_time: uint,
+    sender_name: val,
+    likes: uint,
+    content: {
+        body: val,
+        links: [Link; 2],
+    },
+};
+
+main |msg: Message| {
+    msg = {
+        created_time: 123456789,
+        sender_name: "Steplo",
+        likes: 4,
+        content: {
+            body: "Hello world!",
+            links: [
+                { name: "GitHub", redirect: "https://github.com/tetrogem/steplo" },
+                { name: "Book", redirect: "https://steplo.tetro.dev/" },
+            ],
+        },
+    };
+
+    out(((msg.sender_name ~ " says: ") ~ msg.content.body));
+    out(("(" ~ (msg.likes ~ " likes)")));
+    print_links(&msg.content.links);
+}
+
+func print_links(links: &[Link; 2]) |i: uint, link: &Link| {
+    i = 0;
+    while (i < 2) {
+        link = &(*links)[i];
+        out(((("Visit '" ~ (*link).name) ~ "': ") ~ (*link).redirect));
+
+        i = (i + 1);
+    }
+}
