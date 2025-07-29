@@ -94,9 +94,23 @@ impl Type {
             (Self::Any, Self::Any) => true,
             (Self::Ref(a), Self::Ref(b)) => a.is_isomorphic_with(b),
             (Self::Array { ty: a, len: a_len }, Self::Array { ty: b, len: b_len }) => {
-                a_len == b_len && a.is_isomorphic_with(b)
+                a_len == b_len && a.is_subtype_of(b)
             },
             (Self::Primitive(a), Self::Primitive(b)) => a.is_subtype_of(*b),
+            (Self::Struct(a), Self::Struct(b)) => {
+                for eob in a.iter().zip_longest(b.iter()) {
+                    if let EitherOrBoth::Both(a, b) = eob
+                        && a.name == b.name
+                        && a.ty.is_subtype_of(&b.ty)
+                    {
+                        continue;
+                    }
+
+                    return false;
+                }
+
+                true
+            },
             _ => false,
         }
     }
