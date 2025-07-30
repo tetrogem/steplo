@@ -59,6 +59,8 @@ pub enum Op {
     Control(ControlOp),
     Sensing(SensingOp),
     Operator(OperatorOp),
+    Procedure(ProcedureOp),
+    Argument(ArgumentOp),
 }
 
 #[derive(Debug)]
@@ -113,6 +115,26 @@ pub enum OperatorOp {
 }
 
 #[derive(Debug)]
+pub enum ProcedureOp {
+    Definition {
+        prototype_stack: Arc<Expr>,
+    },
+    Prototype {
+        custom_block: Arc<CustomBlock>,
+        arguments_with_stacks: Arc<Vec<(Arc<Argument>, Arc<Expr>)>>,
+    },
+    Call {
+        custom_block: Arc<CustomBlock>,
+        argument_inputs: Arc<Vec<(Arc<Argument>, Arc<Expr>)>>,
+    },
+}
+
+#[derive(Debug)]
+pub enum ArgumentOp {
+    ReporterStringNumber { arg: Arc<Argument> },
+}
+
+#[derive(Debug)]
 pub enum Literal {
     Num(f64),
     PosNum(f64),
@@ -130,4 +152,17 @@ pub enum Expr {
     Variable(Arc<Variable>),
     Broadcast(Arc<Broadcast>),
     Stack(Arc<Block>),
+}
+
+#[derive(Debug)]
+pub struct CustomBlock {
+    pub uuid: Uuid,
+    pub name: Arc<str>,
+}
+
+#[derive(Debug)]
+pub struct Argument {
+    pub uuid: Uuid,
+    pub name: Arc<str>,
+    pub default: Arc<str>,
 }

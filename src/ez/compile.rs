@@ -3,7 +3,10 @@ use std::sync::Arc;
 use itertools::Itertools;
 use uuid::Uuid;
 
-use crate::ir;
+use crate::{
+    ez::{Argument, ArgumentOp, CustomBlock, ProcedureOp},
+    ir,
+};
 
 use super::{
     Broadcast, ControlOp, DataOp, EventOp, Expr, List, Literal, Monitor, Op, OperatorOp, Program,
@@ -63,6 +66,22 @@ impl List {
 impl Broadcast {
     pub fn compile(&self) -> ir::Broadcast {
         ir::Broadcast { uuid: self.uuid, name: Arc::clone(&self.name) }
+    }
+}
+
+impl CustomBlock {
+    pub fn compile(&self) -> ir::CustomBlock {
+        ir::CustomBlock { uuid: self.uuid, name: Arc::clone(&self.name) }
+    }
+}
+
+impl Argument {
+    pub fn compile(&self) -> ir::Argument {
+        ir::Argument {
+            uuid: self.uuid,
+            name: Arc::clone(&self.name),
+            default: Arc::clone(&self.default),
+        }
     }
 }
 
@@ -256,6 +275,48 @@ impl Op {
                 };
 
                 ir::Op::Sensing(ir_op)
+            },
+            Op::Procedure(op) => {
+                let ir_op = match op {
+                    ProcedureOp::Definition { prototype_stack } => {
+                        ir::ProcedureOp::Definition { prototype_stack: compile(prototype_stack) }
+                    },
+                    ProcedureOp::Prototype { custom_block, arguments_with_stacks } => {
+                        ir::ProcedureOp::Prototype {
+                            custom_block: Arc::new(custom_block.compile()),
+                            arguments_with_stacks: Arc::new(
+                                arguments_with_stacks
+                                    .iter()
+                                    .map(|(argument, stack)| {
+                                        (Arc::new(argument.compile()), compile(stack))
+                                    })
+                                    .collect(),
+                            ),
+                        }
+                    },
+                    ProcedureOp::Call { custom_block, argument_inputs } => ir::ProcedureOp::Call {
+                        custom_block: Arc::new(custom_block.compile()),
+                        argument_inputs: Arc::new(
+                            argument_inputs
+                                .iter()
+                                .map(|(argument, expr)| {
+                                    (Arc::new(argument.compile()), compile(expr))
+                                })
+                                .collect(),
+                        ),
+                    },
+                };
+
+                ir::Op::Procedure(ir_op)
+            },
+            Op::Argument(op) => {
+                let ir_op = match op {
+                    ArgumentOp::ReporterStringNumber { arg } => {
+                        ir::ArgumentOp::ReporterStringNumber { arg: Arc::new(arg.compile()) }
+                    },
+                };
+
+                ir::Op::Argument(ir_op)
             },
         };
 

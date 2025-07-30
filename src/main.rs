@@ -125,9 +125,14 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
         time("Designating registers...", || mem_opt::designate::designate_registers(&mem_opt_ast));
 
     let ez = time("Compiling to EZ...", || {
-        mem_opt::compile::compile(
+        // mem_opt::compile_broadcasts::compile(
+        //     mem_opt_designated.iter().map(AsRef::as_ref),
+        //     mem_opt::compile_broadcasts::CompileOptions { stack_monitoring: args.dev },
+        // )
+
+        mem_opt::compile_procedures::compile(
             mem_opt_designated.iter().map(AsRef::as_ref),
-            mem_opt::compile::CompileOptions { stack_monitoring: args.dev },
+            mem_opt::compile_procedures::CompileOptions { stack_monitoring: args.dev },
         )
     });
 
