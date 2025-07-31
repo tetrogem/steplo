@@ -501,6 +501,16 @@ fn compile_command(
             list: compile_m.stdout_list().clone(),
             item: compile_expr(compile_m, expr),
         })]),
+        Command::ClearStdout => Vec::from([ez::Op::Data(ez::DataOp::DeleteAllOfList {
+            list: compile_m.stdout_list().clone(),
+        })]),
+        Command::WriteStdout { index, val } => {
+            Vec::from([ez::Op::Data(ez::DataOp::ReplaceItemOfList {
+                list: compile_m.stdout_list().clone(),
+                index: compile_expr(compile_m, index),
+                item: compile_expr(compile_m, val),
+            })])
+        },
     }
 }
 
@@ -577,9 +587,20 @@ fn compile_expr(
             },
             Value::Label(label) => compile_m.target_manager.compile_label(label),
         },
-        Expr::Deref(expr) => ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::ItemOfList {
-            list: compile_m.stack_list().clone(),
-            index: compile_expr(compile_m, expr),
+        Expr::StackDeref(expr) => {
+            ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::ItemOfList {
+                list: compile_m.stack_list().clone(),
+                index: compile_expr(compile_m, expr),
+            })))
+        },
+        Expr::StdoutDeref(expr) => {
+            ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::ItemOfList {
+                list: compile_m.stdout_list().clone(),
+                index: compile_expr(compile_m, expr),
+            })))
+        },
+        Expr::StdoutLen => ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::LengthOfList {
+            list: compile_m.stdout_list().clone(),
         }))),
         Expr::Add(args) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::Add {
             num_a: compile_expr(compile_m, &args.left),

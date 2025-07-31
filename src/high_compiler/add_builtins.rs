@@ -18,7 +18,7 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         rf(l::IdentDeclaration { name: rf(l::Name { str: name.into() }), ty: rf(ty) })
     }
 
-    fn ident(ident_name: &str) -> l::Ref<l::Place> {
+    fn place(ident_name: &str) -> l::Ref<l::Place> {
         rf(l::Place {
             head: rf(l::PlaceHead::Ident(rf(l::Ident { name: name(ident_name) }))),
             index_chain: rf(Vec::new()),
@@ -59,7 +59,7 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         proc: rf(l::Proc {
             idents: rf(Vec::from([])),
             body: body([stmt(l::Statement::Native(rf(l::NativeOperation::Out {
-                place: ident("val"),
+                place: place("val"),
             })))]),
         }),
     }));
@@ -67,18 +67,18 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
     top_items.push(func(l::Func {
         name: name("in"),
         params: rf(Vec::from([decl(
-            "dest_ref",
+            "return",
             ref_ty(l::TypeHint::Primitive(l::PrimitiveType::Val)),
         )])),
         proc: rf(l::Proc {
             idents: rf(Vec::from([decl("answer", l::TypeHint::Primitive(l::PrimitiveType::Val))])),
             body: body([
                 stmt(l::Statement::Native(rf(l::NativeOperation::In {
-                    dest_place: ident("answer"),
+                    dest_place: place("answer"),
                 }))),
                 stmt(l::Statement::Assign(rf(l::Assign {
-                    place: deref(rf(l::Expr::Place(ident("dest_ref")))),
-                    expr: rf(l::AssignExpr::Expr(rf(l::Expr::Place(ident("answer"))))),
+                    place: deref(rf(l::Expr::Place(place("return")))),
+                    expr: rf(l::AssignExpr::Expr(rf(l::Expr::Place(place("answer"))))),
                 }))),
             ]),
         }),
@@ -87,7 +87,7 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
     top_items.push(func(l::Func {
         name: name("random_num"),
         params: rf(Vec::from([
-            decl("dest_ref", ref_ty(l::TypeHint::Primitive(l::PrimitiveType::Num))),
+            decl("return", ref_ty(l::TypeHint::Primitive(l::PrimitiveType::Num))),
             decl("min", l::TypeHint::Primitive(l::PrimitiveType::Num)),
             decl("max", l::TypeHint::Primitive(l::PrimitiveType::Num)),
         ])),
@@ -98,25 +98,25 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
             )])),
             body: body([
                 stmt(l::Statement::Native(rf(l::NativeOperation::Random {
-                    dest_place: ident("generated"),
+                    dest_place: place("generated"),
                     min: rf(l::Expr::Literal(rf(l::Literal::Num(0.)))),
                     max: rf(l::Expr::Literal(rf(l::Literal::Num(1.)))),
                 }))),
                 stmt(l::Statement::Assign(rf(l::Assign {
-                    place: deref(rf(l::Expr::Place(ident("dest_ref")))),
+                    place: deref(rf(l::Expr::Place(place("return")))),
                     expr: rf(l::AssignExpr::Expr(rf(l::Expr::Paren(rf(l::ParenExpr::Binary(
                         rf(l::BinaryParenExpr {
-                            left: rf(l::Expr::Place(ident("min"))),
+                            left: rf(l::Expr::Place(place("min"))),
                             op: rf(l::BinaryParenExprOp::Add),
                             right: rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(
                                 l::BinaryParenExpr {
-                                    left: rf(l::Expr::Place(ident("generated"))),
+                                    left: rf(l::Expr::Place(place("generated"))),
                                     op: rf(l::BinaryParenExprOp::Mul),
                                     right: rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(
                                         l::BinaryParenExpr {
-                                            left: rf(l::Expr::Place(ident("max"))),
+                                            left: rf(l::Expr::Place(place("max"))),
                                             op: rf(l::BinaryParenExprOp::Sub),
-                                            right: rf(l::Expr::Place(ident("min"))),
+                                            right: rf(l::Expr::Place(place("min"))),
                                         },
                                     ))))),
                                 },
@@ -131,7 +131,7 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
     top_items.push(func(l::Func {
         name: name("random_int"),
         params: rf(Vec::from([
-            decl("dest_ref", ref_ty(l::TypeHint::Primitive(l::PrimitiveType::Int))),
+            decl("return", ref_ty(l::TypeHint::Primitive(l::PrimitiveType::Int))),
             decl("min", l::TypeHint::Primitive(l::PrimitiveType::Int)),
             decl("max", l::TypeHint::Primitive(l::PrimitiveType::Int)),
         ])),
@@ -142,13 +142,13 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
             )])),
             body: body([
                 stmt(l::Statement::Native(rf(l::NativeOperation::Random {
-                    dest_place: ident("generated"),
-                    min: rf(l::Expr::Place(ident("min"))),
-                    max: rf(l::Expr::Place(ident("max"))),
+                    dest_place: place("generated"),
+                    min: rf(l::Expr::Place(place("min"))),
+                    max: rf(l::Expr::Place(place("max"))),
                 }))),
                 stmt(l::Statement::Assign(rf(l::Assign {
-                    place: deref(rf(l::Expr::Place(ident("dest_ref")))),
-                    expr: rf(l::AssignExpr::Expr(rf(l::Expr::Place(ident("generated"))))),
+                    place: deref(rf(l::Expr::Place(place("return")))),
+                    expr: rf(l::AssignExpr::Expr(rf(l::Expr::Place(place("generated"))))),
                 }))),
             ]),
         }),
@@ -157,7 +157,7 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
     top_items.push(func(l::Func {
         name: name("random_uint"),
         params: rf(Vec::from([
-            decl("dest_ref", ref_ty(l::TypeHint::Primitive(l::PrimitiveType::Uint))),
+            decl("return", ref_ty(l::TypeHint::Primitive(l::PrimitiveType::Uint))),
             decl("min", l::TypeHint::Primitive(l::PrimitiveType::Uint)),
             decl("max", l::TypeHint::Primitive(l::PrimitiveType::Uint)),
         ])),
@@ -168,15 +168,107 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
             )])),
             body: body([
                 stmt(l::Statement::Native(rf(l::NativeOperation::Random {
-                    dest_place: ident("generated"),
-                    min: rf(l::Expr::Place(ident("min"))),
-                    max: rf(l::Expr::Place(ident("max"))),
+                    dest_place: place("generated"),
+                    min: rf(l::Expr::Place(place("min"))),
+                    max: rf(l::Expr::Place(place("max"))),
                 }))),
                 stmt(l::Statement::Assign(rf(l::Assign {
-                    place: deref(rf(l::Expr::Place(ident("dest_ref")))),
-                    expr: rf(l::AssignExpr::Expr(rf(l::Expr::Place(ident("generated"))))),
+                    place: deref(rf(l::Expr::Place(place("return")))),
+                    expr: rf(l::AssignExpr::Expr(rf(l::Expr::Place(place("generated"))))),
                 }))),
             ]),
+        }),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("stdout_clear"),
+        params: rf(Vec::from([])),
+        proc: rf(l::Proc {
+            idents: rf(Vec::from([])),
+            body: body([stmt(l::Statement::Native(rf(l::NativeOperation::StdoutClear)))]),
+        }),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("stdout_read"),
+        params: rf(Vec::from([
+            decl("return", l::TypeHint::Ref(rf(l::TypeHint::Primitive(l::PrimitiveType::Val)))),
+            decl("index", l::TypeHint::Primitive(l::PrimitiveType::Uint)),
+        ])),
+        proc: rf(l::Proc {
+            idents: rf(Vec::from([])),
+            body: body([stmt(l::Statement::Native(rf(l::NativeOperation::StdoutRead {
+                dest_place: deref(rf(l::Expr::Place(place("return")))),
+                index: rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(l::BinaryParenExpr {
+                    left: rf(l::Expr::Place(place("index"))),
+                    op: rf(l::BinaryParenExprOp::Add),
+                    right: rf(l::Expr::Literal(rf(l::Literal::Int(1.)))),
+                }))))),
+            })))]),
+        }),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("stdout_write"),
+        params: rf(Vec::from([
+            decl("val", l::TypeHint::Primitive(l::PrimitiveType::Val)),
+            decl("index", l::TypeHint::Primitive(l::PrimitiveType::Uint)),
+        ])),
+        proc: rf(l::Proc {
+            idents: rf(Vec::from([decl("len", l::TypeHint::Primitive(l::PrimitiveType::Uint))])),
+            body: body([
+                stmt(l::Statement::Call(rf(l::FunctionCall {
+                    func_name: name("stdout_len"),
+                    param_exprs: rf(Vec::from([rf(l::AssignExpr::Expr(rf(l::Expr::Ref(place(
+                        "len",
+                    )))))])),
+                }))),
+                rf(l::BodyItem::While(rf(l::WhileItem {
+                    condition: rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(
+                        l::BinaryParenExpr {
+                            left: rf(l::Expr::Place(place("len"))),
+                            op: rf(l::BinaryParenExprOp::Lte),
+                            right: rf(l::Expr::Place(place("index"))),
+                        },
+                    ))))),
+                    body: body([
+                        stmt(l::Statement::Call(rf(l::FunctionCall {
+                            func_name: name("out"),
+                            param_exprs: rf(Vec::from([rf(l::AssignExpr::Expr(rf(
+                                l::Expr::Literal(rf(l::Literal::Val("".into()))),
+                            )))])),
+                        }))),
+                        stmt(l::Statement::Call(rf(l::FunctionCall {
+                            func_name: name("stdout_len"),
+                            param_exprs: rf(Vec::from([rf(l::AssignExpr::Expr(rf(
+                                l::Expr::Ref(place("len")),
+                            )))])),
+                        }))),
+                    ]),
+                }))),
+                stmt(l::Statement::Native(rf(l::NativeOperation::StdoutWrite {
+                    val: rf(l::Expr::Place(place("val"))),
+                    index: rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(l::BinaryParenExpr {
+                        left: rf(l::Expr::Place(place("index"))),
+                        op: rf(l::BinaryParenExprOp::Add),
+                        right: rf(l::Expr::Literal(rf(l::Literal::Int(1.)))),
+                    }))))),
+                }))),
+            ]),
+        }),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("stdout_len"),
+        params: rf(Vec::from([decl(
+            "return",
+            l::TypeHint::Ref(rf(l::TypeHint::Primitive(l::PrimitiveType::Uint))),
+        )])),
+        proc: rf(l::Proc {
+            idents: rf(Vec::from([])),
+            body: body([stmt(l::Statement::Native(rf(l::NativeOperation::StdoutLen {
+                dest_place: deref(rf(l::Expr::Place(place("return")))),
+            })))]),
         }),
     }));
 

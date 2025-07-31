@@ -164,20 +164,23 @@ fn optimize_command(
     loop {
         opt_debug!("command");
 
-        command = match command.as_ref() {
-            Command::SetMemLoc { mem_loc, val } => Arc::new(Command::SetMemLoc {
+        command = Arc::new(match command.as_ref() {
+            Command::SetMemLoc { mem_loc, val } => Command::SetMemLoc {
                 mem_loc: mem_loc.clone(),
                 val: tracker.record(optimize_expr(val.clone())),
-            }),
-            Command::SetStack { addr, val } => Arc::new(Command::SetStack {
+            },
+            Command::SetStack { addr, val } => Command::SetStack {
                 addr: tracker.record(optimize_expr(addr.clone())),
                 val: tracker.record(optimize_expr(val.clone())),
-            }),
-            Command::In => Arc::new(Command::In),
-            Command::Out(expr) => {
-                Arc::new(Command::Out(tracker.record(optimize_expr(expr.clone()))))
             },
-        };
+            Command::In => Command::In,
+            Command::Out(expr) => Command::Out(tracker.record(optimize_expr(expr.clone()))),
+            Command::ClearStdout => Command::ClearStdout,
+            Command::WriteStdout { index, val } => Command::WriteStdout {
+                index: tracker.record(optimize_expr(index.clone())),
+                val: tracker.record(optimize_expr(val.clone())),
+            },
+        });
 
         command = tracker.record(optimizer.optimize(command));
 
@@ -231,7 +234,11 @@ fn optimize_expr(mut expr: Arc<Expr<UMemLoc>>) -> OptimizationReport<Arc<Expr<UM
         expr = Arc::new(match expr.as_ref() {
             Expr::Value(value) => Expr::Value(value.clone()),
             Expr::MemLoc(mem_loc) => Expr::MemLoc(mem_loc.clone()),
-            Expr::Deref(expr) => Expr::Deref(tracker.record(optimize_expr(expr.clone()))),
+            Expr::StackDeref(expr) => Expr::StackDeref(tracker.record(optimize_expr(expr.clone()))),
+            Expr::StdoutDeref(expr) => {
+                Expr::StdoutDeref(tracker.record(optimize_expr(expr.clone())))
+            },
+            Expr::StdoutLen => Expr::StdoutLen,
             Expr::Add(args) => Expr::Add(tracker.record(optimize_binary_args(args.clone()))),
             Expr::Sub(args) => Expr::Sub(tracker.record(optimize_binary_args(args.clone()))),
             Expr::Mul(args) => Expr::Mul(tracker.record(optimize_binary_args(args.clone()))),
@@ -344,22 +351,27 @@ fn optimization_inline_trivial_temps(
     let trivial_temp_to_expr = find_trivial_temps(&sp);
     let mut opt_commands = Vec::new();
     for command in sp.commands.as_ref() {
-        match command.as_ref() {
-            Command::SetMemLoc { mem_loc, val } => {
-                opt_commands.push(Arc::new(Command::SetMemLoc {
-                    mem_loc: mem_loc.clone(),
-                    val: expr_replace_trivial_temps(val, &trivial_temp_to_expr),
-                }))
+        let opt_command = match command.as_ref() {
+            Command::SetMemLoc { mem_loc, val } => Command::SetMemLoc {
+                mem_loc: mem_loc.clone(),
+                val: expr_replace_trivial_temps(val, &trivial_temp_to_expr),
             },
-            Command::SetStack { addr, val } => opt_commands.push(Arc::new(Command::SetStack {
+            Command::SetStack { addr, val } => Command::SetStack {
                 addr: expr_replace_trivial_temps(addr, &trivial_temp_to_expr),
                 val: expr_replace_trivial_temps(val, &trivial_temp_to_expr),
-            })),
-            Command::In => opt_commands.push(Arc::new(Command::In)),
-            Command::Out(expr) => opt_commands.push(Arc::new(Command::Out(
-                expr_replace_trivial_temps(expr, &trivial_temp_to_expr),
-            ))),
-        }
+            },
+            Command::In => Command::In,
+            Command::Out(expr) => {
+                Command::Out(expr_replace_trivial_temps(expr, &trivial_temp_to_expr))
+            },
+            Command::ClearStdout => Command::ClearStdout,
+            Command::WriteStdout { index, val } => Command::WriteStdout {
+                index: expr_replace_trivial_temps(index, &trivial_temp_to_expr),
+                val: expr_replace_trivial_temps(val, &trivial_temp_to_expr),
+            },
+        };
+
+        opt_commands.push(Arc::new(opt_command));
     }
 
     let opt_call = match sp.call.as_ref() {
@@ -525,9 +537,17 @@ fn optimization_inline_pure_redirect_labels(
                     Expr::Value(Arc::new(Value::Label(label)))
                 },
             },
-            Expr::Deref(expr) => {
-                Expr::Deref(expr_replace_pure_redirect_labels(optimized, rlabel_to_tlabel, expr))
-            },
+            Expr::StackDeref(expr) => Expr::StackDeref(expr_replace_pure_redirect_labels(
+                optimized,
+                rlabel_to_tlabel,
+                expr,
+            )),
+            Expr::StdoutDeref(expr) => Expr::StdoutDeref(expr_replace_pure_redirect_labels(
+                optimized,
+                rlabel_to_tlabel,
+                expr,
+            )),
+            Expr::StdoutLen => Expr::StdoutLen,
             Expr::Add(args) => Expr::Add(binary_args_replace_pure_redirect_labels(
                 optimized,
                 rlabel_to_tlabel,
@@ -660,6 +680,21 @@ fn optimization_inline_pure_redirect_labels(
                                                         expr,
                                                     ))
                                                 },
+                                                Command::ClearStdout => Command::ClearStdout,
+                                                Command::WriteStdout { index, val } => {
+                                                    Command::WriteStdout {
+                                                        index: expr_replace_pure_redirect_labels(
+                                                            &mut optimized,
+                                                            &pure_redirect_label_to_to_label,
+                                                            index,
+                                                        ),
+                                                        val: expr_replace_pure_redirect_labels(
+                                                            &mut optimized,
+                                                            &pure_redirect_label_to_to_label,
+                                                            val,
+                                                        ),
+                                                    }
+                                                },
                                             };
 
                                             Arc::new(command)
@@ -710,12 +745,16 @@ fn optimization_remove_unused_sub_procs(
 
     fn command_find_used_labels(command: &Command<UMemLoc>) -> BTreeSet<Uuid> {
         match command {
-            Command::SetMemLoc { val, .. } => expr_find_used_labels(val),
+            Command::SetMemLoc { val, mem_loc: _mem_loc } => expr_find_used_labels(val),
             Command::SetStack { addr, val } => {
                 chain!(expr_find_used_labels(addr), expr_find_used_labels(val)).collect()
             },
             Command::In => Default::default(),
             Command::Out(expr) => expr_find_used_labels(expr),
+            Command::ClearStdout => Default::default(),
+            Command::WriteStdout { index, val } => {
+                chain!(expr_find_used_labels(index), expr_find_used_labels(val)).collect()
+            },
         }
     }
 
@@ -739,7 +778,9 @@ fn optimization_remove_unused_sub_procs(
                 Value::Literal(_) => Default::default(),
                 Value::Label(label) => BTreeSet::from([*label]),
             },
-            Expr::Deref(expr) => expr_find_used_labels(expr),
+            Expr::StackDeref(expr) => expr_find_used_labels(expr),
+            Expr::StdoutDeref(expr) => expr_find_used_labels(expr),
+            Expr::StdoutLen => Default::default(),
             Expr::Add(args) => binary_args_find_used_labels(args),
             Expr::Sub(args) => binary_args_find_used_labels(args),
             Expr::Mul(args) => binary_args_find_used_labels(args),
@@ -948,9 +989,13 @@ fn expr_replace_trivial_temps(
             },
         },
         Expr::Value(value) => Arc::new(Expr::Value(value.clone())),
-        Expr::Deref(expr) => {
-            Arc::new(Expr::Deref(expr_replace_trivial_temps(expr, trivial_temp_to_expr)))
+        Expr::StackDeref(expr) => {
+            Arc::new(Expr::StackDeref(expr_replace_trivial_temps(expr, trivial_temp_to_expr)))
         },
+        Expr::StdoutDeref(expr) => {
+            Arc::new(Expr::StdoutDeref(expr_replace_trivial_temps(expr, trivial_temp_to_expr)))
+        },
+        Expr::StdoutLen => Arc::new(Expr::StdoutLen),
         Expr::Add(args) => {
             Arc::new(Expr::Add(binary_args_replace_trivial_temps(args, trivial_temp_to_expr)))
         },
@@ -1016,13 +1061,18 @@ fn find_unused_temps(sp: &SubProc<UMemLoc>) -> BTreeSet<Arc<TempVar>> {
         }
 
         match command.as_ref() {
-            Command::SetMemLoc { val, .. } => used_temps.extend(expr_get_used_temps(val)),
+            Command::SetMemLoc { val, mem_loc: _ } => used_temps.extend(expr_get_used_temps(val)),
             Command::SetStack { addr, val } => {
                 used_temps.extend(expr_get_used_temps(addr));
                 used_temps.extend(expr_get_used_temps(val));
             },
             Command::In => {},
             Command::Out(expr) => used_temps.extend(expr_get_used_temps(expr)),
+            Command::ClearStdout => {},
+            Command::WriteStdout { index, val } => {
+                used_temps.extend(expr_get_used_temps(index));
+                used_temps.extend(expr_get_used_temps(val));
+            },
         }
     }
 
@@ -1046,7 +1096,9 @@ fn expr_get_used_temps(expr: &Expr<UMemLoc>) -> BTreeSet<Arc<TempVar>> {
             UMemLoc::Temp(temp) => BTreeSet::from([temp.clone()]),
         },
         Expr::Value(_) => Default::default(),
-        Expr::Deref(expr) => expr_get_used_temps(expr),
+        Expr::StackDeref(expr) => expr_get_used_temps(expr),
+        Expr::StdoutDeref(expr) => expr_get_used_temps(expr),
+        Expr::StdoutLen => Default::default(),
         Expr::Add(args) => binary_args_get_used_temps(args),
         Expr::Sub(args) => binary_args_get_used_temps(args),
         Expr::Mul(args) => binary_args_get_used_temps(args),

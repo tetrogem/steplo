@@ -1,0 +1,19 @@
+main |null: val, line: val, len: uint| {
+    out("1");
+    out("2");
+    out("3");
+    in(&null);
+
+    stdout_clear();
+    out("4");
+    out("5");
+    out("6");
+
+    stdout_read(&line, 2);
+    line = (line ~ "Hello!");
+    stdout_write(line, 2);
+    stdout_write(line, 10);
+
+    stdout_len(&len);
+    out(("stdout line count: " ~ len));
+}

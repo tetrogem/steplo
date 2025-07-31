@@ -37,7 +37,9 @@ pub struct BinaryArgs<MemLoc> {
 pub enum Expr<MemLoc> {
     MemLoc(Arc<MemLoc>),
     Value(Arc<Value>),
-    Deref(Arc<Expr<MemLoc>>),
+    StackDeref(Arc<Expr<MemLoc>>),
+    StdoutDeref(Arc<Expr<MemLoc>>),
+    StdoutLen,
     Add(Arc<BinaryArgs<MemLoc>>),
     Sub(Arc<BinaryArgs<MemLoc>>),
     Mul(Arc<BinaryArgs<MemLoc>>),
@@ -60,6 +62,8 @@ pub enum Command<MemLoc> {
     SetStack { addr: Arc<Expr<MemLoc>>, val: Arc<Expr<MemLoc>> },
     In,
     Out(Arc<Expr<MemLoc>>),
+    ClearStdout,
+    WriteStdout { index: Arc<Expr<MemLoc>>, val: Arc<Expr<MemLoc>> },
 }
 
 #[derive(Debug)]
