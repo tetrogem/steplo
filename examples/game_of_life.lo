@@ -1,0 +1,93 @@
+main |loop: bool, input: val, cells: [[bool; 9]; 9]| {
+    gen_random_cells(&cells);
+
+    loop = true;
+    while loop {
+        in(&input);
+        if (input == "quit") {
+            loop = false;
+        } else {
+            game_loop(&cells);
+        }
+    }
+}
+
+func game_loop(cells: &[[bool; 9]; 9]) |next: [[bool; 9]; 9]| {
+    print_cells(cells);
+    gen_next_step(&next, cells);
+    *cells = next;
+}
+
+func gen_random_cells(return: &[[bool; 9]; 9]) |x: uint, y: uint, rand: num| {
+    x = 0;
+    while (x < 9) {
+        y = 0;
+        while (y < 9) {
+            random_num(&rand, 0, 1);
+            (*return)[y][x] = (rand < 0.33);
+            y = (y + 1);
+        }
+
+        x = (x + 1);
+    }
+}
+
+func print_cells(cells: &[[bool; 9]; 9]) |y: uint, x: uint, row: val| {
+    y = 0;
+    while (y < 9) {
+        x = 0;
+        row = "";
+
+        while (x < 9) {
+            if ((*cells)[y][x] == true) {
+                row = (row ~ "██");
+            } else {
+                row = (row ~ "░░");
+            }
+
+            x = (x + 1);
+        }
+
+        stdout_write(row, y);
+        y = (y + 1);
+    }
+}
+
+func gen_next_step(return: &[[bool; 9]; 9], curr: &[[bool; 9]; 9]) |neighbors: uint, x: uint, y: uint| {
+    x = 0;
+    while (x < 9) {
+        y = 0;
+        while (y < 9) {
+            count_neighbors(&neighbors, curr, x, y);
+            (*return)[y][x] = ((neighbors == 3) || (((*curr)[y][x] == true) && (neighbors == 2)));
+
+            y = (y + 1);
+        }
+
+        x = (x + 1);
+    }
+}
+
+func count_neighbors(return: &uint, cells: &[[bool; 9]; 9], x: uint, y: uint) |dx: int, dy: int, nx: uint, ny: uint| {
+    *return = 0;
+
+    dx = -1;
+    while (dx <= 1) {
+        nx = (x + <<uint>>dx);
+        if ((nx >= 0) && (nx < 9)) {
+            dy = -1;
+            while (dy <= 1) {
+                ny = (y + <<uint>>dy);
+                if (((ny >= 0) && (ny < 9)) && (!((x == nx) && (y == ny)))) {
+                    if ((*cells)[ny][nx] == true) {
+                        *return = (*return + 1);
+                    }
+                }
+
+                dy = (dy + 1);
+            }
+        }
+
+        dx = (dx + 1);
+    }
+}
