@@ -71,7 +71,7 @@ impl Broadcast {
 
 impl CustomBlock {
     pub fn compile(&self) -> ir::CustomBlock {
-        ir::CustomBlock { uuid: self.uuid, name: Arc::clone(&self.name) }
+        ir::CustomBlock { name: Arc::clone(&self.name) }
     }
 }
 
@@ -260,6 +260,12 @@ impl Op {
                     ControlOp::Repeat { times, looped_substack } => ir::ControlOp::Repeat {
                         times: compile(times),
                         looped_substack: compile(looped_substack),
+                    },
+                    ControlOp::RepeatUntil { condition, then_substack } => {
+                        ir::ControlOp::RepeatUntil {
+                            condition: compile(condition),
+                            then_substack: compile(then_substack),
+                        }
                     },
                 };
 

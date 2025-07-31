@@ -88,6 +88,7 @@ pub enum ControlOp {
     IfElse { condition: Arc<Expr>, then_substack: Arc<Expr>, else_substack: Arc<Expr> },
     Wait { duration: Arc<Expr> },
     Repeat { times: Arc<Expr>, looped_substack: Arc<Expr> },
+    RepeatUntil { condition: Arc<Expr>, then_substack: Arc<Expr> },
 }
 
 #[derive(Debug)]
@@ -156,7 +157,6 @@ pub enum Expr {
 
 #[derive(Debug)]
 pub struct CustomBlock {
-    pub uuid: Uuid,
     pub name: Arc<str>,
 }
 

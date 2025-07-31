@@ -4,11 +4,9 @@ use itertools::Itertools;
 use serde_json::{Map as JsMap, Value as JsVal, json};
 use uuid::Uuid;
 
-use crate::ir::{Argument, ArgumentOp, CustomBlock, ProcedureOp};
-
-use super::{
-    Block, Broadcast, ControlOp, DataOp, EventOp, Expr, List, Literal, Monitor, Op, OperatorOp,
-    Program, SensingOp, Stage, Variable,
+use crate::ir::{
+    ArgumentOp, Block, Broadcast, ControlOp, DataOp, EventOp, Expr, List, Literal, Monitor, Op,
+    OperatorOp, ProcedureOp, Program, SensingOp, Stage, Variable,
 };
 
 impl Program {
@@ -283,6 +281,15 @@ impl Op {
                     inputs: obj([
                         ("TIMES", compile(times)),
                         ("SUBSTACK", compile(looped_substack)),
+                    ]),
+                    fields: JsMap::new(),
+                    mutation: None,
+                },
+                ControlOp::RepeatUntil { condition, then_substack } => ExprMetadata {
+                    opcode: "control_repeat_until",
+                    inputs: obj([
+                        ("CONDITION", compile(condition)),
+                        ("SUBSTACK", compile(then_substack)),
                     ]),
                     fields: JsMap::new(),
                     mutation: None,
