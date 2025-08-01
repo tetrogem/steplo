@@ -270,10 +270,10 @@ impl Op {
                     fields: JsMap::new(),
                     mutation: None,
                 },
-                ControlOp::Wait { .. } => ExprMetadata {
+                ControlOp::Wait { duration_s } => ExprMetadata {
                     opcode: "control_wait",
-                    inputs: todo!(),
-                    fields: todo!(),
+                    inputs: obj([("DURATION", compile(duration_s))]),
+                    fields: JsMap::new(),
                     mutation: None,
                 },
                 ControlOp::Repeat { times, looped_substack } => ExprMetadata {

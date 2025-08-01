@@ -511,6 +511,9 @@ fn compile_command(
                 item: compile_expr(compile_m, val),
             })])
         },
+        Command::Wait { duration_s } => Vec::from([ez::Op::Control(ez::ControlOp::Wait {
+            duration_s: compile_expr(compile_m, duration_s),
+        })]),
     }
 }
 

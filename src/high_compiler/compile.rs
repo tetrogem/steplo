@@ -623,6 +623,17 @@ fn compile_statement(
                 )
                 .collect()
             },
+            hast::NativeOperation::Wait { duration_s } => {
+                let compiled_duration_s = compile_expr(stack_frame, duration_s)?;
+
+                chain!(
+                    compiled_duration_s.commands,
+                    [Arc::new(opt::Command::Wait {
+                        duration_s: mem_loc_expr(compiled_duration_s.mem_loc),
+                    })]
+                )
+                .collect()
+            },
         },
     };
 

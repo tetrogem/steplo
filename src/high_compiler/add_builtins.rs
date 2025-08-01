@@ -272,5 +272,16 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         }),
     }));
 
+    top_items.push(func(l::Func {
+        name: name("wait_s"),
+        params: rf(Vec::from([decl("duration_s", l::TypeHint::Primitive(l::PrimitiveType::Num))])),
+        proc: rf(l::Proc {
+            idents: rf(Vec::from([])),
+            body: body([stmt(l::Statement::Native(rf(l::NativeOperation::Wait {
+                duration_s: rf(l::Expr::Place(place("duration_s"))),
+            })))]),
+        }),
+    }));
+
     rf(l::Program { items: rf(top_items) })
 }

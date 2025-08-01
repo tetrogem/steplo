@@ -1,26 +1,27 @@
-main |loop: bool, input: val, cells: [[bool; 9]; 9]| {
+main |waiter: num, loop: bool, input: val, cells: [[bool; 18]; 9]| {
     gen_random_cells(&cells);
 
+    waiter = 0;
     loop = true;
     while loop {
-        in(&input);
-        if (input == "quit") {
-            loop = false;
-        } else {
+        if (waiter > (1000000 / 30)) {
             game_loop(&cells);
+            waiter = (waiter - (1000000 / 30));
+        } else {
+            waiter = (waiter + 1);
         }
     }
 }
 
-func game_loop(cells: &[[bool; 9]; 9]) |next: [[bool; 9]; 9]| {
+func game_loop(cells: &[[bool; 18]; 9]) |next: [[bool; 18]; 9]| {
     print_cells(cells);
     gen_next_step(&next, cells);
     *cells = next;
 }
 
-func gen_random_cells(return: &[[bool; 9]; 9]) |x: uint, y: uint, rand: num| {
+func gen_random_cells(return: &[[bool; 18]; 9]) |x: uint, y: uint, rand: num| {
     x = 0;
-    while (x < 9) {
+    while (x < 18) {
         y = 0;
         while (y < 9) {
             random_num(&rand, 0, 1);
@@ -32,13 +33,13 @@ func gen_random_cells(return: &[[bool; 9]; 9]) |x: uint, y: uint, rand: num| {
     }
 }
 
-func print_cells(cells: &[[bool; 9]; 9]) |y: uint, x: uint, row: val| {
+func print_cells(cells: &[[bool; 18]; 9]) |y: uint, x: uint, row: val| {
     y = 0;
     while (y < 9) {
         x = 0;
         row = "";
 
-        while (x < 9) {
+        while (x < 18) {
             if ((*cells)[y][x] == true) {
                 row = (row ~ "██");
             } else {
@@ -53,9 +54,9 @@ func print_cells(cells: &[[bool; 9]; 9]) |y: uint, x: uint, row: val| {
     }
 }
 
-func gen_next_step(return: &[[bool; 9]; 9], curr: &[[bool; 9]; 9]) |neighbors: uint, x: uint, y: uint| {
+func gen_next_step(return: &[[bool; 18]; 9], curr: &[[bool; 18]; 9]) |neighbors: uint, x: uint, y: uint| {
     x = 0;
-    while (x < 9) {
+    while (x < 18) {
         y = 0;
         while (y < 9) {
             count_neighbors(&neighbors, curr, x, y);
@@ -68,24 +69,34 @@ func gen_next_step(return: &[[bool; 9]; 9], curr: &[[bool; 9]; 9]) |neighbors: u
     }
 }
 
-func count_neighbors(return: &uint, cells: &[[bool; 9]; 9], x: uint, y: uint) |dx: int, dy: int, nx: uint, ny: uint| {
+func count_neighbors(return: &uint, cells: &[[bool; 18]; 9], x: uint, y: uint) |dx: int, dy: int, nx: uint, ny: uint| {
     *return = 0;
 
     dx = -1;
     while (dx <= 1) {
         nx = (x + <<uint>>dx);
-        if ((nx >= 0) && (nx < 9)) {
-            dy = -1;
-            while (dy <= 1) {
-                ny = (y + <<uint>>dy);
-                if (((ny >= 0) && (ny < 9)) && (!((x == nx) && (y == ny)))) {
-                    if ((*cells)[ny][nx] == true) {
-                        *return = (*return + 1);
-                    }
-                }
+        if (nx < 0) {
+            nx = (18 + nx);
+        } else if (nx >= 18) {
+            nx = <<uint>>(nx - 18);
+        }
 
-                dy = (dy + 1);
+        dy = -1;
+        while (dy <= 1) {
+            ny = (y + <<uint>>dy);
+            if (ny < 0) {
+                ny = (9 + ny);
+            } else if (ny >= 9) {
+                ny = <<uint>>(ny - 9);
             }
+
+            if (!((x == nx) && (y == ny))) {
+                if ((*cells)[ny][nx] == true) {
+                    *return = (*return + 1);
+                }
+            }
+
+            dy = (dy + 1);
         }
 
         dx = (dx + 1);

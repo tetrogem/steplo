@@ -64,6 +64,7 @@ pub enum Command<MemLoc> {
     Out(Arc<Expr<MemLoc>>),
     ClearStdout,
     WriteStdout { index: Arc<Expr<MemLoc>>, val: Arc<Expr<MemLoc>> },
+    Wait { duration_s: Arc<Expr<MemLoc>> },
 }
 
 #[derive(Debug)]

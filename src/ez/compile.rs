@@ -254,8 +254,8 @@ impl Op {
                             else_substack: compile(else_substack),
                         }
                     },
-                    ControlOp::Wait { duration } => {
-                        ir::ControlOp::Wait { duration: compile(duration) }
+                    ControlOp::Wait { duration_s: duration } => {
+                        ir::ControlOp::Wait { duration_s: compile(duration) }
                     },
                     ControlOp::Repeat { times, looped_substack } => ir::ControlOp::Repeat {
                         times: compile(times),

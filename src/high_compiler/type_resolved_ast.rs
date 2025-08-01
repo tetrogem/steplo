@@ -189,6 +189,7 @@ pub enum NativeOperation {
     StdoutRead { dest_place: Ref<Place>, index: Ref<Expr> },
     StdoutWrite { val: Ref<Expr>, index: Ref<Expr> },
     StdoutLen { dest_place: Ref<Place> },
+    Wait { duration_s: Ref<Expr> },
 }
 
 #[derive(Debug)]

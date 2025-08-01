@@ -180,6 +180,9 @@ fn optimize_command(
                 index: tracker.record(optimize_expr(index.clone())),
                 val: tracker.record(optimize_expr(val.clone())),
             },
+            Command::Wait { duration_s } => {
+                Command::Wait { duration_s: tracker.record(optimize_expr(duration_s.clone())) }
+            },
         });
 
         command = tracker.record(optimizer.optimize(command));
@@ -368,6 +371,9 @@ fn optimization_inline_trivial_temps(
             Command::WriteStdout { index, val } => Command::WriteStdout {
                 index: expr_replace_trivial_temps(index, &trivial_temp_to_expr),
                 val: expr_replace_trivial_temps(val, &trivial_temp_to_expr),
+            },
+            Command::Wait { duration_s } => Command::Wait {
+                duration_s: expr_replace_trivial_temps(duration_s, &trivial_temp_to_expr),
             },
         };
 
@@ -695,6 +701,13 @@ fn optimization_inline_pure_redirect_labels(
                                                         ),
                                                     }
                                                 },
+                                                Command::Wait { duration_s } => Command::Wait {
+                                                    duration_s: expr_replace_pure_redirect_labels(
+                                                        &mut optimized,
+                                                        &pure_redirect_label_to_to_label,
+                                                        duration_s,
+                                                    ),
+                                                },
                                             };
 
                                             Arc::new(command)
@@ -755,6 +768,7 @@ fn optimization_remove_unused_sub_procs(
             Command::WriteStdout { index, val } => {
                 chain!(expr_find_used_labels(index), expr_find_used_labels(val)).collect()
             },
+            Command::Wait { duration_s } => expr_find_used_labels(duration_s),
         }
     }
 
@@ -1073,6 +1087,7 @@ fn find_unused_temps(sp: &SubProc<UMemLoc>) -> BTreeSet<Arc<TempVar>> {
                 used_temps.extend(expr_get_used_temps(index));
                 used_temps.extend(expr_get_used_temps(val));
             },
+            Command::Wait { duration_s } => used_temps.extend(expr_get_used_temps(duration_s)),
         }
     }
 

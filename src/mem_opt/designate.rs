@@ -160,6 +160,7 @@ pub fn designate_registers(
                     ast::Command::WriteStdout { index, val } => {
                         chain!(index.to_mem_locs(), val.to_mem_locs()).collect()
                     },
+                    ast::Command::Wait { duration_s } => duration_s.to_mem_locs(),
                 };
 
                 let temps = add(&mem_locs);
@@ -196,6 +197,9 @@ pub fn designate_registers(
                     ast::Command::WriteStdout { index, val } => ast::Command::WriteStdout {
                         index: index.to_rmem(temp_m),
                         val: val.to_rmem(temp_m),
+                    },
+                    ast::Command::Wait { duration_s } => {
+                        ast::Command::Wait { duration_s: duration_s.to_rmem(temp_m) }
                     },
                 };
 

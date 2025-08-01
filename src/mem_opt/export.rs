@@ -64,6 +64,7 @@ fn export_command(name_m: &mut NameManager, command: &Command<UMemLoc>) -> Strin
         Command::WriteStdout { index, val } => {
             format!("stdout[{}] = {}", export_expr(name_m, index), export_expr(name_m, val))
         },
+        Command::Wait { duration_s } => format!("wait_s {}", export_expr(name_m, duration_s)),
     };
 
     format!("{command_name};")
