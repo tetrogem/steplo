@@ -283,5 +283,19 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         }),
     }));
 
+    top_items.push(func(l::Func {
+        name: name("timer_s"),
+        params: rf(Vec::from([decl(
+            "return",
+            l::TypeHint::Ref(rf(l::TypeHint::Primitive(l::PrimitiveType::Num))),
+        )])),
+        proc: rf(l::Proc {
+            idents: rf(Vec::from([])),
+            body: body([stmt(l::Statement::Native(rf(l::NativeOperation::TimerGet {
+                dest_place: deref(rf(l::Expr::Place(place("return")))),
+            })))]),
+        }),
+    }));
+
     rf(l::Program { items: rf(top_items) })
 }

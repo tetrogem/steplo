@@ -634,6 +634,18 @@ fn compile_statement(
                 )
                 .collect()
             },
+            hast::NativeOperation::TimerGet { dest_place } => {
+                let compiled_place_addr = compile_place_to_addr(stack_frame, &dest_place.val)?;
+
+                chain!(
+                    compiled_place_addr.commands,
+                    [Arc::new(opt::Command::SetStack {
+                        addr: mem_loc_expr(compiled_place_addr.mem_loc),
+                        val: Arc::new(opt::Expr::Timer),
+                    })]
+                )
+                .collect()
+            },
         },
     };
 

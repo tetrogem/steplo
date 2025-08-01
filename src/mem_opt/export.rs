@@ -104,6 +104,7 @@ fn export_expr(name_m: &mut NameManager, expr: &Expr<UMemLoc>) -> String {
         Expr::StackDeref(expr) => format!("stack[{}]", export_expr(name_m, expr)),
         Expr::StdoutDeref(expr) => format!("stdout[{}]", export_expr(name_m, expr)),
         Expr::StdoutLen => "stdout.len".into(),
+        Expr::Timer => "timer".into(),
         Expr::Add(args) => export_binary_op_expr(name_m, args, "+"),
         Expr::Sub(args) => export_binary_op_expr(name_m, args, "-"),
         Expr::Mul(args) => export_binary_op_expr(name_m, args, "*"),

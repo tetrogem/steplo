@@ -242,6 +242,7 @@ fn optimize_expr(mut expr: Arc<Expr<UMemLoc>>) -> OptimizationReport<Arc<Expr<UM
                 Expr::StdoutDeref(tracker.record(optimize_expr(expr.clone())))
             },
             Expr::StdoutLen => Expr::StdoutLen,
+            Expr::Timer => Expr::Timer,
             Expr::Add(args) => Expr::Add(tracker.record(optimize_binary_args(args.clone()))),
             Expr::Sub(args) => Expr::Sub(tracker.record(optimize_binary_args(args.clone()))),
             Expr::Mul(args) => Expr::Mul(tracker.record(optimize_binary_args(args.clone()))),
@@ -554,6 +555,7 @@ fn optimization_inline_pure_redirect_labels(
                 expr,
             )),
             Expr::StdoutLen => Expr::StdoutLen,
+            Expr::Timer => Expr::Timer,
             Expr::Add(args) => Expr::Add(binary_args_replace_pure_redirect_labels(
                 optimized,
                 rlabel_to_tlabel,
@@ -795,6 +797,7 @@ fn optimization_remove_unused_sub_procs(
             Expr::StackDeref(expr) => expr_find_used_labels(expr),
             Expr::StdoutDeref(expr) => expr_find_used_labels(expr),
             Expr::StdoutLen => Default::default(),
+            Expr::Timer => Default::default(),
             Expr::Add(args) => binary_args_find_used_labels(args),
             Expr::Sub(args) => binary_args_find_used_labels(args),
             Expr::Mul(args) => binary_args_find_used_labels(args),
@@ -1010,6 +1013,7 @@ fn expr_replace_trivial_temps(
             Arc::new(Expr::StdoutDeref(expr_replace_trivial_temps(expr, trivial_temp_to_expr)))
         },
         Expr::StdoutLen => Arc::new(Expr::StdoutLen),
+        Expr::Timer => Arc::new(Expr::Timer),
         Expr::Add(args) => {
             Arc::new(Expr::Add(binary_args_replace_trivial_temps(args, trivial_temp_to_expr)))
         },
@@ -1114,6 +1118,7 @@ fn expr_get_used_temps(expr: &Expr<UMemLoc>) -> BTreeSet<Arc<TempVar>> {
         Expr::StackDeref(expr) => expr_get_used_temps(expr),
         Expr::StdoutDeref(expr) => expr_get_used_temps(expr),
         Expr::StdoutLen => Default::default(),
+        Expr::Timer => Default::default(),
         Expr::Add(args) => binary_args_get_used_temps(args),
         Expr::Sub(args) => binary_args_get_used_temps(args),
         Expr::Mul(args) => binary_args_get_used_temps(args),

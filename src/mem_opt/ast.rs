@@ -40,6 +40,7 @@ pub enum Expr<MemLoc> {
     StackDeref(Arc<Expr<MemLoc>>),
     StdoutDeref(Arc<Expr<MemLoc>>),
     StdoutLen,
+    Timer,
     Add(Arc<BinaryArgs<MemLoc>>),
     Sub(Arc<BinaryArgs<MemLoc>>),
     Mul(Arc<BinaryArgs<MemLoc>>),

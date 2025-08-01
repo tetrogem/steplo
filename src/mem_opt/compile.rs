@@ -605,6 +605,7 @@ fn compile_expr(
         Expr::StdoutLen => ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::LengthOfList {
             list: compile_m.stdout_list().clone(),
         }))),
+        Expr::Timer => ez::Expr::Derived(Arc::new(ez::Op::Sensing(ez::SensingOp::Timer))),
         Expr::Add(args) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::Add {
             num_a: compile_expr(compile_m, &args.left),
             num_b: compile_expr(compile_m, &args.right),

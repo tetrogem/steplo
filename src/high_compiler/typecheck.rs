@@ -396,6 +396,9 @@ fn typecheck_native_op(
         l::NativeOperation::Wait { duration_s } => t::NativeOperation::Wait {
             duration_s: try_tr(duration_s, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
         },
+        l::NativeOperation::TimerGet { dest_place } => t::NativeOperation::TimerGet {
+            dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
+        },
     })
 }
 

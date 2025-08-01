@@ -190,6 +190,7 @@ pub enum NativeOperation {
     StdoutWrite { val: Ref<Expr>, index: Ref<Expr> },
     StdoutLen { dest_place: Ref<Place> },
     Wait { duration_s: Ref<Expr> },
+    TimerGet { dest_place: Ref<Place> },
 }
 
 #[derive(Debug)]

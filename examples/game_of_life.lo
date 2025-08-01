@@ -1,14 +1,13 @@
-main |waiter: num, loop: bool, input: val, cells: [[bool; 18]; 9]| {
+main |now_s: num, prev_s: num, loop: bool, input: val, cells: [[bool; 18]; 9]| {
     gen_random_cells(&cells);
 
-    waiter = 0;
+    prev_s = 0;
     loop = true;
     while loop {
-        if (waiter > (1000000 / 30)) {
+        timer_s(&now_s);
+        if ((now_s - prev_s) > (1 / 16)) {
             game_loop(&cells);
-            waiter = (waiter - (1000000 / 30));
-        } else {
-            waiter = (waiter + 1);
+            prev_s = now_s;
         }
     }
 }
