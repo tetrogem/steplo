@@ -60,6 +60,11 @@ fn export_command(name_m: &mut NameManager, command: &Command<UMemLoc>) -> Strin
         },
         Command::In => "in".into(),
         Command::Out(val) => format!("out {}", export_expr(name_m, val)),
+        Command::ClearStdout => "stdout::clear".into(),
+        Command::WriteStdout { index, val } => {
+            format!("stdout[{}] = {}", export_expr(name_m, index), export_expr(name_m, val))
+        },
+        Command::Wait { duration_s } => format!("wait_s {}", export_expr(name_m, duration_s)),
     };
 
     format!("{command_name};")
@@ -84,7 +89,7 @@ fn export_call(name_m: &mut NameManager, call: &Call<UMemLoc>) -> String {
 
 fn export_mem_loc(name_m: &mut NameManager, mem_loc: &UMemLoc) -> String {
     match mem_loc {
-        UMemLoc::StackPointer => "$sp".into(),
+        UMemLoc::StackPointer => "sp".into(),
         UMemLoc::Temp(temp) => export_temp(name_m, temp),
     }
 }
@@ -96,7 +101,10 @@ fn export_expr(name_m: &mut NameManager, expr: &Expr<UMemLoc>) -> String {
             Value::Label(label) => export_label(name_m, *label),
             Value::Literal(literal) => format!("\"{literal}\""),
         },
-        Expr::Deref(expr) => format!("stack[{}]", export_expr(name_m, expr)),
+        Expr::StackDeref(expr) => format!("stack[{}]", export_expr(name_m, expr)),
+        Expr::StdoutDeref(expr) => format!("stdout[{}]", export_expr(name_m, expr)),
+        Expr::StdoutLen => "stdout.len".into(),
+        Expr::Timer => "timer".into(),
         Expr::Add(args) => export_binary_op_expr(name_m, args, "+"),
         Expr::Sub(args) => export_binary_op_expr(name_m, args, "-"),
         Expr::Mul(args) => export_binary_op_expr(name_m, args, "*"),
@@ -108,7 +116,7 @@ fn export_expr(name_m: &mut NameManager, expr: &Expr<UMemLoc>) -> String {
         Expr::Not(expr) => format!("(!{})", export_expr(name_m, expr)),
         Expr::Or(args) => export_binary_op_expr(name_m, args, "||"),
         Expr::And(args) => export_binary_op_expr(name_m, args, "&&"),
-        Expr::InAnswer => "$answer".into(),
+        Expr::InAnswer => "answer".into(),
         Expr::Join(args) => export_binary_op_expr(name_m, args, "~"),
         Expr::Random(args) => export_binary_op_expr(name_m, args, "<random>"),
     }

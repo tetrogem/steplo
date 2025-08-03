@@ -1,4 +1,5 @@
 unstable_features = true
+style_edition = "2024"
 
 binop_separator = "Front"
 blank_lines_lower_bound = 0

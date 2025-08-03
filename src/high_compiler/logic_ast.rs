@@ -394,6 +394,12 @@ pub enum NativeOperation {
     Out { place: Ref<Place> },
     In { dest_place: Ref<Place> },
     Random { dest_place: Ref<Place>, min: Ref<Expr>, max: Ref<Expr> },
+    StdoutClear,
+    StdoutRead { dest_place: Ref<Place>, index: Ref<Expr> },
+    StdoutWrite { val: Ref<Expr>, index: Ref<Expr> },
+    StdoutLen { dest_place: Ref<Place> },
+    Wait { duration_s: Ref<Expr> },
+    TimerGet { dest_place: Ref<Place> },
 }
 
 #[derive(Debug)]

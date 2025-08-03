@@ -8,9 +8,4 @@ main |a: num, b: num, c: num, sum: num| {
 
     sum = (b + c);
     out(sum);
-
-    sum = (100 + 200);
-    out(sum);
-
-    out((500 + 75));
 }

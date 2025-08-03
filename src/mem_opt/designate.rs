@@ -156,6 +156,11 @@ pub fn designate_registers(
                     },
                     ast::Command::In => Default::default(),
                     ast::Command::Out(expr) => expr.to_mem_locs(),
+                    ast::Command::ClearStdout => Default::default(),
+                    ast::Command::WriteStdout { index, val } => {
+                        chain!(index.to_mem_locs(), val.to_mem_locs()).collect()
+                    },
+                    ast::Command::Wait { duration_s } => duration_s.to_mem_locs(),
                 };
 
                 let temps = add(&mem_locs);
@@ -188,6 +193,14 @@ pub fn designate_registers(
                     },
                     ast::Command::In => ast::Command::In,
                     ast::Command::Out(expr) => ast::Command::Out(expr.to_rmem(temp_m)),
+                    ast::Command::ClearStdout => ast::Command::ClearStdout,
+                    ast::Command::WriteStdout { index, val } => ast::Command::WriteStdout {
+                        index: index.to_rmem(temp_m),
+                        val: val.to_rmem(temp_m),
+                    },
+                    ast::Command::Wait { duration_s } => {
+                        ast::Command::Wait { duration_s: duration_s.to_rmem(temp_m) }
+                    },
                 };
 
                 commands.push(Arc::new(command));
@@ -252,7 +265,10 @@ impl HasMemLocs for ast::Expr<ast::UMemLoc> {
         match self {
             ast::Expr::MemLoc(mem_loc) => Vec::from([mem_loc.clone()]),
             ast::Expr::Value(_) => Default::default(),
-            ast::Expr::Deref(expr) => expr.to_mem_locs(),
+            ast::Expr::StackDeref(expr) => expr.to_mem_locs(),
+            ast::Expr::StdoutDeref(expr) => expr.to_mem_locs(),
+            ast::Expr::StdoutLen => Default::default(),
+            ast::Expr::Timer => Default::default(),
             ast::Expr::Add(args) => args.to_mem_locs(),
             ast::Expr::Sub(args) => args.to_mem_locs(),
             ast::Expr::Mul(args) => args.to_mem_locs(),
@@ -274,7 +290,10 @@ impl HasMemLocs for ast::Expr<ast::UMemLoc> {
         let expr = match self {
             ast::Expr::MemLoc(umem) => ast::Expr::MemLoc(umem.to_rmem(temp_m)),
             ast::Expr::Value(value) => ast::Expr::Value(value.clone()),
-            ast::Expr::Deref(expr) => ast::Expr::Deref(expr.to_rmem(temp_m)),
+            ast::Expr::StackDeref(expr) => ast::Expr::StackDeref(expr.to_rmem(temp_m)),
+            ast::Expr::StdoutDeref(expr) => ast::Expr::StdoutDeref(expr.to_rmem(temp_m)),
+            ast::Expr::StdoutLen => ast::Expr::StdoutLen,
+            ast::Expr::Timer => ast::Expr::Timer,
             ast::Expr::Add(args) => ast::Expr::Add(args.to_rmem(temp_m)),
             ast::Expr::Sub(args) => ast::Expr::Sub(args.to_rmem(temp_m)),
             ast::Expr::Mul(args) => ast::Expr::Mul(args.to_rmem(temp_m)),

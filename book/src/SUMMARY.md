@@ -2,6 +2,7 @@
 
 - [Installation & Getting Started](./start.md)
 - [Hello World!](./hello_world.md)
+- [Compilations Targets](./targets.md)
 - [Stack Variables](./stack_variables.md)
 - [Types](./types.md)
 - [Supertypes, Subtypes, & Type Coercion](./coercion.md)

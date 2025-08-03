@@ -51,20 +51,21 @@ Its goals include:
 
 | Status | Feature |
 | :---: | --- |
-| ✅ | Stdout / Printing |
+| ✅ | Printing / stdout Manipulation |
 | ✅ | Stack Memory |
 | ✅ | Memory Pointers / References |
 | ✅ | In-Memory Arrays |
 | ✅ | Functions |
 | ✅ | Branching / Control Flow |
 | ✅ | Recursion |
+| ✅ | Structs |
 | ✅ | Optimizer |
 | ✅ | Static Typing |
 | ✅ | Typecasting & Transmutations |
 | ✅ | Typechecker |
 | ✅ | Native Scratch Functionality (e.g. RNG, user input) |
 | ✅ | Helpful Compiler Errors |
-| ✅ | Structs |
+| ✅ | TurboWarp-specific optimizations  |
 | 🚧 | Tuples |
 | 🚧 | Enums |
 | 🚧 | Discriminated/Tagged Unions |
@@ -106,7 +107,7 @@ cd steplo
 mkdir out
 
 # Compile a Steplo program
-cargo run examples/hel.lo out
+cargo run examples/hel.lo out --target scratch
 ```
 
 This will generate a `.sb3` file in the `out/` directory.

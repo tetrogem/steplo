@@ -45,6 +45,21 @@ struct Args {
     /// Output intermediate optimization artifacts
     #[arg(long)]
     out_opt: bool,
+    /// The platform to optimize the compiled project for
+    #[arg(long)]
+    target: SerdeTarget,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
+pub enum SerdeTarget {
+    Scratch,
+    Turbowarp,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Target {
+    Scratch,
+    TurboWarp,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -124,10 +139,15 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
     let mem_opt_designated =
         time("Designating registers...", || mem_opt::designate::designate_registers(&mem_opt_ast));
 
+    let target = match args.target {
+        SerdeTarget::Scratch => Target::Scratch,
+        SerdeTarget::Turbowarp => Target::TurboWarp,
+    };
+
     let ez = time("Compiling to EZ...", || {
         mem_opt::compile::compile(
             mem_opt_designated.iter().map(AsRef::as_ref),
-            mem_opt::compile::CompileOptions { stack_monitoring: args.dev },
+            mem_opt::compile::CompileOptions { stack_monitoring: args.dev, target },
         )
     });
 
@@ -135,7 +155,9 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
     let js_val = time("Compiling to JSON...", || ir.compile());
     let json = time("Serializing...", || format!("{js_val:#}"));
 
-    time("Exporting...", || write_json(&json, src_path, Path::new(&args.out_path), &RES_DIR));
+    time("Exporting...", || {
+        write_json(&json, src_path, Path::new(&args.out_path), &RES_DIR, target)
+    });
 
     Ok(())
 }

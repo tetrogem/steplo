@@ -492,7 +492,7 @@ fn compile_call(
                         }),
                         Arc::new(opt::Command::SetMemLoc {
                             mem_loc: label_loc.clone(),
-                            val: Arc::new(opt::Expr::Deref(mem_loc_expr(label_addr_loc))),
+                            val: Arc::new(opt::Expr::StackDeref(mem_loc_expr(label_addr_loc))),
                         }),
                     ],
                     Arc::new(opt::Call::Jump(mem_loc_expr(label_loc))),
@@ -528,17 +528,17 @@ fn compile_statement(
             chain!(compiled_place_addr.commands, compiled_assign).collect()
         },
         link::Statement::Native(native) => match &native.val {
-            hast::NativeOperation::Out { place: ident } => {
-                let compiled_ident_addr = compile_place_to_addr(stack_frame, &ident.val)?;
+            hast::NativeOperation::Out { place } => {
+                let compiled_place_addr = compile_place_to_addr(stack_frame, &place.val)?;
                 let ident_value_loc = temp();
 
                 chain!(
-                    compiled_ident_addr.commands,
+                    compiled_place_addr.commands,
                     [
                         Arc::new(opt::Command::SetMemLoc {
                             mem_loc: ident_value_loc.clone(),
-                            val: Arc::new(opt::Expr::Deref(mem_loc_expr(
-                                compiled_ident_addr.mem_loc
+                            val: Arc::new(opt::Expr::StackDeref(mem_loc_expr(
+                                compiled_place_addr.mem_loc
                             ))),
                         }),
                         Arc::new(opt::Command::Out(mem_loc_expr(ident_value_loc))),
@@ -546,36 +546,102 @@ fn compile_statement(
                 )
                 .collect()
             },
-            hast::NativeOperation::In { dest_place: dest_ident } => {
-                let compiled_ident_addr = compile_place_to_addr(stack_frame, &dest_ident.val)?;
+            hast::NativeOperation::In { dest_place } => {
+                let compiled_place_addr = compile_place_to_addr(stack_frame, &dest_place.val)?;
 
                 chain!(
-                    compiled_ident_addr.commands,
+                    compiled_place_addr.commands,
                     [
                         Arc::new(opt::Command::In),
                         Arc::new(opt::Command::SetStack {
-                            addr: mem_loc_expr(compiled_ident_addr.mem_loc),
+                            addr: mem_loc_expr(compiled_place_addr.mem_loc),
                             val: Arc::new(opt::Expr::InAnswer),
                         }),
                     ]
                 )
                 .collect()
             },
-            hast::NativeOperation::Random { dest_ident, min, max } => {
-                let compiled_ident_addr = compile_place_to_addr(stack_frame, &dest_ident.val)?;
+            hast::NativeOperation::Random { dest_place, min, max } => {
+                let compiled_place_addr = compile_place_to_addr(stack_frame, &dest_place.val)?;
                 let compiled_min = compile_expr(stack_frame, min)?;
                 let compiled_max = compile_expr(stack_frame, max)?;
 
                 chain!(
-                    compiled_ident_addr.commands,
+                    compiled_place_addr.commands,
                     compiled_min.commands,
                     compiled_max.commands,
                     [Arc::new(opt::Command::SetStack {
-                        addr: mem_loc_expr(compiled_ident_addr.mem_loc),
+                        addr: mem_loc_expr(compiled_place_addr.mem_loc),
                         val: Arc::new(opt::Expr::Random(binary_args(
                             mem_loc_expr(compiled_min.mem_loc),
                             mem_loc_expr(compiled_max.mem_loc)
                         ))),
+                    })]
+                )
+                .collect()
+            },
+            hast::NativeOperation::StdoutClear => Vec::from([Arc::new(opt::Command::ClearStdout)]),
+            hast::NativeOperation::StdoutRead { dest_place, index } => {
+                let compiled_place_addr = compile_place_to_addr(stack_frame, &dest_place.val)?;
+                let compiled_index = compile_expr(stack_frame, index)?;
+
+                chain!(
+                    compiled_place_addr.commands,
+                    compiled_index.commands,
+                    [Arc::new(opt::Command::SetStack {
+                        addr: mem_loc_expr(compiled_place_addr.mem_loc),
+                        val: Arc::new(opt::Expr::StdoutDeref(Arc::new(opt::Expr::MemLoc(
+                            compiled_index.mem_loc
+                        ))))
+                    })]
+                )
+                .collect()
+            },
+            hast::NativeOperation::StdoutWrite { val, index } => {
+                let compiled_val = compile_expr(stack_frame, val)?;
+                let compiled_index = compile_expr(stack_frame, index)?;
+
+                chain!(
+                    compiled_val.commands,
+                    compiled_index.commands,
+                    [Arc::new(opt::Command::WriteStdout {
+                        index: mem_loc_expr(compiled_index.mem_loc),
+                        val: mem_loc_expr(compiled_val.mem_loc),
+                    })]
+                )
+                .collect()
+            },
+            hast::NativeOperation::StdoutLen { dest_place } => {
+                let compiled_place_addr = compile_place_to_addr(stack_frame, &dest_place.val)?;
+
+                chain!(
+                    compiled_place_addr.commands,
+                    [Arc::new(opt::Command::SetStack {
+                        addr: mem_loc_expr(compiled_place_addr.mem_loc),
+                        val: Arc::new(opt::Expr::StdoutLen),
+                    })]
+                )
+                .collect()
+            },
+            hast::NativeOperation::Wait { duration_s } => {
+                let compiled_duration_s = compile_expr(stack_frame, duration_s)?;
+
+                chain!(
+                    compiled_duration_s.commands,
+                    [Arc::new(opt::Command::Wait {
+                        duration_s: mem_loc_expr(compiled_duration_s.mem_loc),
+                    })]
+                )
+                .collect()
+            },
+            hast::NativeOperation::TimerGet { dest_place } => {
+                let compiled_place_addr = compile_place_to_addr(stack_frame, &dest_place.val)?;
+
+                chain!(
+                    compiled_place_addr.commands,
+                    [Arc::new(opt::Command::SetStack {
+                        addr: mem_loc_expr(compiled_place_addr.mem_loc),
+                        val: Arc::new(opt::Expr::Timer),
                     })]
                 )
                 .collect()
@@ -824,7 +890,7 @@ fn compile_addr_deref(addr: &Arc<opt::UMemLoc>) -> CompiledExpr {
     let ident_value_loc = temp();
     let commands = Vec::from([Arc::new(opt::Command::SetMemLoc {
         mem_loc: ident_value_loc.clone(),
-        val: Arc::new(opt::Expr::Deref(mem_loc_expr(addr.clone()))),
+        val: Arc::new(opt::Expr::StackDeref(mem_loc_expr(addr.clone()))),
     })]);
 
     CompiledExpr { mem_loc: ident_value_loc, commands }

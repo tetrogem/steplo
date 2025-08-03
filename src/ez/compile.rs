@@ -3,7 +3,10 @@ use std::sync::Arc;
 use itertools::Itertools;
 use uuid::Uuid;
 
-use crate::ir;
+use crate::{
+    ez::{Argument, ArgumentOp, CustomBlock, ProcedureOp},
+    ir,
+};
 
 use super::{
     Broadcast, ControlOp, DataOp, EventOp, Expr, List, Literal, Monitor, Op, OperatorOp, Program,
@@ -66,6 +69,22 @@ impl Broadcast {
     }
 }
 
+impl CustomBlock {
+    pub fn compile(&self) -> ir::CustomBlock {
+        ir::CustomBlock { name: Arc::clone(&self.name) }
+    }
+}
+
+impl Argument {
+    pub fn compile(&self) -> ir::Argument {
+        ir::Argument {
+            uuid: self.uuid,
+            name: Arc::clone(&self.name),
+            default: Arc::clone(&self.default),
+        }
+    }
+}
+
 pub struct StackCompiled {
     ir_root_block: Arc<ir::Block>,
     ir_all_blocks: Vec<Arc<ir::Block>>,
@@ -114,6 +133,13 @@ impl Op {
     pub fn compile(&self, parent: Uuid) -> Dependent<ir::Op> {
         let mut deps = Vec::new();
         let mut compile = |expr: &Expr| compile_expr(expr, parent, &mut deps);
+
+        fn compile_option(
+            expr: &Option<Arc<Expr>>,
+            compile: &mut impl FnMut(&Expr) -> Arc<ir::Expr>,
+        ) -> Option<Arc<ir::Expr>> {
+            expr.as_ref().map(|x| compile(x))
+        }
 
         let ir_op = match self {
             Self::Event(op) => {
@@ -226,21 +252,27 @@ impl Op {
                 let ir_op = match op {
                     ControlOp::If { condition, then_substack } => ir::ControlOp::If {
                         condition: compile(condition),
-                        then_substack: compile(then_substack),
+                        then_substack: compile_option(then_substack, &mut compile),
                     },
                     ControlOp::IfElse { condition, then_substack, else_substack } => {
                         ir::ControlOp::IfElse {
                             condition: compile(condition),
-                            then_substack: compile(then_substack),
-                            else_substack: compile(else_substack),
+                            then_substack: compile_option(then_substack, &mut compile),
+                            else_substack: compile_option(else_substack, &mut compile),
                         }
                     },
-                    ControlOp::Wait { duration } => {
-                        ir::ControlOp::Wait { duration: compile(duration) }
+                    ControlOp::Wait { duration_s: duration } => {
+                        ir::ControlOp::Wait { duration_s: compile(duration) }
                     },
                     ControlOp::Repeat { times, looped_substack } => ir::ControlOp::Repeat {
                         times: compile(times),
-                        looped_substack: compile(looped_substack),
+                        looped_substack: compile_option(looped_substack, &mut compile),
+                    },
+                    ControlOp::RepeatUntil { condition, then_substack } => {
+                        ir::ControlOp::RepeatUntil {
+                            condition: compile(condition),
+                            then_substack: compile_option(then_substack, &mut compile),
+                        }
                     },
                 };
 
@@ -256,6 +288,48 @@ impl Op {
                 };
 
                 ir::Op::Sensing(ir_op)
+            },
+            Op::Procedure(op) => {
+                let ir_op = match op {
+                    ProcedureOp::Definition { prototype_stack } => {
+                        ir::ProcedureOp::Definition { prototype_stack: compile(prototype_stack) }
+                    },
+                    ProcedureOp::Prototype { custom_block, arguments_with_stacks } => {
+                        ir::ProcedureOp::Prototype {
+                            custom_block: Arc::new(custom_block.compile()),
+                            arguments_with_stacks: Arc::new(
+                                arguments_with_stacks
+                                    .iter()
+                                    .map(|(argument, stack)| {
+                                        (Arc::new(argument.compile()), compile(stack))
+                                    })
+                                    .collect(),
+                            ),
+                        }
+                    },
+                    ProcedureOp::Call { custom_block, argument_inputs } => ir::ProcedureOp::Call {
+                        custom_block: Arc::new(custom_block.compile()),
+                        argument_inputs: Arc::new(
+                            argument_inputs
+                                .iter()
+                                .map(|(argument, expr)| {
+                                    (Arc::new(argument.compile()), compile(expr))
+                                })
+                                .collect(),
+                        ),
+                    },
+                };
+
+                ir::Op::Procedure(ir_op)
+            },
+            Op::Argument(op) => {
+                let ir_op = match op {
+                    ArgumentOp::ReporterStringNumber { arg } => {
+                        ir::ArgumentOp::ReporterStringNumber { arg: Arc::new(arg.compile()) }
+                    },
+                };
+
+                ir::Op::Argument(ir_op)
             },
         };
 

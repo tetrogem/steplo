@@ -377,9 +377,27 @@ fn typecheck_native_op(
             dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
         },
         l::NativeOperation::Random { dest_place, min, max } => t::NativeOperation::Random {
-            dest_ident: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
+            dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
             min: try_tr(min, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
             max: try_tr(max, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+        },
+        l::NativeOperation::StdoutClear => t::NativeOperation::StdoutClear,
+        l::NativeOperation::StdoutRead { dest_place, index } => t::NativeOperation::StdoutRead {
+            dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
+            index: try_tr(index, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+        },
+        l::NativeOperation::StdoutWrite { val, index } => t::NativeOperation::StdoutWrite {
+            val: try_tr(val, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+            index: try_tr(index, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+        },
+        l::NativeOperation::StdoutLen { dest_place } => t::NativeOperation::StdoutLen {
+            dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
+        },
+        l::NativeOperation::Wait { duration_s } => t::NativeOperation::Wait {
+            duration_s: try_tr(duration_s, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+        },
+        l::NativeOperation::TimerGet { dest_place } => t::NativeOperation::TimerGet {
+            dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
         },
     })
 }
