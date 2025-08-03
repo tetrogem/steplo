@@ -23,7 +23,7 @@ main || {
 
 Now we can compile this program! The compiled Scratch program can be written to any directory on your system, specified by the compile command. In this example, we'll use a directory named `out`. To compile, we can then call:
 ```bash
-cargo run helloworld.lo out
+cargo run helloworld.lo out --target scratch
 ```
 
-This will create `helloworld.sb3` inside of `out`, which we can load into Scratch to see our working program!
+This will create `helloworld.s.sb3` inside of `out`, which we can load into Scratch to see our working program!

@@ -16,7 +16,7 @@ cd steplo
 mkdir out
 
 ## Compile a Steplo program
-cargo run examples/hel.lo out
+cargo run examples/hel.lo out --target scratch
 ```
 
 This will generate a .sb3 file in the out/ directory.
