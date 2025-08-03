@@ -84,11 +84,26 @@ pub enum DataOp {
 
 #[derive(Debug)]
 pub enum ControlOp {
-    If { condition: Arc<Expr>, then_substack: Arc<Expr> },
-    IfElse { condition: Arc<Expr>, then_substack: Arc<Expr>, else_substack: Arc<Expr> },
-    Wait { duration_s: Arc<Expr> },
-    Repeat { times: Arc<Expr>, looped_substack: Arc<Expr> },
-    RepeatUntil { condition: Arc<Expr>, then_substack: Arc<Expr> },
+    If {
+        condition: Arc<Expr>,
+        then_substack: Option<Arc<Expr>>,
+    },
+    IfElse {
+        condition: Arc<Expr>,
+        then_substack: Option<Arc<Expr>>,
+        else_substack: Option<Arc<Expr>>,
+    },
+    Wait {
+        duration_s: Arc<Expr>,
+    },
+    Repeat {
+        times: Arc<Expr>,
+        looped_substack: Option<Arc<Expr>>,
+    },
+    RepeatUntil {
+        condition: Arc<Expr>,
+        then_substack: Option<Arc<Expr>>,
+    },
 }
 
 #[derive(Debug)]

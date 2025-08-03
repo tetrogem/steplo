@@ -134,6 +134,13 @@ impl Op {
         let mut deps = Vec::new();
         let mut compile = |expr: &Expr| compile_expr(expr, parent, &mut deps);
 
+        fn compile_option(
+            expr: &Option<Arc<Expr>>,
+            compile: &mut impl FnMut(&Expr) -> Arc<ir::Expr>,
+        ) -> Option<Arc<ir::Expr>> {
+            expr.as_ref().map(|x| compile(x))
+        }
+
         let ir_op = match self {
             Self::Event(op) => {
                 let ir_op = match op {
@@ -245,13 +252,13 @@ impl Op {
                 let ir_op = match op {
                     ControlOp::If { condition, then_substack } => ir::ControlOp::If {
                         condition: compile(condition),
-                        then_substack: compile(then_substack),
+                        then_substack: compile_option(then_substack, &mut compile),
                     },
                     ControlOp::IfElse { condition, then_substack, else_substack } => {
                         ir::ControlOp::IfElse {
                             condition: compile(condition),
-                            then_substack: compile(then_substack),
-                            else_substack: compile(else_substack),
+                            then_substack: compile_option(then_substack, &mut compile),
+                            else_substack: compile_option(else_substack, &mut compile),
                         }
                     },
                     ControlOp::Wait { duration_s: duration } => {
@@ -259,12 +266,12 @@ impl Op {
                     },
                     ControlOp::Repeat { times, looped_substack } => ir::ControlOp::Repeat {
                         times: compile(times),
-                        looped_substack: compile(looped_substack),
+                        looped_substack: compile_option(looped_substack, &mut compile),
                     },
                     ControlOp::RepeatUntil { condition, then_substack } => {
                         ir::ControlOp::RepeatUntil {
                             condition: compile(condition),
-                            then_substack: compile(then_substack),
+                            then_substack: compile_option(then_substack, &mut compile),
                         }
                     },
                 };

@@ -107,10 +107,12 @@ trait TargetManager {
     fn compile_label(&self, label: &Uuid) -> ez::Expr;
     fn extra_program_start_ops(&self) -> Vec<Arc<ez::Op>>;
     fn program_exit_call(&self) -> Vec<Arc<ez::Op>>;
+    fn create_wait_s(&self, duration_s: Arc<ez::Expr>) -> Vec<ez::Op>;
 }
 
 struct ScratchTargetManager {
     sp_uuid_to_broadcast: BTreeMap<Uuid, Arc<ez::Broadcast>>,
+    wait_start_s_variable: Arc<ez::Variable>,
 }
 
 impl ScratchTargetManager {
@@ -133,7 +135,13 @@ impl ScratchTargetManager {
             }
         }
 
-        Self { sp_uuid_to_broadcast }
+        Self {
+            sp_uuid_to_broadcast,
+            wait_start_s_variable: Arc::new(ez::Variable {
+                uuid: Uuid::new_v4(),
+                name: "wait_start_s".into(),
+            }),
+        }
     }
 
     pub fn get_broadcast(&self, sp_uuid: &Uuid) -> &Arc<ez::Broadcast> {
@@ -173,6 +181,49 @@ impl TargetManager for ScratchTargetManager {
     fn program_exit_call(&self) -> Vec<Arc<ez::Op>> {
         Vec::new()
     }
+
+    fn create_wait_s(&self, duration_s: Arc<ez::Expr>) -> Vec<ez::Op> {
+        Vec::from([ez::Op::Control(ez::ControlOp::If {
+            condition: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
+                ez::OperatorOp::GreaterThan {
+                    operand_a: duration_s.clone(),
+                    operand_b: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::Num(1. / 30.)))),
+                },
+            )))),
+            then_substack: Some(Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                root: Arc::new(ez::Op::Data(ez::DataOp::SetVariableTo {
+                    variable: self.wait_start_s_variable.clone(),
+                    value: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Sensing(
+                        ez::SensingOp::Timer,
+                    )))),
+                })),
+                rest: Arc::new(Vec::from([Arc::new(ez::Op::Control(
+                    ez::ControlOp::RepeatUntil {
+                        condition: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
+                            ez::OperatorOp::Not {
+                                operand: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
+                                    ez::OperatorOp::LessThan {
+                                        operand_a: Arc::new(ez::Expr::Derived(Arc::new(
+                                            ez::Op::Sensing(ez::SensingOp::Timer),
+                                        ))),
+                                        operand_b: Arc::new(ez::Expr::Derived(Arc::new(
+                                            ez::Op::Operator(ez::OperatorOp::Add {
+                                                num_a: Arc::new(ez::Expr::Variable(
+                                                    self.wait_start_s_variable.clone(),
+                                                )),
+                                                num_b: duration_s,
+                                            }),
+                                        ))),
+                                    },
+                                )))),
+                            },
+                        )))),
+                        then_substack: None,
+                    },
+                ))])),
+            })))),
+        })])
+    }
 }
 
 struct TurboWarpTargetManager {
@@ -180,6 +231,8 @@ struct TurboWarpTargetManager {
     dyn_custom_block: Arc<ez::CustomBlock>,
     dyn_proc_argument: Arc<ez::Argument>,
     dyn_proc_variable: Arc<ez::Variable>,
+    wait_start_s_variable: Arc<ez::Variable>,
+    wait_duration_s_variable: Arc<ez::Variable>,
 }
 
 impl TurboWarpTargetManager {
@@ -208,6 +261,14 @@ impl TurboWarpTargetManager {
                 default: "".into(),
             }),
             dyn_proc_variable: Arc::new(ez::Variable { uuid: Uuid::new_v4(), name: "proc".into() }),
+            wait_start_s_variable: Arc::new(ez::Variable {
+                uuid: Uuid::new_v4(),
+                name: "wait_start_s".into(),
+            }),
+            wait_duration_s_variable: Arc::new(ez::Variable {
+                uuid: Uuid::new_v4(),
+                name: "wait_duration_s".into(),
+            }),
         }
     }
 
@@ -288,10 +349,10 @@ impl TargetManager for TurboWarpTargetManager {
     }
 
     fn extra_program_start_ops(&self) -> Vec<Arc<ez::Op>> {
-        let mut branch_stack = None;
+        let mut dyn_stack = None;
 
         for custom_block in self.sp_uuid_to_custom_block.values() {
-            branch_stack = Some(match branch_stack {
+            dyn_stack = Some(match dyn_stack {
                 None => Arc::new(ez::Op::Control(ez::ControlOp::If {
                     condition: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
                         ez::OperatorOp::Equals {
@@ -301,13 +362,13 @@ impl TargetManager for TurboWarpTargetManager {
                             )))),
                         },
                     )))),
-                    then_substack: Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                    then_substack: Some(Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
                         root: Arc::new(ez::Op::Procedure(ez::ProcedureOp::Call {
                             custom_block: custom_block.clone(),
                             argument_inputs: Arc::new(Vec::new()),
                         })),
                         rest: Arc::new(Vec::new()),
-                    }))),
+                    })))),
                 })),
                 Some(prev) => Arc::new(ez::Op::Control(ez::ControlOp::IfElse {
                     condition: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
@@ -318,22 +379,56 @@ impl TargetManager for TurboWarpTargetManager {
                             )))),
                         },
                     )))),
-                    then_substack: Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                    then_substack: Some(Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
                         root: Arc::new(ez::Op::Procedure(ez::ProcedureOp::Call {
                             custom_block: custom_block.clone(),
                             argument_inputs: Arc::new(Vec::new()),
                         })),
                         rest: Arc::new(Vec::new()),
-                    }))),
-                    else_substack: Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                    })))),
+                    else_substack: Some(Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
                         root: prev,
                         rest: Arc::new(Vec::new()),
-                    }))),
+                    })))),
                 })),
             });
         }
 
-        if let Some(branch_stack) = branch_stack {
+        let stack = if let Some(dyn_stack) = dyn_stack {
+            let wait_stack = Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                root: Arc::new(ez::Op::Control(ez::ControlOp::If {
+                    condition: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
+                        ez::OperatorOp::Not {
+                            operand: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
+                                ez::OperatorOp::LessThan {
+                                    operand_a: Arc::new(ez::Expr::Derived(Arc::new(
+                                        ez::Op::Sensing(ez::SensingOp::Timer),
+                                    ))),
+                                    operand_b: Arc::new(ez::Expr::Derived(Arc::new(
+                                        ez::Op::Operator(ez::OperatorOp::Add {
+                                            num_a: Arc::new(ez::Expr::Variable(
+                                                self.wait_start_s_variable.clone(),
+                                            )),
+                                            num_b: Arc::new(ez::Expr::Variable(
+                                                self.wait_duration_s_variable.clone(),
+                                            )),
+                                        }),
+                                    ))),
+                                },
+                            )))),
+                        },
+                    )))),
+                    then_substack: Some(Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                        root: Arc::new(ez::Op::Data(ez::DataOp::SetVariableTo {
+                            variable: self.wait_duration_s_variable.clone(),
+                            value: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::Num(0.)))),
+                        })),
+                        rest: Arc::new(Vec::new()),
+                    })))),
+                })),
+                rest: Arc::new(Vec::new()),
+            })));
+
             Vec::from([Arc::new(ez::Op::Control(ez::ControlOp::RepeatUntil {
                 condition: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
                     ez::OperatorOp::Equals {
@@ -343,14 +438,45 @@ impl TargetManager for TurboWarpTargetManager {
                         )))),
                     },
                 )))),
-                then_substack: Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
-                    root: branch_stack,
+                then_substack: Some(Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                    root: Arc::new(ez::Op::Control(ez::ControlOp::IfElse {
+                        condition: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
+                            ez::OperatorOp::GreaterThan {
+                                operand_a: Arc::new(ez::Expr::Variable(
+                                    self.wait_duration_s_variable.clone(),
+                                )),
+                                operand_b: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::Num(
+                                    1. / 60.,
+                                )))),
+                            },
+                        )))),
+                        then_substack: Some(wait_stack),
+                        else_substack: Some(Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                            root: dyn_stack,
+                            rest: Arc::new(Vec::new()),
+                        })))),
+                    })),
                     rest: Arc::new(Vec::new()),
-                }))),
+                })))),
             }))])
         } else {
             Vec::new()
-        }
+        };
+
+        chain!(
+            [
+                Arc::new(ez::Op::Data(ez::DataOp::SetVariableTo {
+                    variable: self.wait_start_s_variable.clone(),
+                    value: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String("".into()))))
+                })),
+                Arc::new(ez::Op::Data(ez::DataOp::SetVariableTo {
+                    variable: self.wait_duration_s_variable.clone(),
+                    value: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::Num(0.))))
+                }))
+            ],
+            stack
+        )
+        .collect()
     }
 
     fn program_exit_call(&self) -> Vec<Arc<ez::Op>> {
@@ -358,6 +484,19 @@ impl TargetManager for TurboWarpTargetManager {
             variable: self.dyn_proc_variable.clone(),
             value: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String("".into())))),
         }))])
+    }
+
+    fn create_wait_s(&self, duration_s: Arc<ez::Expr>) -> Vec<ez::Op> {
+        Vec::from([
+            ez::Op::Data(ez::DataOp::SetVariableTo {
+                variable: self.wait_start_s_variable.clone(),
+                value: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Sensing(ez::SensingOp::Timer)))),
+            }),
+            ez::Op::Data(ez::DataOp::SetVariableTo {
+                variable: self.wait_duration_s_variable.clone(),
+                value: duration_s,
+            }),
+        ])
     }
 }
 
@@ -438,7 +577,7 @@ fn compile_proc(
                     // init stack memory
                     Arc::new(ez::Op::Control(ez::ControlOp::Repeat {
                         times: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::Int(200_000)))),
-                        looped_substack: Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                        looped_substack: Some(Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
                             root: Arc::new(ez::Op::Data(ez::DataOp::AddToList {
                                 list: Arc::clone(&compile_m.stack_list().clone()),
                                 item: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
@@ -446,7 +585,7 @@ fn compile_proc(
                                 )))),
                             })),
                             rest: Arc::new(Vec::new()),
-                        }))),
+                        })))),
                     })),
                 ]);
 
@@ -511,9 +650,10 @@ fn compile_command(
                 item: compile_expr(compile_m, val),
             })])
         },
-        Command::Wait { duration_s } => Vec::from([ez::Op::Control(ez::ControlOp::Wait {
-            duration_s: compile_expr(compile_m, duration_s),
-        })]),
+        Command::Wait { duration_s } => {
+            let duration_s = compile_expr(compile_m, duration_s);
+            compile_m.target_manager.create_wait_s(duration_s)
+        },
     }
 }
 
@@ -559,20 +699,20 @@ fn compile_call(
 
             Vec::from([ez::Op::Control(ez::ControlOp::IfElse {
                 condition: compiled_cond,
-                then_substack: Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                then_substack: Some(Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
                     root: {
                         let proc_addr_expr = compile_expr(compile_m, then_to);
                         Arc::new(compile_m.target_manager.create_jump(proc_addr_expr))
                     },
                     rest: Arc::new(Vec::new()),
-                }))),
-                else_substack: Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
+                })))),
+                else_substack: Some(Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
                     root: {
                         let proc_addr_expr = compile_expr(compile_m, else_to);
                         Arc::new(compile_m.target_manager.create_jump(proc_addr_expr))
                     },
                     rest: Arc::new(Vec::new()),
-                }))),
+                })))),
             })])
         },
     }

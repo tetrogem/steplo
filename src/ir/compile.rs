@@ -179,6 +179,8 @@ impl Block {
 impl Op {
     fn compile_metadata(&self) -> ExprMetadata {
         let compile = |expr: &Expr| expr.compile();
+        let compile_option = |expr: &Option<Arc<Expr>>| expr.as_ref().map(|x| compile(x));
+
         match self {
             Self::Event(op) => match op {
                 EventOp::WhenFlagClicked => ExprMetadata {
@@ -253,19 +255,19 @@ impl Op {
             Self::Control(op) => match op {
                 ControlOp::If { condition, then_substack } => ExprMetadata {
                     opcode: "control_if",
-                    inputs: obj([
-                        ("CONDITION", compile(condition)),
-                        ("SUBSTACK", compile(then_substack)),
+                    inputs: option_obj([
+                        ("CONDITION", Some(compile(condition))),
+                        ("SUBSTACK", compile_option(then_substack)),
                     ]),
                     fields: JsMap::new(),
                     mutation: None,
                 },
                 ControlOp::IfElse { condition, then_substack, else_substack } => ExprMetadata {
                     opcode: "control_if_else",
-                    inputs: obj([
-                        ("CONDITION", compile(condition)),
-                        ("SUBSTACK", compile(then_substack)),
-                        ("SUBSTACK2", compile(else_substack)),
+                    inputs: option_obj([
+                        ("CONDITION", Some(compile(condition))),
+                        ("SUBSTACK", compile_option(then_substack)),
+                        ("SUBSTACK2", compile_option(else_substack)),
                     ]),
                     fields: JsMap::new(),
                     mutation: None,
@@ -278,18 +280,18 @@ impl Op {
                 },
                 ControlOp::Repeat { times, looped_substack } => ExprMetadata {
                     opcode: "control_repeat",
-                    inputs: obj([
-                        ("TIMES", compile(times)),
-                        ("SUBSTACK", compile(looped_substack)),
+                    inputs: option_obj([
+                        ("TIMES", Some(compile(times))),
+                        ("SUBSTACK", compile_option(looped_substack)),
                     ]),
                     fields: JsMap::new(),
                     mutation: None,
                 },
                 ControlOp::RepeatUntil { condition, then_substack } => ExprMetadata {
                     opcode: "control_repeat_until",
-                    inputs: obj([
-                        ("CONDITION", compile(condition)),
-                        ("SUBSTACK", compile(then_substack)),
+                    inputs: option_obj([
+                        ("CONDITION", Some(compile(condition))),
+                        ("SUBSTACK", compile_option(then_substack)),
                     ]),
                     fields: JsMap::new(),
                     mutation: None,
@@ -528,6 +530,13 @@ struct MutationTag {
 
 fn obj<K: Display>(fields: impl IntoIterator<Item = (K, JsVal)>) -> JsMap<String, JsVal> {
     fields.into_iter().map(|(key, value)| (key.to_string(), value)).collect()
+}
+
+fn option_obj<K: Display>(
+    fields: impl IntoIterator<Item = (K, Option<JsVal>)>,
+) -> JsMap<String, JsVal> {
+    let fields = fields.into_iter().filter_map(|(key, value)| value.map(|value| (key, value)));
+    obj(fields)
 }
 
 fn variable_ref(variable: &Variable) -> JsVal {
