@@ -23,8 +23,8 @@ func delete_duplicates(ret_new_len: &uint, arr: &[num; 11]) |last: num, i: uint,
         if ((i > 0) && ((*arr)[i] == last)) {
             // out(("Dupe " ~ last));
             delete_index(arr, i);
-            i = <uint>(i - 1);
-            new_len = <uint>(new_len - 1);
+            i = <<uint>>(i - 1);
+            new_len = <<uint>>(new_len - 1);
         } else {
             last = (*arr)[i];
             // out(("Not dupe " ~ last));

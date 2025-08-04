@@ -1,14 +1,14 @@
 type Link = {
-    name: val,
-    redirect: val,
+    name: str,
+    redirect: str,
 };
 
 type Message = {
     created_time: uint,
-    sender_name: val,
+    sender_name: str,
     likes: uint,
     content: {
-        body: val,
+        body: str,
         links: [Link; 2],
     },
 };

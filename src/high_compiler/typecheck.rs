@@ -21,6 +21,9 @@ static ANY_TYPE: LazyLock<Arc<l::Type>> = LazyLock::new(|| Arc::new(l::Type::Any
 static VAL_TYPE: LazyLock<Arc<l::Type>> =
     LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Val)));
 
+static STR_TYPE: LazyLock<Arc<l::Type>> =
+    LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Str)));
+
 static NUM_TYPE: LazyLock<Arc<l::Type>> =
     LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Num)));
 
@@ -122,10 +125,15 @@ impl TypeAliasManager {
 
     pub fn id_variant(
         &self,
-        enum_name: &l::Ref<l::Name>,
+        enum_name: &EnumName,
         variant_name: &l::Ref<l::Name>,
     ) -> Result<u32, CompileErrorSet> {
-        let Some(variants) = self.enum_to_variants.get(&enum_name.val.str) else {
+        let (enum_name_str, enum_name_range) = match enum_name {
+            EnumName::Name(name) => (&name.val.str, Some(name.range)),
+            EnumName::Str(name) => (name, None),
+        };
+
+        let Some(variants) = self.enum_to_variants.get(enum_name_str) else {
             todo!(); // enum with this name not found
         };
 
@@ -147,6 +155,11 @@ impl TypeAliasManager {
 
         Ok(variants)
     }
+}
+
+enum EnumName {
+    Name(l::Ref<l::Name>),
+    Str(Arc<str>),
 }
 
 pub fn typecheck(program: &l::Ref<l::Program>) -> Result<t::Ref<t::Program>, CompileErrorSet> {
@@ -346,7 +359,9 @@ fn typecheck_body_item(
             for case in match_item.val.cases.val.iter().rev() {
                 let variant = &case.val.variant;
 
-                if &variant.val.enum_name.val.str != enum_name {
+                if let Some(lit_enum_name) = &variant.val.enum_name
+                    && &lit_enum_name.val.str != enum_name
+                {
                     todo!(); // wrong enum
                 }
 
@@ -364,7 +379,14 @@ fn typecheck_body_item(
                                 op: tr(v, |_| t::BinaryParenExprOp::Eq),
                                 right: try_tr(v, |v| {
                                     Ok(t::Expr::Literal(try_tr(v, |v| {
-                                        typecheck_variant_literal(v, type_alias_m)
+                                        typecheck_variant_literal(
+                                            &match &v.val.enum_name {
+                                                Some(name) => EnumName::Name(name.clone()),
+                                                None => EnumName::Str(enum_name.clone()),
+                                            },
+                                            &v.val.variant_name,
+                                            type_alias_m,
+                                        )
                                     })?))
                                 })?,
                             })
@@ -408,11 +430,11 @@ fn typecheck_if(
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::IfItem, CompileErrorSet> {
     let condition_type = eval_expr(&item.val.condition, ident_to_type, type_alias_m)?;
-    if condition_type.is_subtype_of(&VAL_TYPE).not() {
+    if condition_type.is_subtype_of(&BOOL_TYPE).not() {
         return Err(CompileErrorSet::new_error(
             item.val.condition.range,
             CompileError::Type(TypeError::Mismatch {
-                expected: vague(&VAL_TYPE),
+                expected: vague(&BOOL_TYPE),
                 found: vague(&condition_type),
             }),
         ));
@@ -443,11 +465,11 @@ fn typecheck_while(
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::WhileItem, CompileErrorSet> {
     let condition_type = eval_expr(&item.val.condition, ident_to_type, type_alias_m)?;
-    if condition_type.is_subtype_of(&VAL_TYPE).not() {
+    if condition_type.is_subtype_of(&BOOL_TYPE).not() {
         return Err(CompileErrorSet::new_error(
             item.val.condition.range,
             CompileError::Type(TypeError::Mismatch {
-                expected: vague(&VAL_TYPE),
+                expected: vague(&BOOL_TYPE),
                 found: vague(&condition_type),
             }),
         ));
@@ -1087,12 +1109,22 @@ fn typecheck_expr(
 ) -> Result<t::Expr, CompileErrorSet> {
     Ok(match &item.val {
         l::Expr::Literal(x) => t::Expr::Literal(try_tr(x, |x| match &x.val {
-            l::Literal::Val(x) => Ok(t::Literal::Val(x.clone())),
+            l::Literal::Str(x) => Ok(t::Literal::Str(x.clone())),
             l::Literal::Num(x) => Ok(t::Literal::Num(*x)),
             l::Literal::Int(x) => Ok(t::Literal::Int(*x)),
             l::Literal::Uint(x) => Ok(t::Literal::Uint(*x)),
             l::Literal::Bool(x) => Ok(t::Literal::Bool(*x)),
-            l::Literal::Variant(x) => Ok(typecheck_variant_literal(&x, type_alias_m)?),
+            l::Literal::Variant(x) => {
+                let Some(enum_name) = &x.val.enum_name else {
+                    todo!(); // can't yet infer enum name
+                };
+
+                Ok(typecheck_variant_literal(
+                    &EnumName::Name(enum_name.clone()),
+                    &x.val.variant_name,
+                    type_alias_m,
+                )?)
+            },
         })?),
         l::Expr::Place(x) => {
             t::Expr::Place(try_tr(x, |x| typecheck_place(x, ident_to_type, type_alias_m))?)
@@ -1115,13 +1147,17 @@ fn eval_expr(
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
     match &item.val {
         l::Expr::Literal(x) => Ok(match &x.val {
-            l::Literal::Val(_) => VAL_TYPE.clone(),
+            l::Literal::Str(_) => STR_TYPE.clone(),
             l::Literal::Num(_) => NUM_TYPE.clone(),
             l::Literal::Int(_) => INT_TYPE.clone(),
             l::Literal::Uint(_) => UINT_TYPE.clone(),
             l::Literal::Bool(_) => BOOL_TYPE.clone(),
             l::Literal::Variant(x) => {
-                Arc::new(l::Type::Enum { name: x.val.enum_name.val.str.clone() })
+                let Some(enum_name) = &x.val.enum_name else {
+                    todo!(); // can't yet infer enum names in exprs
+                };
+
+                Arc::new(l::Type::Enum { name: enum_name.val.str.clone() })
             },
         }),
         l::Expr::Place(x) => eval_place(x, ident_to_type, type_alias_m).map(|res| res.ty),
@@ -1164,10 +1200,11 @@ fn eval_expr(
 }
 
 fn typecheck_variant_literal(
-    item: &l::Ref<l::VariantLiteral>,
+    enum_name: &EnumName,
+    variant_name: &l::Ref<l::Name>,
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::Literal, CompileErrorSet> {
-    let variant_id = type_alias_m.id_variant(&item.val.enum_name, &item.val.variant_name)?;
+    let variant_id = type_alias_m.id_variant(enum_name, variant_name)?;
     Ok(t::Literal::Uint(f64::from(variant_id)))
 }
 
@@ -1331,30 +1368,41 @@ fn eval_binary_expr(
             for "%";
             NUM_TYPE, NUM_TYPE => NUM_TYPE;
         ),
-        l::BinaryParenExprOp::Eq => expect_types!(
-            for "==";
-            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
-        ),
-        l::BinaryParenExprOp::Neq => expect_types!(
-            for "!=";
-            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
-        ),
-        l::BinaryParenExprOp::Gt => expect_types!(
-            for ">";
-            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
-        ),
-        l::BinaryParenExprOp::Lt => expect_types!(
-            for "<";
-            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
-        ),
-        l::BinaryParenExprOp::Gte => expect_types!(
-            for ">=";
-            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
-        ),
-        l::BinaryParenExprOp::Lte => expect_types!(
-            for "<=";
-            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
-        ),
+        l::BinaryParenExprOp::Eq
+        | l::BinaryParenExprOp::Neq
+        | l::BinaryParenExprOp::Gt
+        | l::BinaryParenExprOp::Lt
+        | l::BinaryParenExprOp::Gte
+        | l::BinaryParenExprOp::Lte => 'expect: {
+            let comparable = 'comparable: {
+                if left_type.is_subtype_of(&STR_TYPE) && right_type.is_subtype_of(&STR_TYPE) {
+                    break 'comparable true;
+                }
+
+                if left_type.is_subtype_of(&NUM_TYPE) && right_type.is_subtype_of(&NUM_TYPE) {
+                    break 'comparable true;
+                }
+
+                if left_type.is_subtype_of(&BOOL_TYPE) && right_type.is_subtype_of(&BOOL_TYPE) {
+                    break 'comparable true;
+                }
+
+                if let l::Type::Enum { name: left_name } = left_type.as_ref()
+                    && let l::Type::Enum { name: right_name } = right_type.as_ref()
+                    && left_name == right_name
+                {
+                    break 'comparable true;
+                }
+
+                false
+            };
+
+            if comparable {
+                break 'expect Ok(BOOL_TYPE.clone());
+            }
+
+            todo!(); // cannot compare types
+        },
         l::BinaryParenExprOp::And => expect_types!(
             for "&&";
             BOOL_TYPE, BOOL_TYPE => BOOL_TYPE;
@@ -1365,7 +1413,7 @@ fn eval_binary_expr(
         ),
         l::BinaryParenExprOp::Join => expect_types!(
             for "~";
-            VAL_TYPE, VAL_TYPE => VAL_TYPE;
+            VAL_TYPE, VAL_TYPE => STR_TYPE;
         ),
     }
 }

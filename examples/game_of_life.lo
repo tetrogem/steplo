@@ -1,4 +1,4 @@
-main |loop: bool, input: val, cells: [[bool; 18]; 9]| {
+main |loop: bool, cells: [[bool; 18]; 9]| {
     gen_random_cells(&cells);
 
     loop = true;

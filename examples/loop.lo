@@ -7,7 +7,7 @@ func iterate(i_r: &uint) |i: uint| {
     i = *i_r;
 
     if (0 != i) {
-        *i_r = <uint>(i - 1);
+        *i_r = <<uint>>(i - 1);
         greet();
         iterate(i_r);
     }

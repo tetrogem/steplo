@@ -1,6 +1,6 @@
 main |i: uint, iters: uint, result: val| {
     out("Enter how many iterations to perform:");
-    in(<<&val>>&iters);
+    in(<<&str>>&iters);
 
     i = 1;
     while (i <= iters) {

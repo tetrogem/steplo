@@ -126,7 +126,7 @@ pub enum Expr {
 
 #[derive(Debug)]
 pub enum Literal {
-    Val(Arc<str>),
+    Str(Arc<str>),
     Num(f64),
     Int(f64),
     Uint(f64),

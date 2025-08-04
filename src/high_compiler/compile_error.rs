@@ -141,6 +141,7 @@ impl Display for VagueType {
             Self::Primitive(base) => {
                 let base = match base {
                     PrimitiveType::Val => "val",
+                    PrimitiveType::Str => "str",
                     PrimitiveType::Num => "num",
                     PrimitiveType::Int => "int",
                     PrimitiveType::Uint => "uint",
@@ -208,7 +209,6 @@ enum CollapsedGrammarError {
     ExpectedTokenString { expected: HashSet<Arc<[TokenKind]>> },
 }
 
-#[allow(clippy::enum_variant_names)]
 enum CollapsedLogicError {
     InvalidArrayTypeLen,
     InvalidNumLiteral,

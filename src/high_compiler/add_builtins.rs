@@ -55,7 +55,7 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
     // add built-in native functions
     top_items.push(func(l::Func {
         name: name("out"),
-        params: rf(Vec::from([decl("val", l::TypeHint::Any)])),
+        params: rf(Vec::from([decl("val", l::TypeHint::Primitive(l::PrimitiveType::Val))])),
         proc: rf(l::Proc {
             idents: rf(Vec::from([])),
             body: body([stmt(l::Statement::Native(rf(l::NativeOperation::Out {
@@ -68,10 +68,10 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         name: name("in"),
         params: rf(Vec::from([decl(
             "return",
-            ref_ty(l::TypeHint::Primitive(l::PrimitiveType::Val)),
+            ref_ty(l::TypeHint::Primitive(l::PrimitiveType::Str)),
         )])),
         proc: rf(l::Proc {
-            idents: rf(Vec::from([decl("answer", l::TypeHint::Primitive(l::PrimitiveType::Val))])),
+            idents: rf(Vec::from([decl("answer", l::TypeHint::Primitive(l::PrimitiveType::Str))])),
             body: body([
                 stmt(l::Statement::Native(rf(l::NativeOperation::In {
                     dest_place: place("answer"),
@@ -192,7 +192,7 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
     top_items.push(func(l::Func {
         name: name("stdout_read"),
         params: rf(Vec::from([
-            decl("return", l::TypeHint::Ref(rf(l::TypeHint::Primitive(l::PrimitiveType::Val)))),
+            decl("return", l::TypeHint::Ref(rf(l::TypeHint::Primitive(l::PrimitiveType::Str)))),
             decl("index", l::TypeHint::Primitive(l::PrimitiveType::Uint)),
         ])),
         proc: rf(l::Proc {
@@ -235,7 +235,7 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
                         stmt(l::Statement::Call(rf(l::FunctionCall {
                             func_name: name("out"),
                             param_exprs: rf(Vec::from([rf(l::AssignExpr::Expr(rf(
-                                l::Expr::Literal(rf(l::Literal::Val("".into()))),
+                                l::Expr::Literal(rf(l::Literal::Str("".into()))),
                             )))])),
                         }))),
                         stmt(l::Statement::Call(rf(l::FunctionCall {

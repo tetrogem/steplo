@@ -157,17 +157,11 @@ impl Type {
         // breaking the original invariant of that memory location
         // but, we can cast to types that *don't* contain refs, but have the same
         // in-memory representation
-        if other.contains_ref().not()
+        other.contains_ref().not()
             && self.cells_repr().into_iter().zip_longest(other.cells_repr()).all(|cells| {
                 let EitherOrBoth::Both(self_cell, other_cell) = cells else { return false };
                 Type::from(self_cell).is_subtype_of(&Type::from(other_cell))
             })
-        {
-            return true;
-        }
-
-        // otherwise, casts can be used to perform inverses of type coercion
-        other.is_subtype_of(self)
     }
 
     // transmute: may break invariant of type casting to AND the value casting from
@@ -194,6 +188,7 @@ impl From<CellType> for Type {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PrimitiveType {
     Val,
+    Str,
     Num,
     Int,
     Uint,
@@ -204,6 +199,7 @@ impl PrimitiveType {
     pub fn supertype(&self) -> Option<PrimitiveType> {
         Some(match self {
             Self::Val => return None,
+            Self::Str => Self::Val,
             Self::Num => Self::Val,
             Self::Int => Self::Num,
             Self::Uint => Self::Int,
@@ -359,7 +355,7 @@ pub enum Expr {
 
 #[derive(Debug)]
 pub enum Literal {
-    Val(Arc<str>),
+    Str(Arc<str>),
     Num(f64),
     Int(f64),
     Uint(f64),
@@ -369,7 +365,7 @@ pub enum Literal {
 
 #[derive(Debug)]
 pub struct VariantLiteral {
-    pub enum_name: Ref<Name>,
+    pub enum_name: Option<Ref<Name>>,
     pub variant_name: Ref<Name>,
 }
 

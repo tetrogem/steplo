@@ -246,6 +246,7 @@ impl From<&g::Ref<g::BaseType>> for l::TypeHint {
         match name.val.str.as_ref() {
             "any" => Self::Any,
             "val" => Self::Primitive(l::PrimitiveType::Val),
+            "str" => Self::Primitive(l::PrimitiveType::Str),
             "num" => Self::Primitive(l::PrimitiveType::Num),
             "int" => Self::Primitive(l::PrimitiveType::Int),
             "uint" => Self::Primitive(l::PrimitiveType::Uint),
@@ -358,7 +359,7 @@ impl TryFrom<&g::Ref<g::MatchCase>> for l::MatchCase {
 impl From<&g::Ref<g::VariantLiteral>> for l::VariantLiteral {
     fn from(value: &g::Ref<g::VariantLiteral>) -> Self {
         Self {
-            enum_name: convert(&value.val.enum_name),
+            enum_name: convert_maybe(&value.val.enum_name).map(convert),
             variant_name: convert(&value.val.variant_name),
         }
     }
@@ -520,7 +521,7 @@ impl TryFrom<&g::Ref<g::Literal>> for l::Literal {
 
     fn try_from(value: &g::Ref<g::Literal>) -> Result<Self, Self::Error> {
         Ok(match &value.val {
-            g::Literal::Str(x) => l::Literal::Val(x.val.str.clone()),
+            g::Literal::Str(x) => l::Literal::Str(x.val.str.clone()),
             g::Literal::Num(x) => {
                 let num: f64 = parse_num_literal(x)?;
                 if num.is_infinite() || num.is_nan() || num.is_subnormal() || num.round() != num {

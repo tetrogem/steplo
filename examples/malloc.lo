@@ -62,7 +62,7 @@ func Heap_books_find_open(ret: &uint, books: &Vec, size: uint)
     while (loop && (i < (*books).len)) {
         Vec_get(<<&any>>&start, books, i);
         Vec_get(<<&any>>&end, books, (i + 1));
-        range = <uint>(end - start);
+        range = <<uint>>(end - start);
 
         if (((addr >= start) && (addr < end)) || (size > range)) {
             addr = end;
@@ -84,7 +84,7 @@ func malloc(ret: &&any, heap: &Heap, size: uint) |addr: uint, books: &Vec| {
 }
 
 func free(heap: &Heap, ptr: &any) |addr: uint, i: uint, start: uint, null: any| {
-    addr = <uint>(<uint>ptr - <uint>(*heap).open);
+    addr = <<uint>>(<uint>ptr - <uint>(*heap).open);
     i = 0;
     while (i < (*(*heap).books).len) {
         Vec_get(<<&any>>&start, (*heap).books, i);
@@ -123,9 +123,9 @@ func Vec_push(self: &Vec, val: any) |entry: &any| {
 }
 
 func Vec_pop(ret: &any, self: &Vec) |val: any| {
-    Vec_get(&val, self, <uint>((*self).len - 1));
+    Vec_get(&val, self, <<uint>>((*self).len - 1));
     *ret = val;
-    (*self).len = <uint>((*self).len - 1);
+    (*self).len = <<uint>>((*self).len - 1);
 }
 
 func Vec_insert(self: &Vec, val: any, index: uint)
@@ -139,7 +139,7 @@ func Vec_insert(self: &Vec, val: any, index: uint)
         Vec_get_mut(&next_entry, self, (i + 1));
         *next_entry = *entry;
 
-        i = <uint>(i - 1);
+        i = <<uint>>(i - 1);
     }
 
     Vec_get_mut(&entry, self, index);
@@ -151,7 +151,7 @@ func Vec_remove(ret: &any, self: &Vec, index: uint)
 {
     Vec_get(ret, self, index);
     i = index;
-    (*self).len = <uint>((*self).len - 1);
+    (*self).len = <<uint>>((*self).len - 1);
 
     while (i < (*self).len) {
         Vec_get_mut(&entry, self, i);

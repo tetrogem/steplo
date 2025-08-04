@@ -303,7 +303,7 @@ pub struct FalseLiteral;
 
 #[derive(Debug)]
 pub struct VariantLiteral {
-    pub enum_name: Ref<Name>,
+    pub enum_name: Ref<Maybe<Name>>,
     pub variant_name: Ref<Name>,
 }
 

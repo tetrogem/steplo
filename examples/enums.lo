@@ -1,6 +1,6 @@
 enum State { None | Loading | Loaded }
 
-main |state: State, input: val| {
+main |state: State, input: str| {
     state = State#None;
     State_print(state);
     out("Press enter to load...");
@@ -15,7 +15,7 @@ main |state: State, input: val| {
 }
 
 func State_print(state: State) || match state {
-    State#None -> out("None");
-    State#Loading -> out("Loading");
-    State#Loaded -> out("Loaded");
+    #None -> out("None");
+    #Loading -> out("Loading");
+    #Loaded -> out("Loaded");
 }
