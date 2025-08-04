@@ -9,6 +9,9 @@
       "include": "#typeAlias"
     },
     {
+      "include": "#enums"
+    },
+    {
       "include": "#stackVars"
     },
     {
@@ -22,6 +25,9 @@
     },
     {
       "include": "#operators"
+    },
+    {
+      "include": "#variants"
     },
     {
       "include": "#strings"
@@ -44,7 +50,7 @@
       "patterns": [
         {
           "name": "keyword.steplo",
-          "match": "\\b(main|func|ref|deref|if|else|while|slice|type)\\b"
+          "match": "\\b(main|func|ref|deref|if|else|while|slice|type|enum)\\b"
         }
       ]
     },
@@ -85,6 +91,19 @@
         {
           "name": "constant.other.steplo",
           "match": "\\b(true|false)\\b"
+        }
+      ]
+    },
+    "variants": {
+      "patterns": [
+        {
+          "name": "constant.numeric.steplo",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\b(#)\\b([a-zA-Z_][a-zA-Z0-9_]+)\\b",
+          "captures": {
+            "1": { "patterns": [{ "include": "#types" }] },
+            "2": { "name": "punctuation.steplo" },
+            "3": { "name": "variable.other.steplo" }
+          }
         }
       ]
     },
@@ -154,6 +173,25 @@
       },
       "patterns": [{ "include": "#types" }],
       "end": "(;)",
+      "endCaptures": {
+        "1": { "name": "punctuation.steplo" }
+      }
+    },
+    "enums": {
+      "begin": "(enum)\\s+(\\w+)\\s*({)",
+      "beginCaptures": {
+        "1": { "patterns": [{ "include": "#keywords" }] },
+        "2": { "patterns": [{ "include": "#types" }] },
+        "3": { "patterns": [{ "include": "#punctuation" }] }
+      },
+      "patterns": [
+        {
+          "match": "([a-zA-Z_][a-zA-Z0-9_]+)",
+          "name": "variable.other.steplo"
+        },
+        { "include": "#punctuation" }
+      ],
+      "end": "(})",
       "endCaptures": {
         "1": { "name": "punctuation.steplo" }
       }

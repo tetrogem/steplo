@@ -2,6 +2,8 @@ use std::collections::VecDeque;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use itertools::Itertools;
+
 use crate::compile_error::CompileError;
 use crate::compile_error::CompileErrorSet;
 use crate::compile_error::LogicError;
@@ -40,6 +42,18 @@ where
     let tos = tos.collect::<Result<Vec<_>, _>>()?;
 
     Ok(Arc::new(Srced { val: tos, range: list.range }))
+}
+
+fn convert_list<List, From, To>(list: &g::Ref<List>) -> l::Ref<Vec<l::Ref<To>>>
+where
+    for<'a> VecDeque<g::Ref<From>>: FromList<&'a g::Ref<List>>,
+    for<'a> &'a g::Ref<From>: Into<To>,
+{
+    let deque = VecDeque::from_list(list);
+    let tos = deque.iter().map(|x| -> l::Ref<To> { convert(x) });
+    let tos = tos.collect::<Vec<_>>();
+
+    Arc::new(Srced { val: tos, range: list.range })
 }
 
 pub fn grammar_to_ast(grammar: &g::Ref<g::Program>) -> Result<l::Ref<l::Program>, CompileErrorSet> {
@@ -95,6 +109,20 @@ impl<T> FromList<&g::Ref<g::SemiList<T>>> for VecDeque<g::Ref<T>> {
     }
 }
 
+impl<T> FromList<&g::Ref<g::PipeList<T>>> for VecDeque<g::Ref<T>> {
+    fn from_list(value: &g::Ref<g::PipeList<T>>) -> Self {
+        match &value.val {
+            g::PipeList::Empty(_) => Default::default(),
+            g::PipeList::Tail(tail) => VecDeque::from([tail.clone()]),
+            g::PipeList::Link(link) => {
+                let mut vec = VecDeque::from_list(&link.val.next);
+                vec.push_front(link.val.item.clone());
+                vec
+            },
+        }
+    }
+}
+
 impl TryFrom<&g::Ref<g::TopItem>> for l::TopItem {
     type Error = CompileErrorSet;
 
@@ -112,6 +140,9 @@ impl TryFrom<&g::Ref<g::TopItem>> for l::TopItem {
                 range: x.range,
                 val: l::TypeItem::Alias(try_convert(x)?),
             })),
+            g::TopItem::Enum(x) => {
+                Self::Type(Arc::new(Srced { range: x.range, val: l::TypeItem::Enum(convert(x)) }))
+            },
         })
     }
 }
@@ -141,6 +172,12 @@ impl TryFrom<&g::Ref<g::TypeAlias>> for l::TypeAlias {
 
     fn try_from(value: &g::Ref<g::TypeAlias>) -> Result<Self, Self::Error> {
         Ok(Self { name: convert(&value.val.name), ty: try_convert(&value.val.ty)? })
+    }
+}
+
+impl From<&g::Ref<g::EnumItem>> for l::EnumItem {
+    fn from(value: &g::Ref<g::EnumItem>) -> Self {
+        Self { name: convert(&value.val.name), variants: convert_list(&value.val.variants) }
     }
 }
 
@@ -184,15 +221,15 @@ impl TryFrom<&g::Ref<g::Type>> for l::TypeHint {
                     .val
                     .iter()
                     .map(|field| {
-                        Ok(Arc::new(Srced {
+                        Arc::new(Srced {
                             range: field.range,
                             val: l::FieldTypeHint {
                                 name: field.val.name.clone(),
                                 ty: field.val.ty.clone(),
                             },
-                        }))
+                        })
                     })
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .collect_vec();
 
                 Self::Struct(Arc::new(Srced {
                     range: fields.iter().fold(Default::default(), |acc, x| acc.merge(x.range)),
@@ -213,7 +250,7 @@ impl From<&g::Ref<g::BaseType>> for l::TypeHint {
             "int" => Self::Primitive(l::PrimitiveType::Int),
             "uint" => Self::Primitive(l::PrimitiveType::Uint),
             "bool" => Self::Primitive(l::PrimitiveType::Bool),
-            _ => Self::Alias(convert(name)),
+            _ => Self::Nominal(convert(name)),
         }
     }
 }
@@ -465,6 +502,10 @@ impl TryFrom<&g::Ref<g::Literal>> for l::Literal {
             g::Literal::Bool(x) => match &x.val {
                 g::BoolLiteral::True(_) => l::Literal::Bool(true),
                 g::BoolLiteral::False(_) => l::Literal::Bool(false),
+            },
+            g::Literal::Variant(x) => l::Literal::Variant {
+                enum_name: convert(&x.val.enum_name),
+                variant_name: convert(&x.val.variant_name),
             },
         })
     }

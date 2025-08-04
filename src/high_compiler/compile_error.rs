@@ -99,6 +99,7 @@ pub enum VagueType {
     Ref(Arc<VagueType>),
     Array { ty: Arc<VagueType>, len: Option<u32> },
     Struct(Option<Arc<Vec<Arc<VagueTypeField>>>>),
+    Enum { name: Arc<str> },
 }
 
 #[derive(Debug)]
@@ -127,6 +128,7 @@ impl From<&Type> for VagueType {
                     })
                     .collect(),
             ))),
+            Type::Enum { name } => Self::Enum { name: name.clone() },
         }
     }
 }
@@ -166,6 +168,9 @@ impl Display for VagueType {
                 };
 
                 write!(f, "{{ {fields} }}")
+            },
+            Self::Enum { name } => {
+                write!(f, "{name}")
             },
         }
     }
@@ -378,6 +383,7 @@ impl CollapsedCompileError {
                     TokenKind::Struct => TokenString::Keyword("struct"),
                     TokenKind::Enum => TokenString::Keyword("enum"),
                     TokenKind::Type => TokenString::Keyword("type"),
+                    TokenKind::Hashtag => TokenString::Punctuation("#"),
                 }
             }
 

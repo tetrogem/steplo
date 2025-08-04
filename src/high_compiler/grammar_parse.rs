@@ -4,13 +4,13 @@ use crate::high_compiler::grammar_ast::{
     AddOp, AndOp, ArrayAssign, ArrayAssignExpr, ArrayType, Assign, AssignExpr, BaseType,
     BinaryParenExpr, BinaryParenExprOp, Body, BodyItem, BoolLiteral, CastExpr, CommaList,
     CommaListLink, Comment, Decimal, Deref, Digits, DivOp, ElseBodyItem, ElseIfItem, ElseItem,
-    Empty, EqOp, Expr, FalseLiteral, Field, Func, FunctionCall, GtOp, GteOp, Ident,
+    Empty, EnumItem, EqOp, Expr, FalseLiteral, Field, Func, FunctionCall, GtOp, GteOp, Ident,
     IdentDeclaration, IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, Maybe, ModOp,
     MulOp, Name, Negative, NeqOp, NotOp, NumLiteral, Offset, OrOp, ParenExpr, ParensNest,
-    ParensWrapped, Place, PlaceHead, PlaceIndex, PlaceIndexLink, Proc, Program, RefExpr, RefType,
-    SemiList, SemiListLink, SpreadAssignExpr, Statement, StatementItem, StrLiteral, StructAssign,
-    StructAssignField, StructType, SubOp, TopItem, TransmuteExpr, TrueLiteral, Type, TypeAlias,
-    UnaryParenExpr, UnaryParenExprOp, WhileItem,
+    ParensWrapped, PipeList, PipeListLink, Place, PlaceHead, PlaceIndex, PlaceIndexLink, Proc,
+    Program, RefExpr, RefType, SemiList, SemiListLink, SpreadAssignExpr, Statement, StatementItem,
+    StrLiteral, StructAssign, StructAssignField, StructType, SubOp, TopItem, TransmuteExpr,
+    TrueLiteral, Type, TypeAlias, UnaryParenExpr, UnaryParenExprOp, VariantLiteral, WhileItem,
 };
 
 use super::{
@@ -180,6 +180,7 @@ impl AstParse for TopItem {
                 Self::Main(Arc::new(x)),
                 Self::Func(Arc::new(x)),
                 Self::TypeAlias(Arc::new(x)),
+                Self::Enum(Arc::new(x)),
             } else {
                 "Expected top item"
             }
@@ -223,6 +224,20 @@ impl AstParse for TypeAlias {
             [struct ty];
             [match _ = Token::Semi => (); as [TokenKind::Semi]];
             [return Self { name: Arc::new(name), ty: Arc::new(ty) }];
+        }
+    }
+}
+
+impl AstParse for EnumItem {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Enum => (); as [TokenKind::Enum]];
+            [struct name];
+            [match _ = Token::LeftBrace => (); as [TokenKind::LeftBrace]];
+            [struct variants];
+            [match _ = Token::RightBrace => (); as [TokenKind::RightBrace]];
+            [return Self { name: Arc::new(name), variants: Arc::new(variants) }];
         }
     }
 }
@@ -318,6 +333,7 @@ impl AstParse for Literal {
                 Self::Str(Arc::new(x)),
                 Self::Num(Arc::new(x)),
                 Self::Bool(Arc::new(x)),
+                Self::Variant(Arc::new(x)),
             } else {
                 "Expected literal"
             }
@@ -343,6 +359,18 @@ impl AstParse for NumLiteral {
             [struct int];
             [struct dec];
             [return Self { negative: Arc::new(negative), int: Arc::new(int), dec: Arc::new(dec) }];
+        }
+    }
+}
+
+impl AstParse for VariantLiteral {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct enum_name];
+            [match _ = Token::Hashtag => (); as [TokenKind::Hashtag]];
+            [struct variant_name];
+            [return Self { enum_name: Arc::new(enum_name), variant_name: Arc::new(variant_name) }];
         }
     }
 }
@@ -516,6 +544,32 @@ impl<T: AstParse> AstParse for ListLink<T> {
         parse_struct! {
             parse tokens;
             [struct item];
+            [struct next];
+            [return Self { item: Arc::new(item), next: Arc::new(next) }];
+        }
+    }
+}
+
+impl<T: AstParse> AstParse for PipeList<T> {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
+            parse tokens => x {
+                Self::Link(Arc::new(x)),
+                Self::Tail(Arc::new(x)),
+                Self::Empty(Arc::new(x)),
+            } else {
+                "Expected pipe list"
+            }
+        }
+    }
+}
+
+impl<T: AstParse> AstParse for PipeListLink<T> {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct item];
+            [match _ = Token::Pipe => (); as [TokenKind::Pipe]];
             [struct next];
             [return Self { item: Arc::new(item), next: Arc::new(next) }];
         }
@@ -863,8 +917,8 @@ impl AstParse for Expr {
                 Self::Cast(Arc::new(x)),
                 Self::Paren(Arc::new(x)),
                 Self::Ref(Arc::new(x)),
-                Self::Place(Arc::new(x)),
                 Self::Literal(Arc::new(x)),
+                Self::Place(Arc::new(x)),
             } else {
                 "Expected expression"
             }

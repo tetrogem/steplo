@@ -1,0 +1,25 @@
+enum State { None | Loading | Loaded }
+
+main |state: State, input: val| {
+    state = State#None;
+    State_print(state);
+    out("Press enter to load...");
+    in(&input);
+
+    state = State#Loading;
+    State_print(state);
+    wait_s(3);
+
+    state = State#Loaded;
+    State_print(state);
+}
+
+func State_print(state: State) || {
+    if (state == State#None) {
+        out("None");
+    } else if (state == State#Loading) {
+        out("Loading");
+    } else if (state == State#Loaded) {
+        out("Loaded");
+    }
+}

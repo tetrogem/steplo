@@ -21,12 +21,19 @@ pub enum ExeItem {
 #[derive(Debug)]
 pub enum TypeItem {
     Alias(Ref<TypeAlias>),
+    Enum(Ref<EnumItem>),
 }
 
 #[derive(Debug)]
 pub struct TypeAlias {
     pub name: Ref<Name>,
     pub ty: Ref<TypeHint>,
+}
+
+#[derive(Debug)]
+pub struct EnumItem {
+    pub name: Ref<Name>,
+    pub variants: Ref<Vec<Ref<Name>>>,
 }
 
 #[derive(Debug)]
@@ -53,7 +60,7 @@ pub enum TypeHint {
     Ref(Ref<TypeHint>),
     Array { ty: Ref<TypeHint>, len: u32 },
     Struct(Ref<Vec<Ref<FieldTypeHint>>>),
-    Alias(Ref<Name>),
+    Nominal(Ref<Name>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -63,6 +70,7 @@ pub enum Type {
     Ref(Arc<Type>),
     Array { ty: Arc<Type>, len: u32 },
     Struct(Arc<Vec<Arc<FieldType>>>),
+    Enum { name: Arc<str> },
 }
 
 impl Type {
@@ -73,6 +81,7 @@ impl Type {
             Self::Ref(_) => 1,
             Self::Array { ty, len } => ty.size() * len,
             Self::Struct(fields) => fields.iter().map(|field| field.ty.size()).sum(),
+            Self::Enum { .. } => 1,
         }
     }
 
@@ -119,9 +128,10 @@ impl Type {
         match self {
             Self::Any => Vec::from([CellType::Any]),
             Self::Primitive(x) => Vec::from([CellType::Primitive(*x)]),
-            Self::Ref(_) => Vec::from([CellType::Primitive(PrimitiveType::Uint)]),
+            Self::Ref(_) => Self::Primitive(PrimitiveType::Uint).cells_repr(),
             Self::Array { ty, len } => (0..*len).flat_map(|_| ty.cells_repr()).collect(),
             Self::Struct(fields) => fields.iter().flat_map(|field| field.ty.cells_repr()).collect(),
+            Self::Enum { .. } => Self::Primitive(PrimitiveType::Uint).cells_repr(),
         }
     }
 
@@ -132,6 +142,7 @@ impl Type {
             Self::Ref(_) => true,
             Self::Array { ty, .. } => ty.contains_ref(),
             Self::Struct(fields) => fields.iter().any(|field| field.ty.contains_ref()),
+            Self::Enum { .. } => false,
         }
     }
 
@@ -340,6 +351,7 @@ pub enum Literal {
     Int(f64),
     Uint(f64),
     Bool(bool),
+    Variant { enum_name: Ref<Name>, variant_name: Ref<Name> },
 }
 
 #[derive(Debug)]

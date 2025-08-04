@@ -50,35 +50,52 @@ fn try_tr<L, T, Error, F: FnOnce(&l::Ref<L>) -> Result<T, Error>>(
 }
 
 struct TypeAliasManager {
+    enum_to_variants: HashMap<Arc<str>, Arc<Vec<Arc<str>>>>,
     alias_to_type_hint: HashMap<Arc<str>, l::Ref<TypeHint>>,
 }
 
 impl TypeAliasManager {
     pub fn new(program: &l::Ref<l::Program>) -> Self {
-        let aliases = program.val.items.val.iter().filter_map(|item| match &item.val {
-            l::TopItem::Exe(_) => None,
-            l::TopItem::Type(item) => match &item.val {
-                l::TypeItem::Alias(alias) => Some(alias),
-            },
-        });
+        let mut enum_to_variants = HashMap::new();
+        let mut alias_to_type_hint = HashMap::new();
 
-        Self {
-            alias_to_type_hint: aliases
-                .map(|alias| (alias.val.name.val.str.clone(), alias.val.ty.clone()))
-                .collect(),
+        for item in program.val.items.val.iter() {
+            let l::TopItem::Type(item) = &item.val else { continue };
+
+            match &item.val {
+                l::TypeItem::Alias(x) => {
+                    alias_to_type_hint.insert(x.val.name.val.str.clone(), x.val.ty.clone());
+                },
+                l::TypeItem::Enum(x) => {
+                    enum_to_variants.insert(
+                        x.val.name.val.str.clone(),
+                        Arc::new(x.val.variants.val.iter().map(|v| v.val.str.clone()).collect()),
+                    );
+                },
+            }
         }
+
+        Self { enum_to_variants, alias_to_type_hint }
     }
 
     pub fn resolve(&self, hint: &l::Ref<l::TypeHint>) -> Result<l::Type, CompileErrorSet> {
         Ok(match &hint.val {
-            l::TypeHint::Alias(name) => match self.alias_to_type_hint.get(&name.val.str) {
-                Some(hint) => self.resolve(hint)?,
-                None => {
-                    return Err(CompileErrorSet::new_error(
-                        name.range,
-                        CompileError::Type(TypeError::UnknownAlias { name: name.val.str.clone() }),
-                    ));
-                },
+            l::TypeHint::Nominal(name) => {
+                if self.enum_to_variants.get(&name.val.str).is_some() {
+                    l::Type::Enum { name: name.val.str.clone() }
+                } else {
+                    match self.alias_to_type_hint.get(&name.val.str) {
+                        Some(hint) => self.resolve(hint)?,
+                        None => {
+                            return Err(CompileErrorSet::new_error(
+                                name.range,
+                                CompileError::Type(TypeError::UnknownAlias {
+                                    name: name.val.str.clone(),
+                                }),
+                            ));
+                        },
+                    }
+                }
             },
             l::TypeHint::Any => l::Type::Any,
             l::TypeHint::Primitive(p) => l::Type::Primitive(*p),
@@ -101,6 +118,23 @@ impl TypeAliasManager {
                 l::Type::Struct(Arc::new(fields))
             },
         })
+    }
+
+    pub fn id_variant(
+        &self,
+        enum_name: &l::Ref<l::Name>,
+        variant_name: &l::Ref<l::Name>,
+    ) -> Result<u32, CompileErrorSet> {
+        let Some(variants) = self.enum_to_variants.get(&enum_name.val.str) else {
+            todo!(); // enum with this name not found
+        };
+
+        let Some((id, _)) = variants.iter().enumerate().find(|(_, v)| *v == &variant_name.val.str)
+        else {
+            todo!(); // variant with this name not found in enum
+        };
+
+        Ok(id as u32)
     }
 }
 
@@ -968,13 +1002,17 @@ fn typecheck_expr(
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::Expr, CompileErrorSet> {
     Ok(match &item.val {
-        l::Expr::Literal(x) => t::Expr::Literal(tr(x, |x| match &x.val {
-            l::Literal::Val(x) => t::Literal::Val(x.clone()),
-            l::Literal::Num(x) => t::Literal::Num(*x),
-            l::Literal::Int(x) => t::Literal::Int(*x),
-            l::Literal::Uint(x) => t::Literal::Uint(*x),
-            l::Literal::Bool(x) => t::Literal::Bool(*x),
-        })),
+        l::Expr::Literal(x) => t::Expr::Literal(try_tr(x, |x| match &x.val {
+            l::Literal::Val(x) => Ok(t::Literal::Val(x.clone())),
+            l::Literal::Num(x) => Ok(t::Literal::Num(*x)),
+            l::Literal::Int(x) => Ok(t::Literal::Int(*x)),
+            l::Literal::Uint(x) => Ok(t::Literal::Uint(*x)),
+            l::Literal::Bool(x) => Ok(t::Literal::Bool(*x)),
+            l::Literal::Variant { enum_name, variant_name } => {
+                let variant_id = type_alias_m.id_variant(enum_name, variant_name)?;
+                Ok(t::Literal::Uint(f64::from(variant_id)))
+            },
+        })?),
         l::Expr::Place(x) => {
             t::Expr::Place(try_tr(x, |x| typecheck_place(x, ident_to_type, type_alias_m))?)
         },
@@ -1001,6 +1039,9 @@ fn eval_expr(
             l::Literal::Int(_) => INT_TYPE.clone(),
             l::Literal::Uint(_) => UINT_TYPE.clone(),
             l::Literal::Bool(_) => BOOL_TYPE.clone(),
+            l::Literal::Variant { enum_name, .. } => {
+                Arc::new(l::Type::Enum { name: enum_name.val.str.clone() })
+            },
         }),
         l::Expr::Place(x) => eval_place(x, ident_to_type, type_alias_m).map(|res| res.ty),
         l::Expr::Ref(place) => {
