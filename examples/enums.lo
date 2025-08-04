@@ -14,16 +14,8 @@ main |state: State, input: val| {
     State_print(state);
 }
 
-func State_print(state: State) || {
-    match state {
-        State#None -> {
-            out("None");
-        },
-        State#Loading -> {
-            out("Loading");
-        },
-        State#Loaded -> {
-            out("Loaded");
-        },
-    }
+func State_print(state: State) || match state {
+    State#None -> out("None");
+    State#Loading -> out("Loading");
+    State#Loaded -> out("Loaded");
 }

@@ -270,7 +270,14 @@ impl TryFrom<&g::Ref<g::Body>> for l::Body {
     type Error = CompileErrorSet;
 
     fn try_from(value: &g::Ref<g::Body>) -> Result<Self, Self::Error> {
-        Ok(Self { items: try_convert_list(&value.val.items)? })
+        Ok(Self {
+            items: match &value.val {
+                g::Body::Single(item) => {
+                    Arc::new(Srced { range: item.range, val: Vec::from([try_convert(item)?]) })
+                },
+                g::Body::Multi(body) => try_convert_list(&body.val.items)?,
+            },
+        })
     }
 }
 

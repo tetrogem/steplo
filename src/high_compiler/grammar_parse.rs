@@ -6,12 +6,12 @@ use crate::high_compiler::grammar_ast::{
     CommaListLink, Comment, Decimal, Deref, Digits, DivOp, ElseBodyItem, ElseIfItem, ElseItem,
     Empty, EnumItem, EqOp, Expr, FalseLiteral, Field, Func, FunctionCall, GtOp, GteOp, Ident,
     IdentDeclaration, IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, MatchCase,
-    MatchItem, Maybe, ModOp, MulOp, Name, Negative, NeqOp, NotOp, NumLiteral, Offset, OrOp,
-    ParenExpr, ParensNest, ParensWrapped, PipeList, PipeListLink, Place, PlaceHead, PlaceIndex,
-    PlaceIndexLink, Proc, Program, RefExpr, RefType, SemiList, SemiListLink, SpreadAssignExpr,
-    Statement, StatementItem, StrLiteral, StructAssign, StructAssignField, StructType, SubOp,
-    TopItem, TransmuteExpr, TrueLiteral, Type, TypeAlias, UnaryParenExpr, UnaryParenExprOp,
-    VariantLiteral, WhileItem,
+    MatchItem, Maybe, ModOp, MulOp, MultiItemBody, Name, Negative, NeqOp, NotOp, NumLiteral,
+    Offset, OrOp, ParenExpr, ParensNest, ParensWrapped, PipeList, PipeListLink, Place, PlaceHead,
+    PlaceIndex, PlaceIndexLink, Proc, Program, RefExpr, RefType, SemiList, SemiListLink,
+    SpreadAssignExpr, Statement, StatementItem, StrLiteral, StructAssign, StructAssignField,
+    StructType, SubOp, TopItem, TransmuteExpr, TrueLiteral, Type, TypeAlias, UnaryParenExpr,
+    UnaryParenExprOp, VariantLiteral, WhileItem,
 };
 
 use super::{
@@ -453,6 +453,19 @@ impl AstParse for Proc {
 }
 
 impl AstParse for Body {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
+            parse tokens => x {
+                Self::Single(Arc::new(x)),
+                Self::Multi(Arc::new(x)),
+            } else {
+                "Expected body"
+            }
+        }
+    }
+}
+
+impl AstParse for MultiItemBody {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_struct! {
             parse tokens;

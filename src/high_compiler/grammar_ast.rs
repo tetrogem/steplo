@@ -147,7 +147,13 @@ pub struct Proc {
 }
 
 #[derive(Debug)]
-pub struct Body {
+pub enum Body {
+    Single(Ref<BodyItem>),
+    Multi(Ref<MultiItemBody>),
+}
+
+#[derive(Debug)]
+pub struct MultiItemBody {
     pub items: Ref<List<BodyItem>>,
 }
 
@@ -191,7 +197,7 @@ pub struct WhileItem {
 #[derive(Debug)]
 pub struct MatchItem {
     pub expr: Ref<Expr>,
-    pub cases: Ref<CommaList<MatchCase>>,
+    pub cases: Ref<List<MatchCase>>,
 }
 
 #[derive(Debug)]
