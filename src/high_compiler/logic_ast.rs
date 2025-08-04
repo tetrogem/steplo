@@ -146,6 +146,17 @@ impl Type {
         }
     }
 
+    pub fn contains_enum(&self) -> bool {
+        match self {
+            Self::Any => false,
+            Self::Primitive(_) => false,
+            Self::Ref(ty) => ty.contains_enum(),
+            Self::Array { ty, .. } => ty.contains_enum(),
+            Self::Struct(fields) => fields.iter().any(|field| field.ty.contains_enum()),
+            Self::Enum { .. } => true,
+        }
+    }
+
     // cast: may break invariant of type casting to
     pub fn can_cast_to(&self, other: &Self) -> bool {
         // can always cast to current type or subtype
@@ -155,9 +166,14 @@ impl Type {
 
         // cannot cast safely to refs, as they can write to memory with any original type
         // breaking the original invariant of that memory location
-        // but, we can cast to types that *don't* contain refs, but have the same
+
+        // cannot cast safely to enums, because the source value could be outside of the range
+        // of the variants of the target type
+
+        // but, we can cast to types that *don't* contain these types, but have the same
         // in-memory representation
         other.contains_ref().not()
+            && other.contains_enum().not()
             && self.cells_repr().into_iter().zip_longest(other.cells_repr()).all(|cells| {
                 let EitherOrBoth::Both(self_cell, other_cell) = cells else { return false };
                 Type::from(self_cell).is_subtype_of(&Type::from(other_cell))

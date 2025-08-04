@@ -127,19 +127,19 @@ impl TypeAliasManager {
         &self,
         enum_name: &EnumName,
         variant_name: &l::Ref<l::Name>,
+        variant_literal_range: SrcRange,
     ) -> Result<u32, CompileErrorSet> {
-        let (enum_name_str, enum_name_range) = match enum_name {
-            EnumName::Name(name) => (&name.val.str, Some(name.range)),
-            EnumName::Str(name) => (name, None),
-        };
-
-        let Some(variants) = self.enum_to_variants.get(enum_name_str) else {
-            todo!(); // enum with this name not found
-        };
+        let variants = self.all_variants(enum_name, variant_literal_range)?;
 
         let Some((id, _)) = variants.iter().enumerate().find(|(_, v)| *v == &variant_name.val.str)
         else {
-            todo!(); // variant with this name not found in enum
+            return Err(CompileErrorSet::new_error(
+                variant_name.range,
+                CompileError::Type(TypeError::UnknownVariant {
+                    enum_name: enum_name.str().clone(),
+                    variant_name: variant_name.val.str.clone(),
+                }),
+            ));
         };
 
         Ok(id as u32)
@@ -147,10 +147,19 @@ impl TypeAliasManager {
 
     pub fn all_variants(
         &self,
-        enum_name: &Arc<str>,
+        enum_name: &EnumName,
+        variant_literal_range: SrcRange,
     ) -> Result<&Arc<Vec<Arc<str>>>, CompileErrorSet> {
-        let Some(variants) = self.enum_to_variants.get(enum_name) else {
-            todo!(); // enum with this name not found
+        let enum_name_range = match enum_name {
+            EnumName::Name(name) => name.range,
+            EnumName::Str(_) => variant_literal_range,
+        };
+
+        let Some(variants) = self.enum_to_variants.get(enum_name.str()) else {
+            return Err(CompileErrorSet::new_error(
+                enum_name_range,
+                CompileError::Type(TypeError::UnknownEnum { name: enum_name.str().clone() }),
+            ));
         };
 
         Ok(variants)
@@ -160,6 +169,15 @@ impl TypeAliasManager {
 enum EnumName {
     Name(l::Ref<l::Name>),
     Str(Arc<str>),
+}
+
+impl EnumName {
+    pub fn str(&self) -> &Arc<str> {
+        match self {
+            Self::Name(name) => &name.val.str,
+            Self::Str(str) => &str,
+        }
+    }
 }
 
 pub fn typecheck(program: &l::Ref<l::Program>) -> Result<t::Ref<t::Program>, CompileErrorSet> {
@@ -347,26 +365,49 @@ fn typecheck_body_item(
         l::BodyItem::Match(match_item) => {
             let expr_ty = eval_expr(&match_item.val.expr, ident_to_type, type_alias_m)?;
             let l::Type::Enum { name: enum_name } = expr_ty.as_ref() else {
-                todo!(); // cannot match non-enum
+                return Err(CompileErrorSet::new_error(
+                    match_item.val.expr.range,
+                    CompileError::Type(TypeError::Mismatch {
+                        expected: Arc::new(VagueType::Enum { name: None }),
+                        found: vague(&expr_ty),
+                    }),
+                ));
             };
 
-            let mut unmatched_variants =
-                type_alias_m.all_variants(enum_name)?.iter().collect::<HashSet<_>>();
+            let all_variants = type_alias_m
+                .all_variants(&EnumName::Str(enum_name.clone()), match_item.val.expr.range)?;
 
-            // TODO: make this do a binary search instead to save on the number of checks?
-            let mut if_item: Option<t::Ref<t::IfItem>> = None;
+            let mut unmatched_variants = all_variants.iter().collect::<HashSet<_>>();
 
-            for case in match_item.val.cases.val.iter().rev() {
+            struct CaseBranch {
+                condition: t::Ref<t::Expr>,
+                body: t::Ref<t::Body>,
+            }
+
+            let mut branches = Vec::new();
+
+            for case in match_item.val.cases.val.iter() {
                 let variant = &case.val.variant;
 
                 if let Some(lit_enum_name) = &variant.val.enum_name
                     && &lit_enum_name.val.str != enum_name
                 {
-                    todo!(); // wrong enum
+                    return Err(CompileErrorSet::new_error(
+                        variant.range,
+                        CompileError::Type(TypeError::Mismatch {
+                            expected: Arc::new(VagueType::Enum { name: Some(enum_name.clone()) }),
+                            found: Arc::new(VagueType::Enum {
+                                name: Some(lit_enum_name.val.str.clone()),
+                            }),
+                        }),
+                    ));
                 }
 
                 if unmatched_variants.remove(&variant.val.variant_name.val.str).not() {
-                    todo!(); // double matched variant
+                    return Err(CompileErrorSet::new_error(
+                        variant.range,
+                        CompileError::Type(TypeError::UnmatchableCase),
+                    ));
                 }
 
                 let case_condition = try_tr(variant, |v| {
@@ -385,6 +426,7 @@ fn typecheck_body_item(
                                                 None => EnumName::Str(enum_name.clone()),
                                             },
                                             &v.val.variant_name,
+                                            v.range,
                                             type_alias_m,
                                         )
                                     })?))
@@ -394,12 +436,24 @@ fn typecheck_body_item(
                     })?))
                 })?;
 
-                if_item = Some(try_tr(case, |_| {
+                let case_body = try_tr(&case.val.body, |x| {
+                    typecheck_body(x, ident_to_type, func_to_params, type_alias_m)
+                })?;
+
+                branches.push(Arc::new(Srced {
+                    range: case.range,
+                    val: CaseBranch { condition: case_condition, body: case_body },
+                }));
+            }
+
+            // TODO: make this do a binary search instead to save on the number of checks?
+            let mut if_item: Option<t::Ref<t::IfItem>> = None;
+
+            for branch in branches.into_iter().rev() {
+                if_item = Some(try_tr(&branch, |branch| {
                     Ok(t::IfItem {
-                        condition: case_condition,
-                        then_body: try_tr(&case.val.body, |x| {
-                            typecheck_body(x, ident_to_type, func_to_params, type_alias_m)
-                        })?,
+                        condition: branch.val.condition.clone(),
+                        then_body: branch.val.body.clone(),
                         else_item: match if_item {
                             None => None,
                             Some(if_item) => Some(tr(&if_item, |x| t::ElseItem {
@@ -415,7 +469,18 @@ fn typecheck_body_item(
             }
 
             if unmatched_variants.is_empty().not() {
-                todo!(); // not all variants are matched
+                let unmatched_variants = all_variants
+                    .iter()
+                    .filter(|v| unmatched_variants.contains(v))
+                    .cloned()
+                    .collect_vec();
+
+                return Err(CompileErrorSet::new_error(
+                    match_item.range,
+                    CompileError::Type(TypeError::NonExhaustiveMatch {
+                        unmatched_cases: Arc::new(unmatched_variants),
+                    }),
+                ));
             }
 
             if_item.map(t::BodyItem::If)
@@ -1116,12 +1181,16 @@ fn typecheck_expr(
             l::Literal::Bool(x) => Ok(t::Literal::Bool(*x)),
             l::Literal::Variant(x) => {
                 let Some(enum_name) = &x.val.enum_name else {
-                    todo!(); // can't yet infer enum name
+                    return Err(CompileErrorSet::new_error(
+                        x.range,
+                        CompileError::Type(TypeError::CannotInfer),
+                    ));
                 };
 
                 Ok(typecheck_variant_literal(
                     &EnumName::Name(enum_name.clone()),
                     &x.val.variant_name,
+                    x.range,
                     type_alias_m,
                 )?)
             },
@@ -1154,7 +1223,10 @@ fn eval_expr(
             l::Literal::Bool(_) => BOOL_TYPE.clone(),
             l::Literal::Variant(x) => {
                 let Some(enum_name) = &x.val.enum_name else {
-                    todo!(); // can't yet infer enum names in exprs
+                    return Err(CompileErrorSet::new_error(
+                        x.range,
+                        CompileError::Type(TypeError::CannotInfer),
+                    ));
                 };
 
                 Arc::new(l::Type::Enum { name: enum_name.val.str.clone() })
@@ -1202,9 +1274,10 @@ fn eval_expr(
 fn typecheck_variant_literal(
     enum_name: &EnumName,
     variant_name: &l::Ref<l::Name>,
+    variant_literal_range: SrcRange,
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::Literal, CompileErrorSet> {
-    let variant_id = type_alias_m.id_variant(enum_name, variant_name)?;
+    let variant_id = type_alias_m.id_variant(enum_name, variant_name, variant_literal_range)?;
     Ok(t::Literal::Uint(f64::from(variant_id)))
 }
 
@@ -1401,7 +1474,13 @@ fn eval_binary_expr(
                 break 'expect Ok(BOOL_TYPE.clone());
             }
 
-            todo!(); // cannot compare types
+            Err(CompileErrorSet::new_error(
+                item.range,
+                CompileError::Type(TypeError::Uncomparable {
+                    left: vague(&left_type),
+                    right: vague(&right_type),
+                }),
+            ))
         },
         l::BinaryParenExprOp::And => expect_types!(
             for "&&";
