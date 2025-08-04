@@ -5,12 +5,13 @@ use crate::high_compiler::grammar_ast::{
     BinaryParenExpr, BinaryParenExprOp, Body, BodyItem, BoolLiteral, CastExpr, CommaList,
     CommaListLink, Comment, Decimal, Deref, Digits, DivOp, ElseBodyItem, ElseIfItem, ElseItem,
     Empty, EnumItem, EqOp, Expr, FalseLiteral, Field, Func, FunctionCall, GtOp, GteOp, Ident,
-    IdentDeclaration, IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, Maybe, ModOp,
-    MulOp, Name, Negative, NeqOp, NotOp, NumLiteral, Offset, OrOp, ParenExpr, ParensNest,
-    ParensWrapped, PipeList, PipeListLink, Place, PlaceHead, PlaceIndex, PlaceIndexLink, Proc,
-    Program, RefExpr, RefType, SemiList, SemiListLink, SpreadAssignExpr, Statement, StatementItem,
-    StrLiteral, StructAssign, StructAssignField, StructType, SubOp, TopItem, TransmuteExpr,
-    TrueLiteral, Type, TypeAlias, UnaryParenExpr, UnaryParenExprOp, VariantLiteral, WhileItem,
+    IdentDeclaration, IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, MatchCase,
+    MatchItem, Maybe, ModOp, MulOp, Name, Negative, NeqOp, NotOp, NumLiteral, Offset, OrOp,
+    ParenExpr, ParensNest, ParensWrapped, PipeList, PipeListLink, Place, PlaceHead, PlaceIndex,
+    PlaceIndexLink, Proc, Program, RefExpr, RefType, SemiList, SemiListLink, SpreadAssignExpr,
+    Statement, StatementItem, StrLiteral, StructAssign, StructAssignField, StructType, SubOp,
+    TopItem, TransmuteExpr, TrueLiteral, Type, TypeAlias, UnaryParenExpr, UnaryParenExprOp,
+    VariantLiteral, WhileItem,
 };
 
 use super::{
@@ -81,12 +82,11 @@ macro_rules! parse_helper {
     ([$tokens:ident, $errors:ident, $range:ident] match $ident:pat = $token_pat:pat => $token_use:expr; as $expected:expr) => {
         #[allow(clippy::let_unit_value)]
         let $ident = {
-            let cur_range = $tokens.cur_range();
             match $tokens.try_next(|cell| match cell.res {
                 Some(t) => match &t.val {
                     $token_pat => Ok(($token_use, t.range)),
                     token => Err(CompileErrorSet::new_error(
-                        SrcRange::guess_pos(cur_range.end()),
+                        t.range,
                         CompileError::Grammar(GrammarError::MismatchedTokenString {
                             expected: $expected.into(),
                             found: token.into(),
@@ -583,6 +583,7 @@ impl AstParse for BodyItem {
                 Self::Statement(Arc::new(x)),
                 Self::If(Arc::new(x)),
                 Self::While(Arc::new(x)),
+                Self::Match(Arc::new(x)),
             } else {
                 "Expected body item"
             }
@@ -650,6 +651,33 @@ impl AstParse for WhileItem {
             [struct condition];
             [struct body];
             [return Self { condition: Arc::new(condition), body: Arc::new(body) }];
+        }
+    }
+}
+
+impl AstParse for MatchItem {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Match => (); as [TokenKind::Match]];
+            [struct expr];
+            [match _ = Token::LeftBrace => (); as [TokenKind::LeftBrace]];
+            [struct cases];
+            [match _ = Token::RightBrace => (); as [TokenKind::RightBrace]];
+            [return Self { expr: Arc::new(expr), cases: Arc::new(cases) }];
+        }
+    }
+}
+
+impl AstParse for MatchCase {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct variant];
+            [match _ = Token::Dash => (); as [TokenKind::Dash, TokenKind::RightAngle]];
+            [match _ = Token::RightAngle => (); as [TokenKind::Dash, TokenKind::RightAngle]];
+            [struct body];
+            [return Self { variant: Arc::new(variant), body: Arc::new(body) }];
         }
     }
 }

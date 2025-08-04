@@ -43,6 +43,7 @@ pub enum Token {
     Enum,
     Type,
     Hashtag,
+    Match,
 }
 
 fn consume_char(
@@ -118,6 +119,7 @@ fn consume_word(
         "struct" => Token::Struct,
         "enum" => Token::Enum,
         "type" => Token::Type,
+        "match" => Token::Match,
         _ => {
             if word.is_empty() {
                 bail!("Word is empty");

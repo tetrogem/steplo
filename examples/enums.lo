@@ -15,11 +15,15 @@ main |state: State, input: val| {
 }
 
 func State_print(state: State) || {
-    if (state == State#None) {
-        out("None");
-    } else if (state == State#Loading) {
-        out("Loading");
-    } else if (state == State#Loaded) {
-        out("Loaded");
+    match state {
+        State#None -> {
+            out("None");
+        },
+        State#Loading -> {
+            out("Loading");
+        },
+        State#Loaded -> {
+            out("Loaded");
+        },
     }
 }

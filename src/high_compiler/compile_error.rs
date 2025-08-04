@@ -384,6 +384,7 @@ impl CollapsedCompileError {
                     TokenKind::Enum => TokenString::Keyword("enum"),
                     TokenKind::Type => TokenString::Keyword("type"),
                     TokenKind::Hashtag => TokenString::Punctuation("#"),
+                    TokenKind::Match => TokenString::Keyword("match"),
                 }
             }
 

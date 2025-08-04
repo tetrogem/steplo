@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ops::Not,
     sync::{Arc, LazyLock},
 };
@@ -135,6 +135,17 @@ impl TypeAliasManager {
         };
 
         Ok(id as u32)
+    }
+
+    pub fn all_variants(
+        &self,
+        enum_name: &Arc<str>,
+    ) -> Result<&Arc<Vec<Arc<str>>>, CompileErrorSet> {
+        let Some(variants) = self.enum_to_variants.get(enum_name) else {
+            todo!(); // enum with this name not found
+        };
+
+        Ok(variants)
     }
 }
 
@@ -289,11 +300,17 @@ fn typecheck_body(
             x.val
                 .iter()
                 .map(|x| {
-                    try_tr(x, |x| {
-                        typecheck_body_item(x, ident_to_type, func_to_params, type_alias_m)
-                    })
+                    let item = try_tr(x, |x| {
+                        let body_item =
+                            typecheck_body_item(x, ident_to_type, func_to_params, type_alias_m)?;
+
+                        Ok(body_item.map(|bi| tr(x, |_| bi)))
+                    })?;
+
+                    Ok(item.val.as_ref().map(|val| val.clone()))
                 })
-                .collect::<Result<_, _>>()
+                .filter_map(|x| x.transpose())
+                .collect::<Result<Vec<_>, _>>()
         })?,
     })
 }
@@ -303,17 +320,84 @@ fn typecheck_body_item(
     ident_to_type: &IdentToTypeHint,
     func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
-) -> Result<t::BodyItem, CompileErrorSet> {
+) -> Result<Option<t::BodyItem>, CompileErrorSet> {
     Ok(match &item.val {
-        l::BodyItem::Statement(x) => t::BodyItem::Statement(try_tr(x, |x| {
+        l::BodyItem::Statement(x) => Some(t::BodyItem::Statement(try_tr(x, |x| {
             typecheck_statement(x, ident_to_type, func_to_params, type_alias_m)
-        })?),
-        l::BodyItem::If(x) => t::BodyItem::If(try_tr(x, |x| {
+        })?)),
+        l::BodyItem::If(x) => Some(t::BodyItem::If(try_tr(x, |x| {
             typecheck_if(x, ident_to_type, func_to_params, type_alias_m)
-        })?),
-        l::BodyItem::While(x) => t::BodyItem::While(try_tr(x, |x| {
+        })?)),
+        l::BodyItem::While(x) => Some(t::BodyItem::While(try_tr(x, |x| {
             typecheck_while(x, ident_to_type, func_to_params, type_alias_m)
-        })?),
+        })?)),
+        l::BodyItem::Match(match_item) => {
+            let expr_ty = eval_expr(&match_item.val.expr, ident_to_type, type_alias_m)?;
+            let l::Type::Enum { name: enum_name } = expr_ty.as_ref() else {
+                todo!(); // cannot match non-enum
+            };
+
+            let mut unmatched_variants =
+                type_alias_m.all_variants(enum_name)?.iter().collect::<HashSet<_>>();
+
+            // TODO: make this do a binary search instead to save on the number of checks?
+            let mut if_item: Option<t::Ref<t::IfItem>> = None;
+
+            for case in match_item.val.cases.val.iter().rev() {
+                let variant = &case.val.variant;
+
+                if &variant.val.enum_name.val.str != enum_name {
+                    todo!(); // wrong enum
+                }
+
+                if unmatched_variants.remove(&variant.val.variant_name.val.str).not() {
+                    todo!(); // double matched variant
+                }
+
+                let case_condition = try_tr(variant, |v| {
+                    Ok(t::Expr::Paren(try_tr(v, |v| {
+                        Ok(t::ParenExpr::Binary(try_tr(v, |v| {
+                            Ok(t::BinaryParenExpr {
+                                left: try_tr(&match_item.val.expr, |expr| {
+                                    typecheck_expr(expr, ident_to_type, type_alias_m)
+                                })?,
+                                op: tr(v, |_| t::BinaryParenExprOp::Eq),
+                                right: try_tr(v, |v| {
+                                    Ok(t::Expr::Literal(try_tr(v, |v| {
+                                        typecheck_variant_literal(v, type_alias_m)
+                                    })?))
+                                })?,
+                            })
+                        })?))
+                    })?))
+                })?;
+
+                if_item = Some(try_tr(case, |_| {
+                    Ok(t::IfItem {
+                        condition: case_condition,
+                        then_body: try_tr(&case.val.body, |x| {
+                            typecheck_body(x, ident_to_type, func_to_params, type_alias_m)
+                        })?,
+                        else_item: match if_item {
+                            None => None,
+                            Some(if_item) => Some(tr(&if_item, |x| t::ElseItem {
+                                body: tr(x, |x| t::Body {
+                                    items: tr(x, |x| {
+                                        Vec::from([tr(x, |x| t::BodyItem::If(x.clone()))])
+                                    }),
+                                }),
+                            })),
+                        },
+                    })
+                })?);
+            }
+
+            if unmatched_variants.is_empty().not() {
+                todo!(); // not all variants are matched
+            }
+
+            if_item.map(t::BodyItem::If)
+        },
     })
 }
 
@@ -1008,10 +1092,7 @@ fn typecheck_expr(
             l::Literal::Int(x) => Ok(t::Literal::Int(*x)),
             l::Literal::Uint(x) => Ok(t::Literal::Uint(*x)),
             l::Literal::Bool(x) => Ok(t::Literal::Bool(*x)),
-            l::Literal::Variant { enum_name, variant_name } => {
-                let variant_id = type_alias_m.id_variant(enum_name, variant_name)?;
-                Ok(t::Literal::Uint(f64::from(variant_id)))
-            },
+            l::Literal::Variant(x) => Ok(typecheck_variant_literal(&x, type_alias_m)?),
         })?),
         l::Expr::Place(x) => {
             t::Expr::Place(try_tr(x, |x| typecheck_place(x, ident_to_type, type_alias_m))?)
@@ -1039,8 +1120,8 @@ fn eval_expr(
             l::Literal::Int(_) => INT_TYPE.clone(),
             l::Literal::Uint(_) => UINT_TYPE.clone(),
             l::Literal::Bool(_) => BOOL_TYPE.clone(),
-            l::Literal::Variant { enum_name, .. } => {
-                Arc::new(l::Type::Enum { name: enum_name.val.str.clone() })
+            l::Literal::Variant(x) => {
+                Arc::new(l::Type::Enum { name: x.val.enum_name.val.str.clone() })
             },
         }),
         l::Expr::Place(x) => eval_place(x, ident_to_type, type_alias_m).map(|res| res.ty),
@@ -1080,6 +1161,14 @@ fn eval_expr(
             Ok(cast_ty.clone())
         },
     }
+}
+
+fn typecheck_variant_literal(
+    item: &l::Ref<l::VariantLiteral>,
+    type_alias_m: &TypeAliasManager,
+) -> Result<t::Literal, CompileErrorSet> {
+    let variant_id = type_alias_m.id_variant(&item.val.enum_name, &item.val.variant_name)?;
+    Ok(t::Literal::Uint(f64::from(variant_id)))
 }
 
 fn typecheck_paren_expr(

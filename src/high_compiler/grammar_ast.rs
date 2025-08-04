@@ -156,6 +156,7 @@ pub enum BodyItem {
     Statement(Ref<StatementItem>),
     If(Ref<IfItem>),
     While(Ref<WhileItem>),
+    Match(Ref<MatchItem>),
 }
 
 #[derive(Debug)]
@@ -184,6 +185,18 @@ pub struct ElseIfItem {
 #[derive(Debug)]
 pub struct WhileItem {
     pub condition: Ref<Expr>,
+    pub body: Ref<Body>,
+}
+
+#[derive(Debug)]
+pub struct MatchItem {
+    pub expr: Ref<Expr>,
+    pub cases: Ref<CommaList<MatchCase>>,
+}
+
+#[derive(Debug)]
+pub struct MatchCase {
+    pub variant: Ref<VariantLiteral>,
     pub body: Ref<Body>,
 }
 

@@ -282,6 +282,7 @@ pub enum BodyItem {
     Statement(Ref<Statement>),
     If(Ref<IfItem>),
     While(Ref<WhileItem>),
+    Match(Ref<MatchItem>),
 }
 
 #[derive(Debug)]
@@ -299,6 +300,18 @@ pub struct ElseItem {
 #[derive(Debug)]
 pub struct WhileItem {
     pub condition: Ref<Expr>,
+    pub body: Ref<Body>,
+}
+
+#[derive(Debug)]
+pub struct MatchItem {
+    pub expr: Ref<Expr>,
+    pub cases: Ref<Vec<Ref<MatchCase>>>,
+}
+
+#[derive(Debug)]
+pub struct MatchCase {
+    pub variant: Ref<VariantLiteral>,
     pub body: Ref<Body>,
 }
 
@@ -351,7 +364,13 @@ pub enum Literal {
     Int(f64),
     Uint(f64),
     Bool(bool),
-    Variant { enum_name: Ref<Name>, variant_name: Ref<Name> },
+    Variant(Ref<VariantLiteral>),
+}
+
+#[derive(Debug)]
+pub struct VariantLiteral {
+    pub enum_name: Ref<Name>,
+    pub variant_name: Ref<Name>,
 }
 
 #[derive(Debug)]

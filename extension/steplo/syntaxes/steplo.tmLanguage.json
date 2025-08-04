@@ -50,7 +50,7 @@
       "patterns": [
         {
           "name": "keyword.steplo",
-          "match": "\\b(main|func|ref|deref|if|else|while|slice|type|enum)\\b"
+          "match": "\\b(main|func|ref|deref|if|else|while|slice|type|enum|match)\\b"
         }
       ]
     },

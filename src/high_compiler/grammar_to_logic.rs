@@ -282,6 +282,7 @@ impl TryFrom<&g::Ref<g::BodyItem>> for l::BodyItem {
             g::BodyItem::Statement(x) => Self::Statement(try_convert(x)?),
             g::BodyItem::If(x) => Self::If(try_convert(x)?),
             g::BodyItem::While(x) => Self::While(try_convert(x)?),
+            g::BodyItem::Match(x) => Self::Match(try_convert(x)?),
         })
     }
 }
@@ -328,6 +329,31 @@ impl TryFrom<&g::Ref<g::WhileItem>> for l::WhileItem {
             condition: try_convert(&value.val.condition)?,
             body: try_convert(&value.val.body)?,
         })
+    }
+}
+
+impl TryFrom<&g::Ref<g::MatchItem>> for l::MatchItem {
+    type Error = CompileErrorSet;
+
+    fn try_from(value: &g::Ref<g::MatchItem>) -> Result<Self, Self::Error> {
+        Ok(Self { expr: try_convert(&value.val.expr)?, cases: try_convert_list(&value.val.cases)? })
+    }
+}
+
+impl TryFrom<&g::Ref<g::MatchCase>> for l::MatchCase {
+    type Error = CompileErrorSet;
+
+    fn try_from(value: &g::Ref<g::MatchCase>) -> Result<Self, Self::Error> {
+        Ok(Self { variant: convert(&value.val.variant), body: try_convert(&value.val.body)? })
+    }
+}
+
+impl From<&g::Ref<g::VariantLiteral>> for l::VariantLiteral {
+    fn from(value: &g::Ref<g::VariantLiteral>) -> Self {
+        Self {
+            enum_name: convert(&value.val.enum_name),
+            variant_name: convert(&value.val.variant_name),
+        }
     }
 }
 
@@ -503,10 +529,7 @@ impl TryFrom<&g::Ref<g::Literal>> for l::Literal {
                 g::BoolLiteral::True(_) => l::Literal::Bool(true),
                 g::BoolLiteral::False(_) => l::Literal::Bool(false),
             },
-            g::Literal::Variant(x) => l::Literal::Variant {
-                enum_name: convert(&x.val.enum_name),
-                variant_name: convert(&x.val.variant_name),
-            },
+            g::Literal::Variant(x) => l::Literal::Variant(convert(x)),
         })
     }
 }
