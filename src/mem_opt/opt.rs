@@ -55,6 +55,7 @@ fn optimize_procs(
                 f: optimization_remove_unused_sub_procs,
                 name: "remove_unused_sub_procs",
             },
+            Optimization { f: optimization_inline_sub_procs, name: "inline_sub_procs" },
         ]),
     };
 
@@ -727,6 +728,59 @@ fn optimization_inline_pure_redirect_labels(
     OptimizationReport { optimized, val: procs }
 }
 
+fn optimization_inline_sub_procs(
+    procs: Vec<Arc<Proc<UMemLoc>>>,
+) -> OptimizationReport<Vec<Arc<Proc<UMemLoc>>>> {
+    let label_to_sp = procs
+        .iter()
+        .flat_map(|proc| proc.sub_procs.iter())
+        .map(|sp| (sp.uuid, sp))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut optimized = false;
+
+    let procs = procs
+        .iter()
+        .map(|proc| {
+            Arc::new(Proc {
+                kind: proc.kind.clone(),
+                sub_procs: Arc::new(
+                    proc.sub_procs
+                        .iter()
+                        .map(|sp| {
+                            if let Call::Jump(to_label) = sp.call.as_ref()
+                                && let Expr::Value(to_label) = to_label.as_ref()
+                                && let Value::Label(to_label) = to_label.as_ref()
+                            {
+                                let to_sp =
+                                    label_to_sp.get(to_label).expect("no sp with label found");
+
+                                let commands = Arc::new(
+                                    sp.commands
+                                        .iter()
+                                        .chain(to_sp.commands.iter())
+                                        .cloned()
+                                        .collect(),
+                                );
+
+                                let call = to_sp.call.clone();
+
+                                optimized = true;
+
+                                return Arc::new(SubProc { uuid: sp.uuid, commands, call });
+                            }
+
+                            sp.clone()
+                        })
+                        .collect(),
+                ),
+            })
+        })
+        .collect();
+
+    OptimizationReport { optimized, val: procs }
+}
+
 fn optimization_remove_unused_sub_procs(
     procs: Vec<Arc<Proc<UMemLoc>>>,
 ) -> OptimizationReport<Vec<Arc<Proc<UMemLoc>>>> {
@@ -965,6 +1019,7 @@ fn optimization_eval_well_known_exprs(
     OptimizationReport { optimized: optimized.is_some(), val: optimized.unwrap_or(expr) }
 }
 
+// a "pure redirect" is a sub proc where its only command is a call to another sub proc
 fn find_pure_redirects<'a>(
     procs: impl Iterator<Item = &'a Arc<Proc<UMemLoc>>>,
 ) -> BTreeMap<Uuid, Arc<Call<UMemLoc>>> {
