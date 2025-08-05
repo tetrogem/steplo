@@ -1,0 +1,13 @@
+enum Shape { Square | Circle | Triangle }
+
+type ShapeInfo = { shape: Shape, area: num, perimeter: num };
+
+main |shapes: [Shape; 3], more_shapes: [Shape; 10], info: ShapeInfo| {
+    shapes = [#Triangle, #Square, #Circle];
+    more_shapes = [#Circle, #Circle, #Triangle...];
+    info = {
+        shape: #Square,
+        area: 4,
+        perimeter: 8,
+    };
+}
