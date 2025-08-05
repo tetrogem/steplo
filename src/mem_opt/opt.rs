@@ -730,9 +730,6 @@ fn optimization_inline_pure_redirect_labels(
 fn optimization_remove_unused_sub_procs(
     procs: Vec<Arc<Proc<UMemLoc>>>,
 ) -> OptimizationReport<Vec<Arc<Proc<UMemLoc>>>> {
-    let mut all_labels = BTreeSet::new();
-    let mut used_labels = BTreeSet::new();
-
     // first main label is the start of the program...
     // ...always used, but never called by anything else, so we have to add it manually
     let main_proc = procs
@@ -743,19 +740,35 @@ fn optimization_remove_unused_sub_procs(
     let first_main_sp =
         main_proc.sub_procs.first().expect("a sub proc for the main proc should exist");
 
+    let label_to_sp = procs
+        .iter()
+        .flat_map(|proc| proc.sub_procs.iter())
+        .map(|sp| (sp.uuid, sp))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut used_labels = BTreeSet::new();
     used_labels.insert(first_main_sp.uuid);
 
     // find all other used labels
-    for sp in procs.iter().flat_map(|proc| proc.sub_procs.iter()) {
-        all_labels.insert(sp.uuid);
+    call_graph_search_for_used_labels(first_main_sp, &mut used_labels, &label_to_sp);
 
+    fn call_graph_search_for_used_labels(
+        sp: &Arc<SubProc<UMemLoc>>,
+        used_labels: &mut BTreeSet<Uuid>,
+        label_to_sp: &BTreeMap<Uuid, &Arc<SubProc<UMemLoc>>>,
+    ) {
         let sp_used_labels = chain!(
             sp.commands.iter().flat_map(|command| command_find_used_labels(command)),
             call_find_used_labels(&sp.call)
         )
         .collect::<BTreeSet<_>>();
 
-        used_labels.extend(sp_used_labels);
+        for sp_label in sp_used_labels {
+            if used_labels.insert(sp_label) {
+                let sp = label_to_sp.get(&sp_label).expect("no sp found for label");
+                call_graph_search_for_used_labels(sp, used_labels, label_to_sp);
+            }
+        }
     }
 
     fn command_find_used_labels(command: &Command<UMemLoc>) -> BTreeSet<Uuid> {
@@ -820,15 +833,13 @@ fn optimization_remove_unused_sub_procs(
     }
 
     // remove procs/sub procs that go unused
-    let unused_labels = all_labels.difference(&used_labels).copied().collect::<BTreeSet<_>>();
-
     let optimized_procs = procs
         .iter()
         .map(|proc| {
             let sub_procs = proc
                 .sub_procs
                 .iter()
-                .filter(|sp| unused_labels.contains(&sp.uuid).not())
+                .filter(|sp| used_labels.contains(&sp.uuid))
                 .cloned()
                 .collect();
 
