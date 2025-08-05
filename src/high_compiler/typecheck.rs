@@ -363,7 +363,7 @@ fn typecheck_body_item(
             typecheck_while(x, ident_to_type, func_to_params, type_alias_m)
         })?)),
         l::BodyItem::Match(match_item) => {
-            let expr_ty = eval_expr(&match_item.val.expr, ident_to_type, type_alias_m)?;
+            let expr_ty = eval_expr(&match_item.val.expr, None, ident_to_type, type_alias_m)?;
             let l::Type::Enum { name: enum_name } = expr_ty.as_ref() else {
                 return Err(CompileErrorSet::new_error(
                     match_item.val.expr.range,
@@ -415,7 +415,7 @@ fn typecheck_body_item(
                         Ok(t::ParenExpr::Binary(try_tr(v, |v| {
                             Ok(t::BinaryParenExpr {
                                 left: try_tr(&match_item.val.expr, |expr| {
-                                    typecheck_expr(expr, ident_to_type, type_alias_m)
+                                    typecheck_expr(expr, None, ident_to_type, type_alias_m)
                                 })?,
                                 op: tr(v, |_| t::BinaryParenExprOp::Eq),
                                 right: try_tr(v, |v| {
@@ -494,7 +494,7 @@ fn typecheck_if(
     func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::IfItem, CompileErrorSet> {
-    let condition_type = eval_expr(&item.val.condition, ident_to_type, type_alias_m)?;
+    let condition_type = eval_expr(&item.val.condition, None, ident_to_type, type_alias_m)?;
     if condition_type.is_subtype_of(&BOOL_TYPE).not() {
         return Err(CompileErrorSet::new_error(
             item.val.condition.range,
@@ -506,7 +506,9 @@ fn typecheck_if(
     };
 
     Ok(t::IfItem {
-        condition: try_tr(&item.val.condition, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+        condition: try_tr(&item.val.condition, |x| {
+            typecheck_expr(x, None, ident_to_type, type_alias_m)
+        })?,
         then_body: try_tr(&item.val.then_body, |x| {
             typecheck_body(x, ident_to_type, func_to_params, type_alias_m)
         })?,
@@ -529,7 +531,7 @@ fn typecheck_while(
     func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::WhileItem, CompileErrorSet> {
-    let condition_type = eval_expr(&item.val.condition, ident_to_type, type_alias_m)?;
+    let condition_type = eval_expr(&item.val.condition, None, ident_to_type, type_alias_m)?;
     if condition_type.is_subtype_of(&BOOL_TYPE).not() {
         return Err(CompileErrorSet::new_error(
             item.val.condition.range,
@@ -543,7 +545,9 @@ fn typecheck_while(
     typecheck_body(&item.val.body, ident_to_type, func_to_params, type_alias_m)?;
 
     Ok(t::WhileItem {
-        condition: try_tr(&item.val.condition, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+        condition: try_tr(&item.val.condition, |x| {
+            typecheck_expr(x, None, ident_to_type, type_alias_m)
+        })?,
         body: try_tr(&item.val.body, |x| {
             typecheck_body(x, ident_to_type, func_to_params, type_alias_m)
         })?,
@@ -583,23 +587,25 @@ fn typecheck_native_op(
         },
         l::NativeOperation::Random { dest_place, min, max } => t::NativeOperation::Random {
             dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
-            min: try_tr(min, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
-            max: try_tr(max, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+            min: try_tr(min, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
+            max: try_tr(max, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
         },
         l::NativeOperation::StdoutClear => t::NativeOperation::StdoutClear,
         l::NativeOperation::StdoutRead { dest_place, index } => t::NativeOperation::StdoutRead {
             dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
-            index: try_tr(index, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+            index: try_tr(index, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
         },
         l::NativeOperation::StdoutWrite { val, index } => t::NativeOperation::StdoutWrite {
-            val: try_tr(val, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
-            index: try_tr(index, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+            val: try_tr(val, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
+            index: try_tr(index, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
         },
         l::NativeOperation::StdoutLen { dest_place } => t::NativeOperation::StdoutLen {
             dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
         },
         l::NativeOperation::Wait { duration_s } => t::NativeOperation::Wait {
-            duration_s: try_tr(duration_s, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+            duration_s: try_tr(duration_s, |x| {
+                typecheck_expr(x, None, ident_to_type, type_alias_m)
+            })?,
         },
         l::NativeOperation::TimerGet { dest_place } => t::NativeOperation::TimerGet {
             dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
@@ -714,7 +720,7 @@ fn typecheck_place(
         offset: match place_eval.offset {
             None => None,
             Some(offset) => {
-                Some(try_tr(&offset, |x| typecheck_expr(x, ident_to_type, type_alias_m))?)
+                Some(try_tr(&offset, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?)
             },
         },
     })
@@ -879,7 +885,7 @@ fn typecheck_deref(
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::Deref, CompileErrorSet> {
     Ok(t::Deref {
-        addr: try_tr(&item.val.addr, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+        addr: try_tr(&item.val.addr, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
     })
 }
 
@@ -888,7 +894,7 @@ fn eval_deref(
     ident_to_type: &IdentToTypeHint,
     type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
-    let addr_type = eval_expr(&item.val.addr, ident_to_type, type_alias_m)?;
+    let addr_type = eval_expr(&item.val.addr, None, ident_to_type, type_alias_m)?;
     let l::Type::Ref(deref_type) = addr_type.as_ref() else {
         return Err(CompileErrorSet::new_error(
             item.range,
@@ -962,7 +968,9 @@ fn typecheck_assign_expr(
         l::AssignExpr::Expr(x) => match expected_type.size() {
             1 => Vec::from([t::AssignExpr {
                 offset: 0,
-                expr: try_tr(x, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+                expr: try_tr(x, |x| {
+                    typecheck_expr(x, Some(expected_type), ident_to_type, type_alias_m)
+                })?,
             }]),
             size => typecheck_copy(x, size, ident_to_type, type_alias_m)?,
         },
@@ -1070,7 +1078,7 @@ fn eval_assign_expr(
     type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
     match &item.val {
-        l::AssignExpr::Expr(x) => eval_expr(x, ident_to_type, type_alias_m),
+        l::AssignExpr::Expr(x) => eval_expr(x, Some(expected_type), ident_to_type, type_alias_m),
         l::AssignExpr::Array { single_exprs, spread_expr } => {
             let l::Type::Array { ty: expected_el_type, len: expected_len } = expected_type.as_ref()
             else {
@@ -1167,8 +1175,29 @@ fn eval_assign_expr(
     }
 }
 
+fn infer_enum_name(
+    variant_literal: &l::Ref<l::VariantLiteral>,
+    expected_type: Option<&Arc<l::Type>>,
+) -> Result<Arc<str>, CompileErrorSet> {
+    let enum_name = match &variant_literal.val.enum_name {
+        Some(enum_name) => &enum_name.val.str,
+        None => match expected_type.map(AsRef::as_ref) {
+            Some(l::Type::Enum { name }) => name,
+            _ => {
+                return Err(CompileErrorSet::new_error(
+                    variant_literal.range,
+                    CompileError::Type(TypeError::CannotInfer),
+                ));
+            },
+        },
+    };
+
+    Ok(enum_name.clone())
+}
+
 fn typecheck_expr(
     item: &l::Ref<l::Expr>,
+    expected_type: Option<&Arc<l::Type>>,
     ident_to_type: &IdentToTypeHint,
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::Expr, CompileErrorSet> {
@@ -1179,21 +1208,12 @@ fn typecheck_expr(
             l::Literal::Int(x) => Ok(t::Literal::Int(*x)),
             l::Literal::Uint(x) => Ok(t::Literal::Uint(*x)),
             l::Literal::Bool(x) => Ok(t::Literal::Bool(*x)),
-            l::Literal::Variant(x) => {
-                let Some(enum_name) = &x.val.enum_name else {
-                    return Err(CompileErrorSet::new_error(
-                        x.range,
-                        CompileError::Type(TypeError::CannotInfer),
-                    ));
-                };
-
-                Ok(typecheck_variant_literal(
-                    &EnumName::Name(enum_name.clone()),
-                    &x.val.variant_name,
-                    x.range,
-                    type_alias_m,
-                )?)
-            },
+            l::Literal::Variant(x) => Ok(typecheck_variant_literal(
+                &EnumName::Str(infer_enum_name(x, expected_type)?),
+                &x.val.variant_name,
+                x.range,
+                type_alias_m,
+            )?),
         })?),
         l::Expr::Place(x) => {
             t::Expr::Place(try_tr(x, |x| typecheck_place(x, ident_to_type, type_alias_m))?)
@@ -1204,13 +1224,14 @@ fn typecheck_expr(
         l::Expr::Paren(x) => {
             t::Expr::Paren(try_tr(x, |x| typecheck_paren_expr(x, ident_to_type, type_alias_m))?)
         },
-        l::Expr::Cast { expr, .. } => typecheck_expr(expr, ident_to_type, type_alias_m)?,
-        l::Expr::Transmute { expr, .. } => typecheck_expr(expr, ident_to_type, type_alias_m)?,
+        l::Expr::Cast { expr, .. } => typecheck_expr(expr, None, ident_to_type, type_alias_m)?,
+        l::Expr::Transmute { expr, .. } => typecheck_expr(expr, None, ident_to_type, type_alias_m)?,
     })
 }
 
 fn eval_expr(
     item: &l::Ref<l::Expr>,
+    expected_type: Option<&Arc<l::Type>>,
     ident_to_type: &IdentToTypeHint,
     type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
@@ -1222,14 +1243,7 @@ fn eval_expr(
             l::Literal::Uint(_) => UINT_TYPE.clone(),
             l::Literal::Bool(_) => BOOL_TYPE.clone(),
             l::Literal::Variant(x) => {
-                let Some(enum_name) = &x.val.enum_name else {
-                    return Err(CompileErrorSet::new_error(
-                        x.range,
-                        CompileError::Type(TypeError::CannotInfer),
-                    ));
-                };
-
-                Arc::new(l::Type::Enum { name: enum_name.val.str.clone() })
+                Arc::new(l::Type::Enum { name: infer_enum_name(x, expected_type)?.clone() })
             },
         }),
         l::Expr::Place(x) => eval_place(x, ident_to_type, type_alias_m).map(|res| res.ty),
@@ -1240,7 +1254,7 @@ fn eval_expr(
         l::Expr::Paren(x) => eval_paren_expr(x, ident_to_type, type_alias_m),
         l::Expr::Cast { ty, expr } => {
             let cast_ty = Arc::new(type_alias_m.resolve(ty)?);
-            let expr_ty = eval_expr(expr, ident_to_type, type_alias_m)?;
+            let expr_ty = eval_expr(expr, None, ident_to_type, type_alias_m)?;
             if expr_ty.can_cast_to(&cast_ty).not() {
                 return Err(CompileErrorSet::new_error(
                     item.range,
@@ -1255,7 +1269,7 @@ fn eval_expr(
         },
         l::Expr::Transmute { ty, expr } => {
             let cast_ty = Arc::new(type_alias_m.resolve(ty)?);
-            let expr_ty = eval_expr(expr, ident_to_type, type_alias_m)?;
+            let expr_ty = eval_expr(expr, None, ident_to_type, type_alias_m)?;
             if expr_ty.can_transmute_to(&cast_ty).not() {
                 return Err(CompileErrorSet::new_error(
                     item.range,
@@ -1323,7 +1337,9 @@ fn typecheck_unary_expr(
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::UnaryParenExpr, CompileErrorSet> {
     Ok(t::UnaryParenExpr {
-        operand: try_tr(&item.val.operand, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+        operand: try_tr(&item.val.operand, |x| {
+            typecheck_expr(x, None, ident_to_type, type_alias_m)
+        })?,
         op: tr(&item.val.op, |x| typecheck_variants!(&x.val, UnaryParenExprOp => [Not])),
     })
 }
@@ -1334,7 +1350,7 @@ fn eval_unary_expr(
     type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
     let operand = &item.val.operand;
-    let operand_type = eval_expr(operand, ident_to_type, type_alias_m)?;
+    let operand_type = eval_expr(operand, None, ident_to_type, type_alias_m)?;
     match item.val.op.val {
         l::UnaryParenExprOp::Not => {
             if operand_type.is_subtype_of(&BOOL_TYPE).not() {
@@ -1358,8 +1374,8 @@ fn typecheck_binary_expr(
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::BinaryParenExpr, CompileErrorSet> {
     Ok(t::BinaryParenExpr {
-        left: try_tr(&item.val.left, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
-        right: try_tr(&item.val.right, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+        left: try_tr(&item.val.left, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
+        right: try_tr(&item.val.right, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
         op: tr(&item.val.op, |x| {
             typecheck_variants!(&x.val, BinaryParenExprOp => [
                 Add,
@@ -1386,8 +1402,8 @@ fn eval_binary_expr(
     ident_to_type: &IdentToTypeHint,
     type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
-    let left_type = eval_expr(&item.val.left, ident_to_type, type_alias_m)?;
-    let right_type = eval_expr(&item.val.right, ident_to_type, type_alias_m)?;
+    let left_type = eval_expr(&item.val.left, None, ident_to_type, type_alias_m)?;
+    let right_type = eval_expr(&item.val.right, None, ident_to_type, type_alias_m)?;
 
     macro_rules! expect_types {
         (

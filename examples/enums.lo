@@ -1,16 +1,16 @@
 enum State { None | Loading | Loaded }
 
 main |state: State, input: str| {
-    state = State#None;
+    state = #None;
     State_print(state);
     out("Press enter to load...");
     in(&input);
 
-    state = State#Loading;
+    state = #Loading;
     State_print(state);
     wait_s(3);
 
-    state = State#Loaded;
+    state = #Loaded;
     State_print(state);
 }
 
