@@ -59,7 +59,7 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         proc: rf(l::Proc {
             idents: rf(Vec::from([])),
             body: body([stmt(l::Statement::Native(rf(l::NativeOperation::Out {
-                place: place("val"),
+                val: rf(l::Expr::Place(place("val"))),
             })))]),
         }),
     }));

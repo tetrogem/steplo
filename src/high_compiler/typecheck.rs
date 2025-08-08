@@ -579,8 +579,8 @@ fn typecheck_native_op(
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::NativeOperation, CompileErrorSet> {
     Ok(match &item.val {
-        l::NativeOperation::Out { place } => t::NativeOperation::Out {
-            place: try_tr(place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
+        l::NativeOperation::Out { val } => t::NativeOperation::Out {
+            val: try_tr(val, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
         },
         l::NativeOperation::In { dest_place } => t::NativeOperation::In {
             dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
@@ -719,9 +719,14 @@ fn typecheck_place(
         head: try_tr(&item.val.head, |x| typecheck_place_head(x, ident_to_type, type_alias_m))?,
         offset: match place_eval.offset {
             None => None,
-            Some(offset) => {
-                Some(try_tr(&offset, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?)
-            },
+            Some(offset) => Some(match offset.as_ref() {
+                PlaceOffset::Static(index) => tr(index, |_| t::Offset::Static(index.clone())),
+                PlaceOffset::Expr(expr) => try_tr(expr, |x| {
+                    Ok(t::Offset::Expr(try_tr(x, |x| {
+                        typecheck_expr(x, None, ident_to_type, type_alias_m)
+                    })?))
+                })?,
+            }),
         },
     })
 }
@@ -738,25 +743,58 @@ impl LReffer {
 
 struct EvalPlaceRes {
     ty: Arc<l::Type>,
-    offset: Option<l::Ref<l::Expr>>,
+    offset: Option<Arc<PlaceOffset>>,
+}
+
+enum PlaceOffset {
+    Static(l::Ref<u32>),
+    Expr(l::Ref<l::Expr>),
+}
+
+impl PlaceOffset {
+    pub fn range(&self) -> SrcRange {
+        match self {
+            Self::Static(x) => x.range,
+            Self::Expr(x) => x.range,
+        }
+    }
+
+    pub fn update_index(&self, offset: PlaceOffset) -> PlaceOffset {
+        let to_expr = |offset: &PlaceOffset| match offset {
+            PlaceOffset::Expr(expr) => expr.clone(),
+            PlaceOffset::Static(index) => {
+                let lr = LReffer { range: index.range };
+                lr.of(l::Expr::Literal(lr.of(l::Literal::Int(f64::from(index.val)))))
+            },
+        };
+
+        let offset_range = self.range().merge(offset.range());
+        let lr = LReffer { range: offset_range };
+
+        match (&self, offset) {
+            (PlaceOffset::Static(curr_static), PlaceOffset::Static(next_static)) => {
+                PlaceOffset::Static(lr.of(curr_static.val + next_static.val))
+            },
+            (curr, next) => PlaceOffset::Expr(lr.of(l::Expr::Paren(lr.of(l::ParenExpr::Binary(
+                lr.of(l::BinaryParenExpr {
+                    left: to_expr(curr),
+                    op: lr.of(l::BinaryParenExprOp::Add),
+                    right: to_expr(&next),
+                }),
+            ))))),
+        }
+    }
 }
 
 impl EvalPlaceRes {
-    fn update_index(&mut self, ty: Arc<l::Type>, offset: l::Ref<l::Expr>) {
-        self.ty = ty;
-        self.offset = Some(match &self.offset {
+    fn update_index(&mut self, ty: Arc<l::Type>, offset: PlaceOffset) {
+        let updated_offset = match &self.offset {
             None => offset,
-            Some(curr_offset) => {
-                let offset_range = curr_offset.range.merge(offset.range);
-                let lr = LReffer { range: offset_range };
+            Some(curr_offset) => curr_offset.update_index(offset),
+        };
 
-                lr.of(l::Expr::Paren(lr.of(l::ParenExpr::Binary(lr.of(l::BinaryParenExpr {
-                    left: curr_offset.clone(),
-                    op: lr.of(l::BinaryParenExprOp::Add),
-                    right: offset,
-                })))))
-            },
-        });
+        self.ty = ty;
+        self.offset = Some(Arc::new(updated_offset));
     }
 }
 
@@ -788,7 +826,7 @@ fn eval_place(
                             lr.of(l::Expr::Literal(lr.of(l::Literal::Uint(f64::from(ty.size()))))),
                     })))));
 
-                res.update_index(ty.clone(), index_offset);
+                res.update_index(ty.clone(), PlaceOffset::Expr(index_offset));
             },
             l::PlaceIndex::Field(index_field) => {
                 let l::Type::Struct(struct_fields) = res.ty.as_ref() else {
@@ -821,10 +859,7 @@ fn eval_place(
 
                 let lr = LReffer { range: index.range };
 
-                let index_offset =
-                    lr.of(l::Expr::Literal(lr.of(l::Literal::Uint(f64::from(offset)))));
-
-                res.update_index(index_field_ty, index_offset);
+                res.update_index(index_field_ty, PlaceOffset::Static(lr.of(offset)));
             },
         };
     }
@@ -905,6 +940,35 @@ fn eval_deref(
     Ok(deref_type.clone())
 }
 
+fn merge_t_offsets(
+    curr_offset: &t::Ref<t::Offset>,
+    next_offset: &t::Ref<t::Offset>,
+) -> t::Ref<t::Offset> {
+    let to_expr = |offset: &t::Offset| match offset {
+        t::Offset::Expr(expr) => expr.clone(),
+        t::Offset::Static(index) => tr(index, |index| {
+            t::Expr::Literal(tr(index, |index| t::Literal::Int(f64::from(index.val))))
+        }),
+    };
+
+    let lr = LReffer { range: curr_offset.range.merge(next_offset.range) };
+
+    let merged_offset = match (&curr_offset.val, &next_offset.val) {
+        (t::Offset::Static(curr_static), t::Offset::Static(next_static)) => {
+            t::Offset::Static(lr.of(curr_static.val + next_static.val))
+        },
+        (curr, next) => t::Offset::Expr(lr.of(t::Expr::Paren(lr.of(t::ParenExpr::Binary(lr.of(
+            t::BinaryParenExpr {
+                left: to_expr(curr),
+                op: lr.of(t::BinaryParenExprOp::Add),
+                right: to_expr(&next),
+            },
+        )))))),
+    };
+
+    lr.of(merged_offset)
+}
+
 fn typecheck_copy(
     expr: &l::Ref<l::Expr>,
     expected_place_size: u32,
@@ -919,24 +983,14 @@ fn typecheck_copy(
                     offset,
                     expr: tr(&place, |x| {
                         t::Expr::Place(tr(x, |x| {
-                            let offset_expr =
-                                t::Expr::Literal(tr(x, |_| t::Literal::Uint(offset as f64)));
+                            let curr_offset = tr(x, |x| t::Offset::Static(tr(x, |_| offset)));
 
-                            let offset_expr = match &place.val.offset {
-                                None => offset_expr,
-                                Some(place_offset_expr) => t::Expr::Paren(tr(x, |x| {
-                                    t::ParenExpr::Binary(tr(x, |x| t::BinaryParenExpr {
-                                        left: tr(x, |_| offset_expr),
-                                        op: tr(x, |_| t::BinaryParenExprOp::Add),
-                                        right: place_offset_expr.clone(),
-                                    }))
-                                })),
+                            let offset = match &place.val.offset {
+                                None => curr_offset,
+                                Some(next_offset) => merge_t_offsets(&curr_offset, next_offset),
                             };
 
-                            t::Place {
-                                head: x.val.head.clone(),
-                                offset: Some(tr(x, |_| offset_expr)),
-                            }
+                            t::Place { head: x.val.head.clone(), offset: Some(offset) }
                         }))
                     }),
                 })

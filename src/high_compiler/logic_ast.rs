@@ -434,7 +434,7 @@ pub enum BinaryParenExprOp {
 
 #[derive(Debug)]
 pub enum NativeOperation {
-    Out { place: Ref<Place> },
+    Out { val: Ref<Expr> },
     In { dest_place: Ref<Place> },
     Random { dest_place: Ref<Place>, min: Ref<Expr>, max: Ref<Expr> },
     StdoutClear,

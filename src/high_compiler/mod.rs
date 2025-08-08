@@ -1,6 +1,7 @@
 pub mod add_builtins;
-pub mod compile;
+// pub mod compile;
 pub mod compile_error;
+pub mod compile_to_inline;
 pub mod grammar_ast;
 pub mod grammar_parse;
 pub mod grammar_to_logic;

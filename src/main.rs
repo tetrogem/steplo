@@ -1,5 +1,6 @@
 mod ez;
 mod high_compiler;
+mod inline;
 mod ir;
 mod mem_opt;
 mod utils;
@@ -11,10 +12,9 @@ use std::{
     sync::Arc,
 };
 
-use high_compiler::{compile, compile_error, grammar_ast, grammar_to_logic, link, srced, token};
+use high_compiler::{compile_error, grammar_ast, grammar_to_logic, link, srced, token};
 
 use clap::Parser;
-use compile::compile;
 use grammar_ast::parse;
 use include_dir::{Dir, include_dir};
 use link::link;
@@ -99,7 +99,26 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
     };
 
     let linked = time("Linking...", || link(&ast));
-    let mem_opt_ast = time("Compiling high-level to designation IR...", || compile(linked))?;
+    let inline_opt_ast = time("Compiling high-level to inlining IR...", || {
+        high_compiler::compile_to_inline::compile(&linked)
+    })?;
+
+    if args.out_opt {
+        time("Writing intermediate inline 0 file...", || {
+            let asm_export = inline::export::export(inline_opt_ast.iter().map(AsRef::as_ref));
+            let name = src_path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .expect("input file should have stem");
+
+            let path = Path::new(&args.out_path).join(format!("{name}.inline0"));
+            fs::write(path, asm_export).expect("inline export should succeed");
+        });
+    }
+
+    let mem_opt_ast = time("Compiling high-level to designation IR...", || {
+        inline::compile_to_mem_opt::compile(&inline_opt_ast)
+    })?;
 
     if args.out_opt {
         time("Writing intermediate opt 0 file...", || {
