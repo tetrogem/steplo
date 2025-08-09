@@ -6,8 +6,8 @@ use uuid::Uuid;
 pub struct Proc {
     pub kind: Arc<ProcKind>,
     pub sub_procs: Arc<Vec<Arc<SubProc>>>,
-    pub ordered_local_infos: Arc<Vec<VarInfo>>,
     pub ordered_arg_infos: Arc<Vec<VarInfo>>,
+    pub ordered_local_infos: Arc<Vec<VarInfo>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -103,7 +103,7 @@ pub enum Loc {
     Deref(Arc<Expr>),
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum StackAddr {
     Arg { uuid: Uuid },
     Local { uuid: Uuid },
