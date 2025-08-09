@@ -68,3 +68,5 @@ fn tracked_optimize<T>(
     *optimized = *optimized || maybe_optimized.optimized;
     maybe_optimized.val
 }
+
+type OptimizationFn<T> = fn(&T) -> MaybeOptimized<T>;

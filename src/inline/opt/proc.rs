@@ -9,10 +9,8 @@ use uuid::Uuid;
 
 use crate::inline::{
     ast::{ArgAssignment, BinaryArgs, Call, Command, Expr, Loc, Proc, StackAddr, SubProc, TempVar},
-    opt::{MaybeOptimized, sub_proc::optimize_sub_proc, tracked_optimize},
+    opt::{MaybeOptimized, OptimizationFn, sub_proc::optimize_sub_proc, tracked_optimize},
 };
-
-type OptimizationFn<T> = fn(&T) -> MaybeOptimized<T>;
 
 pub fn optimize_proc(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>> {
     let mut optimized = false;
@@ -28,8 +26,7 @@ pub fn optimize_proc(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>> {
         ordered_arg_infos: proc.ordered_arg_infos.clone(),
     });
 
-    const OPTIMIZATIONS: [OptimizationFn<Arc<Proc>>; 2] =
-        [optimization_tempify_local_vars, optimization_remove_unused_stack_addrs];
+    const OPTIMIZATIONS: [OptimizationFn<Arc<Proc>>; 1] = [optimization_tempify_local_vars];
 
     for optimization in OPTIMIZATIONS {
         proc = tracked_optimize(&mut optimized, proc, |proc| optimization(&proc));
@@ -221,7 +218,13 @@ fn find_read_before_write_local_vars(proc: &Arc<Proc>) -> BTreeSet<Uuid> {
                         .collect(),
                 ),
                 Command::SetLoc { loc, val } => {
-                    (loc_find_read_local_vars(loc), expr_find_read_local_vars(val))
+                    let val_read_local_vars = expr_find_read_local_vars(val);
+                    let loc_written_and_read_local_vars = loc_find_written_and_read_local_vars(loc);
+
+                    (
+                        loc_written_and_read_local_vars.written,
+                        chain!(val_read_local_vars, loc_written_and_read_local_vars.read).collect(),
+                    )
                 },
             };
 
@@ -255,6 +258,95 @@ fn find_read_before_write_local_vars(proc: &Arc<Proc>) -> BTreeSet<Uuid> {
     }
 
     proc_read_before_write_local_vars
+}
+
+#[derive(Default)]
+struct WrittenAndReadLocalVars {
+    written: BTreeSet<Uuid>,
+    read: BTreeSet<Uuid>,
+}
+
+fn loc_find_written_and_read_local_vars(loc: &Loc) -> WrittenAndReadLocalVars {
+    match loc {
+        Loc::Temp(_) => Default::default(),
+        Loc::Deref(addr) => expr_find_written_and_read_local_vars(addr),
+    }
+}
+
+fn expr_find_written_and_read_local_vars(expr: &Expr) -> WrittenAndReadLocalVars {
+    match expr {
+        Expr::Loc(loc) => WrittenAndReadLocalVars {
+            written: Default::default(),
+            read: loc_find_read_local_vars(loc),
+        },
+        Expr::StackAddr(addr) => match addr.as_ref() {
+            StackAddr::Arg { .. } => Default::default(),
+            StackAddr::Local { uuid } => WrittenAndReadLocalVars {
+                written: BTreeSet::from([*uuid]),
+                read: Default::default(),
+            },
+        },
+        Expr::Value(_) => Default::default(),
+        Expr::StdoutDeref(expr) => WrittenAndReadLocalVars {
+            written: Default::default(),
+            read: expr_find_read_local_vars(expr),
+        },
+        Expr::StdoutLen => Default::default(),
+        Expr::Timer => Default::default(),
+        Expr::Add(args) => WrittenAndReadLocalVars {
+            written: Default::default(),
+            read: args_find_read_local_vars(args),
+        },
+        Expr::Sub(args) => WrittenAndReadLocalVars {
+            written: Default::default(),
+            read: args_find_read_local_vars(args),
+        },
+        Expr::Mul(args) => WrittenAndReadLocalVars {
+            written: Default::default(),
+            read: args_find_read_local_vars(args),
+        },
+        Expr::Div(args) => WrittenAndReadLocalVars {
+            written: Default::default(),
+            read: args_find_read_local_vars(args),
+        },
+        Expr::Mod(args) => WrittenAndReadLocalVars {
+            written: Default::default(),
+            read: args_find_read_local_vars(args),
+        },
+        Expr::Eq(args) => WrittenAndReadLocalVars {
+            written: Default::default(),
+            read: args_find_read_local_vars(args),
+        },
+        Expr::Lt(args) => WrittenAndReadLocalVars {
+            written: Default::default(),
+            read: args_find_read_local_vars(args),
+        },
+        Expr::Gt(args) => WrittenAndReadLocalVars {
+            written: Default::default(),
+            read: args_find_read_local_vars(args),
+        },
+        Expr::Not(expr) => WrittenAndReadLocalVars {
+            written: Default::default(),
+            read: expr_find_read_local_vars(expr),
+        },
+        Expr::Or(args) => WrittenAndReadLocalVars {
+            written: Default::default(),
+            read: args_find_read_local_vars(args),
+        },
+        Expr::And(args) => WrittenAndReadLocalVars {
+            written: Default::default(),
+            read: args_find_read_local_vars(args),
+        },
+        Expr::InAnswer => todo!(),
+        Expr::Join(args) => WrittenAndReadLocalVars {
+            written: Default::default(),
+            read: args_find_read_local_vars(args),
+        },
+        Expr::Random(args) => WrittenAndReadLocalVars {
+            written: Default::default(),
+            read: args_find_read_local_vars(args),
+        },
+    }
 }
 
 fn expr_find_read_local_vars(expr: &Expr) -> BTreeSet<Uuid> {
@@ -499,115 +591,5 @@ fn loc_replace_locals_with_temps(
                 Loc::Deref(Arc::new(expr_replace_locals_with_temps(addr, local_var_uuid_to_temp)))
             },
         },
-    }
-}
-
-fn optimization_remove_unused_stack_addrs(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>> {
-    let mut optimized = false;
-
-    let mut used_stack_addrs = BTreeSet::<StackAddr>::new();
-
-    for sp in proc.sub_procs.iter() {
-        for command in sp.commands.iter() {
-            used_stack_addrs.extend(command_find_used_stack_addrs(command));
-        }
-
-        used_stack_addrs.extend(call_find_used_stack_addrs(&sp.call));
-    }
-
-    let filtered_args = proc
-        .ordered_arg_infos
-        .iter()
-        .filter(|info| used_stack_addrs.contains(&StackAddr::Arg { uuid: info.uuid }))
-        .copied()
-        .collect_vec();
-
-    let filtered_locals = proc
-        .ordered_local_infos
-        .iter()
-        .filter(|info| used_stack_addrs.contains(&StackAddr::Local { uuid: info.uuid }))
-        .copied()
-        .collect_vec();
-
-    optimized = optimized
-        || filtered_args.len() != proc.ordered_arg_infos.len()
-        || filtered_locals.len() != proc.ordered_local_infos.len();
-
-    let proc = Proc {
-        kind: proc.kind.clone(),
-        sub_procs: proc.sub_procs.clone(),
-        ordered_arg_infos: Arc::new(filtered_args),
-        ordered_local_infos: Arc::new(filtered_locals),
-    };
-
-    MaybeOptimized { optimized, val: Arc::new(proc) }
-}
-
-fn command_find_used_stack_addrs(command: &Command) -> BTreeSet<StackAddr> {
-    match command {
-        Command::In => Default::default(),
-        Command::ClearStdout => Default::default(),
-        Command::Out(expr) => expr_find_used_stack_addrs(expr),
-        Command::Wait { duration_s } => expr_find_used_stack_addrs(duration_s),
-        Command::WriteStdout { index, val } => {
-            chain!(expr_find_used_stack_addrs(index), expr_find_used_stack_addrs(val)).collect()
-        },
-        Command::SetLoc { loc, val } => {
-            chain!(loc_find_used_stack_addrs(loc), expr_find_used_stack_addrs(val)).collect()
-        },
-    }
-}
-
-fn call_find_used_stack_addrs(call: &Call) -> BTreeSet<StackAddr> {
-    match call {
-        Call::Exit => Default::default(),
-        Call::Jump { to } => expr_find_used_stack_addrs(to),
-        Call::Branch { cond, then_to, else_to } => chain!(
-            expr_find_used_stack_addrs(cond),
-            expr_find_used_stack_addrs(then_to),
-            expr_find_used_stack_addrs(else_to)
-        )
-        .collect(),
-        Call::Return { to } => expr_find_used_stack_addrs(to),
-        Call::Func { to_func_name: _, arg_assignments } => {
-            arg_assignments.iter().flat_map(|aa| expr_find_used_stack_addrs(&aa.expr)).collect()
-        },
-    }
-}
-
-fn expr_find_used_stack_addrs(expr: &Expr) -> BTreeSet<StackAddr> {
-    match expr {
-        Expr::Loc(loc) => loc_find_used_stack_addrs(loc),
-        Expr::StackAddr(addr) => BTreeSet::from([*addr.as_ref()]),
-        Expr::Value(_) => Default::default(),
-        Expr::StdoutDeref(expr) => expr_find_used_stack_addrs(expr),
-        Expr::StdoutLen => Default::default(),
-        Expr::Timer => Default::default(),
-        Expr::Add(args) => args_find_used_stack_addrs(args),
-        Expr::Sub(args) => args_find_used_stack_addrs(args),
-        Expr::Mul(args) => args_find_used_stack_addrs(args),
-        Expr::Div(args) => args_find_used_stack_addrs(args),
-        Expr::Mod(args) => args_find_used_stack_addrs(args),
-        Expr::Eq(args) => args_find_used_stack_addrs(args),
-        Expr::Lt(args) => args_find_used_stack_addrs(args),
-        Expr::Gt(args) => args_find_used_stack_addrs(args),
-        Expr::Not(expr) => expr_find_used_stack_addrs(expr),
-        Expr::Or(args) => args_find_used_stack_addrs(args),
-        Expr::And(args) => args_find_used_stack_addrs(args),
-        Expr::InAnswer => Default::default(),
-        Expr::Join(args) => args_find_used_stack_addrs(args),
-        Expr::Random(args) => args_find_used_stack_addrs(args),
-    }
-}
-
-fn args_find_used_stack_addrs(args: &BinaryArgs) -> BTreeSet<StackAddr> {
-    chain!(expr_find_used_stack_addrs(&args.left), expr_find_used_stack_addrs(&args.right))
-        .collect()
-}
-
-fn loc_find_used_stack_addrs(loc: &Loc) -> BTreeSet<StackAddr> {
-    match loc {
-        Loc::Temp(_) => Default::default(),
-        Loc::Deref(expr) => expr_find_used_stack_addrs(expr),
     }
 }

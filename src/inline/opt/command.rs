@@ -32,7 +32,5 @@ pub fn optimize_command(command: &Arc<Command>) -> MaybeOptimized<Arc<Command>> 
         },
     };
 
-    dbg!(&command);
-
     MaybeOptimized { optimized, val: Arc::new(command) }
 }

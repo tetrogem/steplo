@@ -119,7 +119,8 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
     let inline_opt_ast = if args.no_opt {
         inline_opt_ast
     } else {
-        let inline_opt_ast = inline::opt::optimize(&inline_opt_ast);
+        let inline_opt_ast =
+            time("Optimizing inline IR...", || inline::opt::optimize(&inline_opt_ast));
 
         if args.out_opt {
             time("Writing intermediate inline 1 file...", || {
@@ -157,8 +158,9 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
     let mem_opt_ast = if args.no_opt {
         mem_opt_ast
     } else {
-        let mem_opt_ast =
-            time("Optimizing code...", || mem_opt::opt::optimize(mem_opt_ast.iter().cloned()));
+        let mem_opt_ast = time("Optimizing designation IR...", || {
+            mem_opt::opt::optimize(mem_opt_ast.iter().cloned())
+        });
 
         if args.out_opt {
             time("Writing intermediate opt 1 file...", || {

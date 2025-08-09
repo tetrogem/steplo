@@ -69,7 +69,6 @@ fn optimization_const_evaluate_exprs(expr: &Arc<Expr>) -> MaybeOptimized<Arc<Exp
         Expr::Timer => Arc::new(Expr::Timer),
         Expr::Add(args) => 'add: {
             if let Some(other) = other_side_if(args, is_literal("0")) {
-                dbg!(other);
                 optimized = true;
                 break 'add other.clone();
             }
@@ -110,7 +109,6 @@ fn is_literal(expected: &str) -> impl Fn(&Expr) -> bool {
     move |expr| {
         let Expr::Value(value) = expr else { return false };
         let Value::Literal(lit) = value.as_ref() else { return false };
-        dbg!(lit, expected);
         lit.as_ref() == expected
     }
 }
