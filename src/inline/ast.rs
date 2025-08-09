@@ -6,8 +6,8 @@ use uuid::Uuid;
 pub struct Proc {
     pub kind: Arc<ProcKind>,
     pub sub_procs: Arc<Vec<Arc<SubProc>>>,
-    pub ordered_local_infos: Vec<VarInfo>,
-    pub ordered_arg_infos: Vec<VarInfo>,
+    pub ordered_local_infos: Arc<Vec<VarInfo>>,
+    pub ordered_arg_infos: Arc<Vec<VarInfo>>,
 }
 
 #[derive(Debug, Clone, Copy)]

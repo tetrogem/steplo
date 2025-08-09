@@ -192,8 +192,8 @@ fn compile_proc(proc: &l::Proc, loc_m: &LocManager) -> anyhow::Result<o::Proc> {
             l::ProcKind::Main => o::ProcKind::Main,
             l::ProcKind::Func { name, .. } => o::ProcKind::Func { name: name.val.str.clone() },
         }),
-        ordered_local_infos: locs.ordered_local_infos()?,
-        ordered_arg_infos: locs.ordered_arg_infos()?,
+        ordered_local_infos: Arc::new(locs.ordered_local_infos()?),
+        ordered_arg_infos: Arc::new(locs.ordered_arg_infos()?),
         sub_procs: Arc::new(
             proc.sub_procs
                 .val

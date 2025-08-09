@@ -116,6 +116,27 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
         });
     }
 
+    let inline_opt_ast = if args.no_opt {
+        inline_opt_ast
+    } else {
+        let inline_opt_ast = inline::opt::optimize(&inline_opt_ast);
+
+        if args.out_opt {
+            time("Writing intermediate inline 1 file...", || {
+                let asm_export = inline::export::export(inline_opt_ast.iter().map(AsRef::as_ref));
+                let name = src_path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .expect("input file should have stem");
+
+                let path = Path::new(&args.out_path).join(format!("{name}.inline1"));
+                fs::write(path, asm_export).expect("inline export should succeed");
+            });
+        }
+
+        inline_opt_ast
+    };
+
     let mem_opt_ast = time("Compiling high-level to designation IR...", || {
         inline::compile_to_mem_opt::compile(&inline_opt_ast)
     })?;
