@@ -10,7 +10,7 @@ pub struct Proc {
     pub ordered_arg_infos: Arc<Vec<VarInfo>>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct VarInfo {
     pub uuid: Uuid,
     pub size: u32,
