@@ -114,7 +114,17 @@ fn command_inline_temps(
         Command::WriteStdout { index, val } => {
             Command::WriteStdout { index: expr!(index), val: expr!(val) }
         },
-        Command::SetLoc { loc, val } => Command::SetLoc { loc: loc.clone(), val: expr!(val) },
+        Command::SetLoc { loc, val } => {
+            let loc = match loc.as_ref() {
+                Loc::Temp(temp) => Loc::Temp(temp.clone()),
+                Loc::Deref(addr) => Loc::Deref(track_optimize(
+                    &mut optimized,
+                    expr_inline_temps(addr, temp_to_expr),
+                )),
+            };
+
+            Command::SetLoc { loc: Arc::new(loc), val: expr!(val) }
+        },
     };
 
     MaybeOptimized { optimized, val: command }

@@ -20,6 +20,7 @@ func sum(ret: &num, a: num, b: num) || {
 }
 
 func print(num: num) |str: str| {
+    str = "";
     str = (str ~ "The value is: ");
     str = (str ~ num);
     str = (str ~ "!");
