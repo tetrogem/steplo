@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::ops::Not;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -11,6 +12,7 @@ use crate::grammar_ast as g;
 use crate::high_compiler::srced::SrcRange;
 use crate::logic_ast as l;
 use crate::srced::Srced;
+use crate::utils::IsInteger;
 
 trait FromList<T> {
     fn from_list(value: T) -> Self;
@@ -524,7 +526,7 @@ impl TryFrom<&g::Ref<g::Literal>> for l::Literal {
             g::Literal::Str(x) => l::Literal::Str(x.val.str.clone()),
             g::Literal::Num(x) => {
                 let num: f64 = parse_num_literal(x)?;
-                if num.is_infinite() || num.is_nan() || num.is_subnormal() || num.round() != num {
+                if num.is_integer().not() {
                     Self::Num(num)
                 } else {
                     match num.is_sign_positive() {

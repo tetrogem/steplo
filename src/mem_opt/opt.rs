@@ -1,12 +1,16 @@
+use anyhow::{Context, bail};
 use itertools::{Itertools, chain};
 use uuid::Uuid;
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     mem,
-    ops::Not,
+    ops::{Add, Div, Mul, Neg, Not, Sub},
+    str::FromStr,
     sync::Arc,
 };
+
+use crate::utils::IsInteger;
 
 use super::ast::{
     BinaryArgs, Call, Command, Expr, Proc, ProcKind, SubProc, TempVar, UMemLoc, Value,
@@ -1140,100 +1144,326 @@ fn optimization_remove_unused_sub_procs(
     }
 }
 
+fn l_side_if_r_is(
+    args: &BinaryArgs<UMemLoc>,
+    predicate: impl Fn(&Arc<Expr<UMemLoc>>) -> bool,
+) -> Option<&Arc<Expr<UMemLoc>>> {
+    if predicate(&args.right) {
+        return Some(&args.left);
+    }
+
+    None
+}
+
+fn a_side_if_b_is(
+    args: &BinaryArgs<UMemLoc>,
+    predicate: impl Fn(&Arc<Expr<UMemLoc>>) -> bool,
+) -> Option<&Arc<Expr<UMemLoc>>> {
+    if predicate(&args.left) {
+        return Some(&args.right);
+    }
+
+    if predicate(&args.right) {
+        return Some(&args.left);
+    }
+
+    None
+}
+
+fn lr_sides_filter_map<T>(
+    args: &BinaryArgs<UMemLoc>,
+    filter_map: impl Fn(&Arc<Expr<UMemLoc>>) -> Option<T>,
+) -> Option<(T, T)> {
+    let left = filter_map(&args.left)?;
+    let right = filter_map(&args.right)?;
+    Some((left, right))
+}
+
+fn ab_sides_filter_map<A, B>(
+    args: &BinaryArgs<UMemLoc>,
+    filter_map_a: impl Fn(&Arc<Expr<UMemLoc>>) -> Option<A>,
+    filter_map_b: impl Fn(&Arc<Expr<UMemLoc>>) -> Option<B>,
+) -> Option<(A, B)> {
+    if let Some(a) = filter_map_a(&args.left)
+        && let Some(b) = filter_map_b(&args.right)
+    {
+        return Some((a, b));
+    }
+
+    if let Some(b) = filter_map_b(&args.left)
+        && let Some(a) = filter_map_a(&args.right)
+    {
+        return Some((a, b));
+    }
+
+    None
+}
+
+fn is_literal(expected: &str) -> impl Fn(&Arc<Expr<UMemLoc>>) -> bool {
+    move |expr| {
+        let Expr::Value(value) = expr.as_ref() else { return false };
+        let Value::Literal(lit) = value.as_ref() else { return false };
+        lit.as_ref() == expected
+    }
+}
+
+fn parse_filter_map<T: FromStr>(expr: &Arc<Expr<UMemLoc>>) -> Option<T> {
+    let Expr::Value(value) = expr.as_ref() else { return None };
+    let Value::Literal(lit) = value.as_ref() else { return None };
+    lit.parse::<T>().ok()
+}
+
+fn expr_filter_map(expr: &Arc<Expr<UMemLoc>>) -> Option<Arc<Expr<UMemLoc>>> {
+    Some(expr.clone())
+}
+
 fn optimization_eval_well_known_exprs(
     expr: Arc<Expr<UMemLoc>>,
 ) -> OptimizationReport<Arc<Expr<UMemLoc>>> {
     fn eval_well_known_expr(expr: &Expr<UMemLoc>) -> Option<Arc<Expr<UMemLoc>>> {
-        match expr {
-            Expr::Add(args) => {
-                let BinaryArgs { left, right } = args.as_ref();
+        fn make_str_literal(str: &str) -> Arc<Expr<UMemLoc>> {
+            Arc::new(Expr::Value(Arc::new(Value::Literal(str.into()))))
+        }
 
-                if let Expr::Value(left) = left.as_ref() {
-                    if let Value::Literal(left) = left.as_ref() {
-                        if left.as_ref() == "0" {
-                            return Some(right.clone());
-                        }
-                    }
+        #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
+        struct Int(f64);
+
+        #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
+        struct Float(f64);
+
+        impl FromStr for Int {
+            type Err = anyhow::Error;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                if s.contains('.') {
+                    bail!("Int literal cannot contain decimal");
                 }
 
-                if let Expr::Value(right) = right.as_ref() {
-                    if let Value::Literal(right) = right.as_ref() {
-                        if right.as_ref() == "0" {
-                            return Some(left.clone());
-                        }
-                    }
+                let num: f64 = s.parse()?;
+                if num.is_integer().not() {
+                    bail!("Int's f64 repr is not an integer")
+                }
+
+                Ok(Self(num))
+            }
+        }
+
+        impl FromStr for Float {
+            type Err = anyhow::Error;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Ok(Self(s.parse()?))
+            }
+        }
+
+        impl Int {
+            pub fn to_literal(self) -> Arc<Expr<UMemLoc>> {
+                make_str_literal(&format!("{}", self.0))
+            }
+        }
+
+        impl Float {
+            pub fn to_literal(self) -> Arc<Expr<UMemLoc>> {
+                make_str_literal(&format!("{:?}", self.0))
+            }
+        }
+
+        impl Add<Int> for Int {
+            type Output = Int;
+
+            fn add(self, rhs: Self) -> Self::Output {
+                Self(self.0 + rhs.0)
+            }
+        }
+
+        impl Add<Float> for Float {
+            type Output = Float;
+
+            fn add(self, rhs: Self) -> Self::Output {
+                Self(self.0 + rhs.0)
+            }
+        }
+
+        impl Sub<Int> for Int {
+            type Output = Int;
+
+            fn sub(self, rhs: Int) -> Self::Output {
+                Self(self.0 - rhs.0)
+            }
+        }
+
+        impl Sub<Float> for Float {
+            type Output = Float;
+
+            fn sub(self, rhs: Float) -> Self::Output {
+                Self(self.0 - rhs.0)
+            }
+        }
+
+        impl Mul<Int> for Int {
+            type Output = Int;
+
+            fn mul(self, rhs: Int) -> Self::Output {
+                Self(self.0 * rhs.0)
+            }
+        }
+
+        impl Mul<Float> for Float {
+            type Output = Float;
+
+            fn mul(self, rhs: Float) -> Self::Output {
+                Self(self.0 * rhs.0)
+            }
+        }
+
+        impl Div<Float> for Float {
+            type Output = Float;
+
+            fn div(self, rhs: Float) -> Self::Output {
+                Self(self.0 / rhs.0)
+            }
+        }
+
+        impl Neg for Int {
+            type Output = Int;
+
+            fn neg(self) -> Self::Output {
+                Self(-self.0)
+            }
+        }
+
+        impl Neg for Float {
+            type Output = Float;
+
+            fn neg(self) -> Self::Output {
+                Self(-self.0)
+            }
+        }
+
+        match expr {
+            Expr::Add(args) => {
+                if let Some(other) =
+                    a_side_if_b_is(args, |expr| is_literal("0")(expr) || is_literal("0.0")(expr))
+                {
+                    return Some(other.clone());
+                }
+
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Int>) {
+                    return Some((a + b).to_literal());
+                }
+
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                    return Some((a + b).to_literal());
+                }
+
+                let add_expr_filter_map = |expr: &Arc<Expr<UMemLoc>>| match expr.as_ref() {
+                    Expr::Add(args) => Some(args.clone()),
+                    _ => None,
+                };
+
+                // (other_expr + lit_a) + lit_b -> other_expr + (lit_a + lit_b) -> other_expr + lit_c
+                if let Some((add_args, lit_b)) =
+                    ab_sides_filter_map(args, add_expr_filter_map, parse_filter_map::<Int>)
+                    && let Some((other_expr, lit_a)) =
+                        ab_sides_filter_map(&add_args, expr_filter_map, parse_filter_map::<Int>)
+                {
+                    return Some(Arc::new(Expr::Add(Arc::new(BinaryArgs {
+                        left: other_expr.clone(),
+                        right: (lit_a + lit_b).to_literal(),
+                    }))));
+                }
+
+                if let Some((add_args, lit_b)) =
+                    ab_sides_filter_map(args, add_expr_filter_map, parse_filter_map::<Float>)
+                    && let Some((other_expr, lit_a)) =
+                        ab_sides_filter_map(&add_args, expr_filter_map, parse_filter_map::<Float>)
+                {
+                    return Some(Arc::new(Expr::Add(Arc::new(BinaryArgs {
+                        left: other_expr.clone(),
+                        right: (lit_a + lit_b).to_literal(),
+                    }))));
+                }
+
+                let sub_expr_filter_map = |expr: &Arc<Expr<UMemLoc>>| match expr.as_ref() {
+                    Expr::Sub(args) => Some(args.clone()),
+                    _ => None,
+                };
+
+                // (other_expr - lit_a) + lit_b -> other_expr + (-lit_a + lit_b) -> other_expr + lit_v
+                if let Some((sub_args, lit_b)) =
+                    ab_sides_filter_map(args, sub_expr_filter_map, parse_filter_map::<Int>)
+                    && let Some((other_expr, lit_a)) =
+                        ab_sides_filter_map(&sub_args, expr_filter_map, parse_filter_map::<Int>)
+                {
+                    return Some(Arc::new(Expr::Add(Arc::new(BinaryArgs {
+                        left: other_expr.clone(),
+                        right: (-lit_a + lit_b).to_literal(),
+                    }))));
+                }
+
+                if let Some((sub_args, lit_b)) =
+                    ab_sides_filter_map(args, sub_expr_filter_map, parse_filter_map::<Float>)
+                    && let Some((other_expr, lit_a)) =
+                        ab_sides_filter_map(&sub_args, expr_filter_map, parse_filter_map::<Float>)
+                {
+                    return Some(Arc::new(Expr::Add(Arc::new(BinaryArgs {
+                        left: other_expr.clone(),
+                        right: (-lit_a + lit_b).to_literal(),
+                    }))));
                 }
             },
             Expr::Sub(args) => {
-                let BinaryArgs { left, right } = args.as_ref();
+                if let Some(other) =
+                    l_side_if_r_is(args, |expr| is_literal("0")(expr) || is_literal("0.0")(expr))
+                {
+                    return Some(other.clone());
+                }
 
-                if let Expr::Value(right) = right.as_ref() {
-                    if let Value::Literal(right) = right.as_ref() {
-                        if right.as_ref() == "0" {
-                            return Some(left.clone());
-                        }
-                    }
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Int>) {
+                    return Some((a - b).to_literal());
+                }
+
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                    return Some((a - b).to_literal());
                 }
             },
             Expr::Mul(args) => {
-                let BinaryArgs { left, right } = args.as_ref();
-
-                if let Expr::Value(left) = left.as_ref() {
-                    if let Value::Literal(left) = left.as_ref() {
-                        if left.as_ref() == "0" {
-                            return Some(Arc::new(Expr::Value(Arc::new(Value::Literal(
-                                "0".into(),
-                            )))));
-                        }
-
-                        if left.as_ref() == "1" {
-                            return Some(right.clone());
-                        }
-                    }
+                if a_side_if_b_is(args, is_literal("0")).is_some() {
+                    return Some(Int(0.).to_literal());
                 }
 
-                if let Expr::Value(right) = right.as_ref() {
-                    if let Value::Literal(right) = right.as_ref() {
-                        if right.as_ref() == "0" {
-                            return Some(Arc::new(Expr::Value(Arc::new(Value::Literal(
-                                "0".into(),
-                            )))));
-                        }
+                if a_side_if_b_is(args, is_literal("0.0")).is_some() {
+                    return Some(Float(0.).to_literal());
+                }
 
-                        if right.as_ref() == "1" {
-                            return Some(left.clone());
-                        }
-                    }
+                if let Some(other) =
+                    a_side_if_b_is(args, |expr| is_literal("1")(expr) || is_literal("1.0")(expr))
+                {
+                    return Some(other.clone());
+                }
+
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Int>) {
+                    return Some((a * b).to_literal());
+                }
+
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                    return Some((a * b).to_literal());
                 }
             },
             Expr::Div(args) => {
-                let BinaryArgs { left, right } = args.as_ref();
+                if let Some(other) =
+                    l_side_if_r_is(args, |expr| is_literal("1")(expr) || is_literal("1.0")(expr))
+                {
+                    return Some(other.clone());
+                }
 
-                if let Expr::Value(right) = right.as_ref() {
-                    if let Value::Literal(right) = right.as_ref() {
-                        if right.as_ref() == "1" {
-                            return Some(left.clone());
-                        }
-                    }
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                    return Some((a / b).to_literal());
                 }
             },
             Expr::Join(args) => {
-                let BinaryArgs { left, right } = args.as_ref();
-
-                if let Expr::Value(left) = left.as_ref() {
-                    if let Value::Literal(left) = left.as_ref() {
-                        if left.as_ref() == "" {
-                            return Some(right.clone());
-                        }
-                    }
-                }
-
-                if let Expr::Value(right) = right.as_ref() {
-                    if let Value::Literal(right) = right.as_ref() {
-                        if right.as_ref() == "" {
-                            return Some(left.clone());
-                        }
-                    }
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<String>) {
+                    return Some(make_str_literal(&format!("{a}{b}")));
                 }
             },
             _ => {},
@@ -1278,28 +1508,10 @@ fn find_trivial_temps(sp: &SubProc<UMemLoc>) -> BTreeMap<Arc<TempVar>, Arc<Expr<
 }
 
 fn is_trivial_expr(expr: &Expr<UMemLoc>) -> bool {
-    match expr {
-        Expr::MemLoc(_) => true,
-        Expr::Value(_) => true,
-        Expr::StackDeref(_) => false,
-        Expr::StdoutDeref(_) => false,
-        Expr::StdoutLen => true,
-        Expr::Timer => true,
-        Expr::Add(_) => false,
-        Expr::Sub(_) => false,
-        Expr::Mul(_) => false,
-        Expr::Div(_) => false,
-        Expr::Mod(_) => false,
-        Expr::Eq(_) => false,
-        Expr::Lt(_) => false,
-        Expr::Gt(_) => false,
-        Expr::Not(_) => false,
-        Expr::Or(_) => false,
-        Expr::And(_) => false,
-        Expr::InAnswer => true,
-        Expr::Join(_) => false,
-        Expr::Random(_) => false,
-    }
+    matches!(
+        expr,
+        Expr::MemLoc(_) | Expr::Value(_) | Expr::StdoutLen | Expr::Timer | Expr::InAnswer
+    )
 }
 
 fn expr_replace_trivial_temps(

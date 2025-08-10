@@ -77,6 +77,8 @@ fn proc_inline_funcs(
                 return Vec::from([sp.clone()]);
             };
 
+            dbg!(&inlineable_func_proc);
+
             // add all of the inlined function's stack to this proc's stack
             let func_arg_to_inlined = inlineable_func_proc
                 .ordered_arg_infos
@@ -737,9 +739,9 @@ fn optimization_remove_unused_sub_procs(procs: &Vec<Arc<Proc>>) -> MaybeOptimize
                 .iter()
                 .enumerate()
                 .filter(|(i, sp)| {
-                    let is_entrypoint = matches!(proc.kind.as_ref(), ProcKind::Main) && *i == 0;
+                    let is_head = *i == 0;
 
-                    if used_sub_proc_labels.contains(&sp.uuid) || is_entrypoint {
+                    if used_sub_proc_labels.contains(&sp.uuid) || is_head {
                         true
                     } else {
                         optimized = true;
