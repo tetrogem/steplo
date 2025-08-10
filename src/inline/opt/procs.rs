@@ -24,8 +24,11 @@ pub fn optimize_procs(procs: &Vec<Arc<Proc>>) -> MaybeOptimized<Vec<Arc<Proc>>> 
         procs.into_iter().map(|proc| optimize_proc(&proc)).collect()
     });
 
-    const OPTIMIZATIONS: [OptimizationFn<Vec<Arc<Proc>>>; 2] =
-        [optimization_inline_func_calls, optimization_remove_unused_stack_addrs];
+    const OPTIMIZATIONS: [OptimizationFn<Vec<Arc<Proc>>>; 3] = [
+        optimization_inline_func_calls,
+        optimization_remove_unused_stack_addrs,
+        optimization_remove_unused_sub_procs,
+    ];
 
     for optimization in OPTIMIZATIONS {
         procs = tracked_exhaust_optimize(&mut optimized, procs, |procs| optimization(&procs));
@@ -717,5 +720,131 @@ fn loc_find_used_stack_addrs(loc: &Loc) -> BTreeSet<StackAddr> {
     match loc {
         Loc::Temp(_) => Default::default(),
         Loc::Deref(expr) => expr_find_used_stack_addrs(expr),
+    }
+}
+
+#[expect(clippy::ptr_arg)]
+fn optimization_remove_unused_sub_procs(procs: &Vec<Arc<Proc>>) -> MaybeOptimized<Vec<Arc<Proc>>> {
+    let mut optimized = false;
+
+    let used_sub_proc_labels = find_used_labels(procs);
+
+    let procs = procs
+        .iter()
+        .map(|proc| {
+            let sub_procs = proc
+                .sub_procs
+                .iter()
+                .enumerate()
+                .filter(|(i, sp)| {
+                    let is_entrypoint = matches!(proc.kind.as_ref(), ProcKind::Main) && *i == 0;
+
+                    if used_sub_proc_labels.contains(&sp.uuid) || is_entrypoint {
+                        true
+                    } else {
+                        optimized = true;
+                        false
+                    }
+                })
+                .map(|(_, sp)| sp)
+                .cloned()
+                .collect();
+
+            Arc::new(Proc {
+                kind: proc.kind.clone(),
+                sub_procs: Arc::new(sub_procs),
+                ordered_arg_infos: proc.ordered_arg_infos.clone(),
+                ordered_local_infos: proc.ordered_local_infos.clone(),
+            })
+        })
+        .collect();
+
+    MaybeOptimized { optimized, val: procs }
+}
+
+fn find_used_labels(procs: &[Arc<Proc>]) -> BTreeSet<Uuid> {
+    procs
+        .iter()
+        .flat_map(|proc| {
+            proc.sub_procs.iter().flat_map(|sp| {
+                let commands_used_labels =
+                    sp.commands.iter().flat_map(|command| command_find_used_labels(command));
+
+                let call_used_labels = call_find_used_labels(&sp.call);
+
+                chain!(commands_used_labels, call_used_labels)
+            })
+        })
+        .collect()
+}
+
+fn command_find_used_labels(command: &Command) -> BTreeSet<Uuid> {
+    match command {
+        Command::In => Default::default(),
+        Command::ClearStdout => Default::default(),
+        Command::Out(expr) => expr_find_used_labels(expr),
+        Command::Wait { duration_s } => expr_find_used_labels(duration_s),
+        Command::WriteStdout { index, val } => {
+            chain!(expr_find_used_labels(index), expr_find_used_labels(val)).collect()
+        },
+        Command::SetLoc { loc, val } => {
+            chain!(loc_find_used_labels(loc), expr_find_used_labels(val)).collect()
+        },
+    }
+}
+
+fn expr_find_used_labels(expr: &Expr) -> BTreeSet<Uuid> {
+    match expr {
+        Expr::Loc(loc) => loc_find_used_labels(loc),
+        Expr::StackAddr(_) => Default::default(),
+        Expr::Value(value) => match value.as_ref() {
+            Value::Literal(_) => Default::default(),
+            Value::Label(label) => BTreeSet::from([*label]),
+        },
+        Expr::StdoutDeref(expr) => expr_find_used_labels(expr),
+        Expr::StdoutLen => Default::default(),
+        Expr::Timer => Default::default(),
+        Expr::Add(args) => args_find_used_labels(args),
+        Expr::Sub(args) => args_find_used_labels(args),
+        Expr::Mul(args) => args_find_used_labels(args),
+        Expr::Div(args) => args_find_used_labels(args),
+        Expr::Mod(args) => args_find_used_labels(args),
+        Expr::Eq(args) => args_find_used_labels(args),
+        Expr::Lt(args) => args_find_used_labels(args),
+        Expr::Gt(args) => args_find_used_labels(args),
+        Expr::Not(expr) => expr_find_used_labels(expr),
+        Expr::Or(args) => args_find_used_labels(args),
+        Expr::And(args) => args_find_used_labels(args),
+        Expr::InAnswer => Default::default(),
+        Expr::Join(args) => args_find_used_labels(args),
+        Expr::Random(args) => args_find_used_labels(args),
+    }
+}
+
+fn args_find_used_labels(args: &BinaryArgs) -> BTreeSet<Uuid> {
+    chain!(expr_find_used_labels(&args.left), expr_find_used_labels(&args.right)).collect()
+}
+
+fn loc_find_used_labels(loc: &Loc) -> BTreeSet<Uuid> {
+    match loc {
+        Loc::Temp(_) => Default::default(),
+        Loc::Deref(addr) => expr_find_used_labels(addr),
+    }
+}
+
+fn call_find_used_labels(call: &Call) -> BTreeSet<Uuid> {
+    match call {
+        Call::Exit => Default::default(),
+        Call::Jump { to } => expr_find_used_labels(to),
+        Call::Branch { cond, then_to, else_to } => chain!(
+            expr_find_used_labels(cond),
+            expr_find_used_labels(then_to),
+            expr_find_used_labels(else_to)
+        )
+        .collect(),
+        Call::Return { to } => expr_find_used_labels(to),
+        Call::Func { to_func_name: _, arg_assignments } => {
+            arg_assignments.iter().flat_map(|aa| expr_find_used_labels(&aa.expr)).collect()
+        },
     }
 }

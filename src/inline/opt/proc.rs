@@ -8,7 +8,10 @@ use itertools::chain;
 use uuid::Uuid;
 
 use crate::inline::{
-    ast::{ArgAssignment, BinaryArgs, Call, Command, Expr, Loc, Proc, StackAddr, SubProc, TempVar},
+    ast::{
+        ArgAssignment, BinaryArgs, Call, Command, Expr, Loc, Proc, StackAddr, SubProc, TempVar,
+        Value,
+    },
     opt::{MaybeOptimized, OptimizationFn, sub_proc::optimize_sub_proc, tracked_exhaust_optimize},
 };
 
@@ -27,7 +30,8 @@ pub fn optimize_proc(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>> {
         ordered_arg_infos: proc.ordered_arg_infos.clone(),
     });
 
-    const OPTIMIZATIONS: [OptimizationFn<Arc<Proc>>; 1] = [optimization_tempify_local_vars];
+    const OPTIMIZATIONS: [OptimizationFn<Arc<Proc>>; 2] =
+        [optimization_tempify_local_vars, optimization_inline_sp_jumps];
 
     for optimization in OPTIMIZATIONS {
         proc = tracked_exhaust_optimize(&mut optimized, proc, |proc| optimization(&proc));
@@ -593,4 +597,43 @@ fn loc_replace_locals_with_temps(
             },
         },
     }
+}
+
+fn optimization_inline_sp_jumps(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>> {
+    let mut optimized = false;
+
+    let sp_uuid_to_sp =
+        proc.sub_procs.iter().map(|sp| (sp.uuid, sp.clone())).collect::<BTreeMap<_, _>>();
+
+    let sub_procs = proc
+        .sub_procs
+        .iter()
+        .map(|sp| {
+            let (commands, call) = if let Call::Jump { to } = sp.call.as_ref()
+                && let Expr::Value(to_value) = to.as_ref()
+                && let Value::Label(to_label) = to_value.as_ref()
+                && let Some(to_sp) = sp_uuid_to_sp.get(to_label)
+            {
+                optimized = true;
+
+                let commands =
+                    chain!(sp.commands.iter().cloned(), to_sp.commands.iter().cloned()).collect();
+
+                (Arc::new(commands), to_sp.call.clone())
+            } else {
+                (sp.commands.clone(), sp.call.clone())
+            };
+
+            Arc::new(SubProc { uuid: sp.uuid, commands, call })
+        })
+        .collect();
+
+    let proc = Proc {
+        kind: proc.kind.clone(),
+        sub_procs: Arc::new(sub_procs),
+        ordered_arg_infos: proc.ordered_arg_infos.clone(),
+        ordered_local_infos: proc.ordered_local_infos.clone(),
+    };
+
+    MaybeOptimized { optimized, val: Arc::new(proc) }
 }
