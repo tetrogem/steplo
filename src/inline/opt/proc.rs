@@ -4,20 +4,21 @@ use std::{
     sync::Arc,
 };
 
-use itertools::{Itertools, chain};
+use itertools::chain;
 use uuid::Uuid;
 
 use crate::inline::{
     ast::{ArgAssignment, BinaryArgs, Call, Command, Expr, Loc, Proc, StackAddr, SubProc, TempVar},
-    opt::{MaybeOptimized, OptimizationFn, sub_proc::optimize_sub_proc, tracked_optimize},
+    opt::{MaybeOptimized, OptimizationFn, sub_proc::optimize_sub_proc, tracked_exhaust_optimize},
 };
 
 pub fn optimize_proc(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>> {
     let mut optimized = false;
 
-    let sub_procs = tracked_optimize(&mut optimized, proc.sub_procs.as_ref().clone(), |sps| {
-        sps.into_iter().map(|sp| optimize_sub_proc(&sp)).collect()
-    });
+    let sub_procs =
+        tracked_exhaust_optimize(&mut optimized, proc.sub_procs.as_ref().clone(), |sps| {
+            sps.into_iter().map(|sp| optimize_sub_proc(&sp)).collect()
+        });
 
     let mut proc = Arc::new(Proc {
         kind: proc.kind.clone(),
@@ -29,7 +30,7 @@ pub fn optimize_proc(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>> {
     const OPTIMIZATIONS: [OptimizationFn<Arc<Proc>>; 1] = [optimization_tempify_local_vars];
 
     for optimization in OPTIMIZATIONS {
-        proc = tracked_optimize(&mut optimized, proc, |proc| optimization(&proc));
+        proc = tracked_exhaust_optimize(&mut optimized, proc, |proc| optimization(&proc));
     }
 
     MaybeOptimized { optimized, val: proc }

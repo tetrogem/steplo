@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::inline::{
     ast::{Command, Loc},
-    opt::{MaybeOptimized, expr::optimize_expr, tracked_optimize},
+    opt::{MaybeOptimized, expr::optimize_expr, tracked_exhaust_optimize},
 };
 
 pub fn optimize_command(command: &Arc<Command>) -> MaybeOptimized<Arc<Command>> {
@@ -10,7 +10,7 @@ pub fn optimize_command(command: &Arc<Command>) -> MaybeOptimized<Arc<Command>> 
 
     macro_rules! expr {
         ($expr:expr) => {
-            tracked_optimize(&mut optimized, $expr.clone(), |expr| optimize_expr(&expr))
+            tracked_exhaust_optimize(&mut optimized, $expr.clone(), |expr| optimize_expr(&expr))
         };
     }
 

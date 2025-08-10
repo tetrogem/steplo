@@ -12,7 +12,7 @@ use crate::inline::{
         ArgAssignment, BinaryArgs, Call, Command, Expr, Loc, Proc, ProcKind, StackAddr, SubProc,
         Value, VarInfo,
     },
-    opt::{MaybeOptimized, OptimizationFn, proc::optimize_proc, tracked_optimize},
+    opt::{MaybeOptimized, OptimizationFn, proc::optimize_proc, tracked_exhaust_optimize},
 };
 
 #[expect(clippy::ptr_arg)]
@@ -20,7 +20,7 @@ pub fn optimize_procs(procs: &Vec<Arc<Proc>>) -> MaybeOptimized<Vec<Arc<Proc>>> 
     let mut optimized = false;
 
     let procs = procs.clone();
-    let mut procs = tracked_optimize(&mut optimized, procs, |procs| {
+    let mut procs = tracked_exhaust_optimize(&mut optimized, procs, |procs| {
         procs.into_iter().map(|proc| optimize_proc(&proc)).collect()
     });
 
@@ -28,12 +28,13 @@ pub fn optimize_procs(procs: &Vec<Arc<Proc>>) -> MaybeOptimized<Vec<Arc<Proc>>> 
         [optimization_inline_func_calls, optimization_remove_unused_stack_addrs];
 
     for optimization in OPTIMIZATIONS {
-        procs = tracked_optimize(&mut optimized, procs, |procs| optimization(&procs));
+        procs = tracked_exhaust_optimize(&mut optimized, procs, |procs| optimization(&procs));
     }
 
     MaybeOptimized { optimized, val: procs }
 }
 
+#[expect(clippy::ptr_arg)]
 fn optimization_inline_func_calls(procs: &Vec<Arc<Proc>>) -> MaybeOptimized<Vec<Arc<Proc>>> {
     let mut optimized = false;
 
@@ -259,30 +260,6 @@ fn find_inlineable_funcs(procs: &[Arc<Proc>]) -> BTreeMap<Arc<str>, Arc<Proc>> {
         .map(|(name, proc)| (name.clone(), proc.clone()))
         .collect()
 }
-
-// fn can_proc_call_func(
-//     proc: &Proc,
-//     target_func: &Arc<str>,
-//     func_name_to_proc: &BTreeMap<Arc<str>, Arc<Proc>>,
-// ) -> bool {
-//     let func_calls = proc
-//         .sub_procs
-//         .iter()
-//         .filter_map(|sp| match sp.call.as_ref() {
-//             Call::Exit | Call::Branch { .. } | Call::Jump { .. } | Call::Return { .. } => None,
-//             Call::Func { to_func_name, arg_assignments: _ } => Some(to_func_name),
-//         })
-//         .collect::<BTreeSet<_>>();
-
-//     if func_calls.contains(target_func) {
-//         return true;
-//     }
-
-//     func_calls.into_iter().any(|func_call| {
-//         let proc_call = func_name_to_proc.get(func_call).expect("no proc found for func");
-//         can_proc_call_func(proc_call, target_func, func_name_to_proc)
-//     })
-// }
 
 fn command_replace_stack_addrs(
     command: &Command,

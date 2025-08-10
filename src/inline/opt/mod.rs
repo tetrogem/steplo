@@ -59,12 +59,16 @@ fn exhaust_optimizations<T>(
     MaybeOptimized { val, optimized }
 }
 
-fn tracked_optimize<T>(
+fn tracked_exhaust_optimize<T>(
     optimized: &mut bool,
     val: T,
     optimizer: impl Fn(T) -> MaybeOptimized<T>,
 ) -> T {
     let maybe_optimized = exhaust_optimizations(val, optimizer);
+    track_optimize(optimized, maybe_optimized)
+}
+
+fn track_optimize<T>(optimized: &mut bool, maybe_optimized: MaybeOptimized<T>) -> T {
     *optimized = *optimized || maybe_optimized.optimized;
     maybe_optimized.val
 }

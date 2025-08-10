@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::inline::{
     ast::{BinaryArgs, Expr, Loc, Value},
-    opt::{MaybeOptimized, tracked_optimize},
+    opt::{MaybeOptimized, tracked_exhaust_optimize},
 };
 
 pub fn optimize_expr(expr: &Arc<Expr>) -> MaybeOptimized<Arc<Expr>> {
@@ -10,7 +10,7 @@ pub fn optimize_expr(expr: &Arc<Expr>) -> MaybeOptimized<Arc<Expr>> {
 
     macro_rules! expr {
         ($expr:expr) => {
-            tracked_optimize(&mut optimized, $expr.clone(), |expr| optimize_expr(&expr))
+            tracked_exhaust_optimize(&mut optimized, $expr.clone(), |expr| optimize_expr(&expr))
         };
     }
 
@@ -50,7 +50,7 @@ pub fn optimize_expr(expr: &Arc<Expr>) -> MaybeOptimized<Arc<Expr>> {
         Expr::Random(args) => Arc::new(Expr::Random(args!(args))),
     };
 
-    let expr = tracked_optimize(&mut optimized, expr.clone(), |expr| {
+    let expr = tracked_exhaust_optimize(&mut optimized, expr.clone(), |expr| {
         optimization_const_evaluate_exprs(&expr)
     });
 

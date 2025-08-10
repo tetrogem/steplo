@@ -44,7 +44,7 @@ struct Args {
     no_opt: bool,
     /// Output intermediate optimization artifacts
     #[arg(long)]
-    out_opt: bool,
+    opt_artifacts: bool,
     /// The platform to optimize the compiled project for
     #[arg(long)]
     target: SerdeTarget,
@@ -103,7 +103,7 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
         high_compiler::compile_to_inline::compile(&linked)
     })?;
 
-    if args.out_opt {
+    if args.opt_artifacts {
         time("Writing intermediate inline 0 file...", || {
             let asm_export = inline::export::export(inline_opt_ast.iter().map(AsRef::as_ref));
             let name = src_path
@@ -122,7 +122,7 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
         let inline_opt_ast =
             time("Optimizing inline IR...", || inline::opt::optimize(&inline_opt_ast));
 
-        if args.out_opt {
+        if args.opt_artifacts {
             time("Writing intermediate inline 1 file...", || {
                 let asm_export = inline::export::export(inline_opt_ast.iter().map(AsRef::as_ref));
                 let name = src_path
@@ -142,7 +142,7 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
         inline::compile_to_mem_opt::compile(&inline_opt_ast)
     })?;
 
-    if args.out_opt {
+    if args.opt_artifacts {
         time("Writing intermediate opt 0 file...", || {
             let asm_export = mem_opt::export::export(mem_opt_ast.iter().map(AsRef::as_ref));
             let name = src_path
@@ -162,7 +162,7 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
             mem_opt::opt::optimize(mem_opt_ast.iter().cloned())
         });
 
-        if args.out_opt {
+        if args.opt_artifacts {
             time("Writing intermediate opt 1 file...", || {
                 let asm_export = mem_opt::export::export(mem_opt_ast.iter().map(AsRef::as_ref));
                 let name = src_path
