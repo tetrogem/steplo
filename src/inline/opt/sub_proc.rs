@@ -21,10 +21,11 @@ pub fn optimize_sub_proc(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<SubProc>> {
 
     let mut sp = Arc::new(SubProc { uuid: sp.uuid, commands: Arc::new(commands), call });
 
-    const OPTIMIZATIONS: [OptimizationFn<Arc<SubProc>>; 3] = [
+    const OPTIMIZATIONS: [OptimizationFn<Arc<SubProc>>; 4] = [
         optimization_inline_trivial_temp_exprs,
         optimization_inline_single_read_temps,
         optimization_remove_zero_read_temps,
+        optimization_inline_trivial_derefs,
     ];
 
     for optimization in OPTIMIZATIONS {
@@ -374,4 +375,148 @@ fn optimization_remove_zero_read_temps(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<
     let sp = SubProc { uuid: sp.uuid, commands: Arc::new(commands), call: sp.call.clone() };
 
     MaybeOptimized { optimized, val: Arc::new(sp) }
+}
+
+fn optimization_inline_trivial_derefs(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<SubProc>> {
+    let mut optimized = false;
+
+    let mut deref_addr_to_trivial_expr = BTreeMap::new();
+
+    macro_rules! expr {
+        ($expr:expr) => {
+            track_optimize(
+                &mut optimized,
+                expr_inline_trivial_derefs($expr, &deref_addr_to_trivial_expr),
+            )
+        };
+    }
+
+    let commands = sp
+        .commands
+        .iter()
+        .map(|command| {
+            Arc::new(match command.as_ref() {
+                Command::In => Command::In,
+                Command::ClearStdout => Command::ClearStdout,
+                Command::Out(expr) => Command::Out(expr!(expr)),
+                Command::Wait { duration_s } => Command::Wait { duration_s: expr!(duration_s) },
+                Command::WriteStdout { index, val } => {
+                    Command::WriteStdout { index: expr!(index), val: expr!(val) }
+                },
+                Command::SetLoc { loc, val } => {
+                    let val = expr!(val);
+
+                    if let Loc::Deref(addr) = loc.as_ref()
+                        && is_trivial_expr(&val)
+                    {
+                        deref_addr_to_trivial_expr.insert(addr.clone(), val.clone());
+                    }
+
+                    Command::SetLoc { loc: loc.clone(), val }
+                },
+            })
+        })
+        .collect();
+
+    let call = match sp.call.as_ref() {
+        Call::Jump { to } => Call::Jump { to: expr!(to) },
+        Call::Branch { cond, then_to, else_to } => {
+            Call::Branch { cond: expr!(cond), then_to: expr!(then_to), else_to: expr!(else_to) }
+        },
+        Call::Func { to_func_name, arg_assignments } => Call::Func {
+            to_func_name: to_func_name.clone(),
+            arg_assignments: Arc::new(
+                arg_assignments
+                    .iter()
+                    .map(|aa| ArgAssignment {
+                        arg_uuid: aa.arg_uuid,
+                        arg_offset: aa.arg_offset,
+                        expr: expr!(&aa.expr),
+                    })
+                    .collect(),
+            ),
+        },
+        Call::Return { to } => Call::Return { to: expr!(to) },
+        Call::Exit => Call::Exit,
+    };
+
+    let sp = SubProc { uuid: sp.uuid, commands: Arc::new(commands), call: Arc::new(call) };
+
+    MaybeOptimized { optimized, val: Arc::new(sp) }
+}
+
+fn expr_inline_trivial_derefs(
+    expr: &Expr,
+    deref_addr_to_trivial_expr: &BTreeMap<Arc<Expr>, Arc<Expr>>,
+) -> MaybeOptimized<Arc<Expr>> {
+    let mut optimized = false;
+
+    macro_rules! expr {
+        ($expr:expr) => {
+            track_optimize(
+                &mut optimized,
+                expr_inline_trivial_derefs($expr, &deref_addr_to_trivial_expr),
+            )
+        };
+    }
+
+    macro_rules! args {
+        ($expr:expr) => {
+            Arc::new(track_optimize(
+                &mut optimized,
+                args_inline_trivial_derefs($expr, &deref_addr_to_trivial_expr),
+            ))
+        };
+    }
+
+    let expr = match expr {
+        Expr::Loc(loc) => match loc.as_ref() {
+            Loc::Temp(temp) => Arc::new(Expr::Loc(Arc::new(Loc::Temp(temp.clone())))),
+            Loc::Deref(addr) => match deref_addr_to_trivial_expr.get(addr) {
+                None => Arc::new(Expr::Loc(Arc::new(Loc::Deref(expr!(addr))))),
+                Some(trivial_expr) => trivial_expr.clone(),
+            },
+        },
+        Expr::StackAddr(addr) => Arc::new(Expr::StackAddr(addr.clone())),
+        Expr::Value(value) => Arc::new(Expr::Value(value.clone())),
+        Expr::StdoutDeref(expr) => Arc::new(Expr::StdoutDeref(expr!(expr))),
+        Expr::StdoutLen => Arc::new(Expr::StdoutLen),
+        Expr::Timer => Arc::new(Expr::Timer),
+        Expr::Add(args) => Arc::new(Expr::Add(args!(args))),
+        Expr::Sub(args) => Arc::new(Expr::Sub(args!(args))),
+        Expr::Mul(args) => Arc::new(Expr::Mul(args!(args))),
+        Expr::Div(args) => Arc::new(Expr::Div(args!(args))),
+        Expr::Mod(args) => Arc::new(Expr::Mod(args!(args))),
+        Expr::Eq(args) => Arc::new(Expr::Eq(args!(args))),
+        Expr::Lt(args) => Arc::new(Expr::Lt(args!(args))),
+        Expr::Gt(args) => Arc::new(Expr::Gt(args!(args))),
+        Expr::Not(expr) => Arc::new(Expr::Not(expr!(expr))),
+        Expr::Or(args) => Arc::new(Expr::Or(args!(args))),
+        Expr::And(args) => Arc::new(Expr::And(args!(args))),
+        Expr::InAnswer => Arc::new(Expr::InAnswer),
+        Expr::Join(args) => Arc::new(Expr::Join(args!(args))),
+        Expr::Random(args) => Arc::new(Expr::Random(args!(args))),
+    };
+
+    MaybeOptimized { optimized, val: expr }
+}
+
+fn args_inline_trivial_derefs(
+    args: &BinaryArgs,
+    deref_addr_to_trivial_expr: &BTreeMap<Arc<Expr>, Arc<Expr>>,
+) -> MaybeOptimized<BinaryArgs> {
+    let mut optimized = false;
+
+    macro_rules! expr {
+        ($expr:expr) => {
+            track_optimize(
+                &mut optimized,
+                expr_inline_trivial_derefs($expr, &deref_addr_to_trivial_expr),
+            )
+        };
+    }
+
+    let args = BinaryArgs { left: expr!(&args.left), right: expr!(&args.right) };
+
+    MaybeOptimized { optimized, val: args }
 }

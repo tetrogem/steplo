@@ -60,40 +60,116 @@ pub fn optimize_expr(expr: &Arc<Expr>) -> MaybeOptimized<Arc<Expr>> {
 fn optimization_const_evaluate_exprs(expr: &Arc<Expr>) -> MaybeOptimized<Arc<Expr>> {
     let mut optimized = false;
 
-    let expr = match expr.as_ref() {
-        Expr::Loc(loc) => Arc::new(Expr::Loc(loc.clone())),
-        Expr::StackAddr(addr) => Arc::new(Expr::StackAddr(addr.clone())),
-        Expr::Value(value) => Arc::new(Expr::Value(value.clone())),
-        Expr::StdoutDeref(expr) => Arc::new(Expr::StdoutDeref(expr.clone())),
-        Expr::StdoutLen => Arc::new(Expr::StdoutLen),
-        Expr::Timer => Arc::new(Expr::Timer),
-        Expr::Add(args) => 'add: {
-            if let Some(other) = other_side_if(args, is_literal("0")) {
-                optimized = true;
-                break 'add other.clone();
-            }
-
-            Arc::new(Expr::Add(args.clone()))
+    let expr = match maybe_const_eval_expr(expr) {
+        None => expr.clone(),
+        Some(expr) => {
+            optimized = true;
+            expr
         },
-        Expr::Sub(args) => Arc::new(Expr::Sub(args.clone())),
-        Expr::Mul(args) => Arc::new(Expr::Mul(args.clone())),
-        Expr::Div(args) => Arc::new(Expr::Div(args.clone())),
-        Expr::Mod(args) => Arc::new(Expr::Mod(args.clone())),
-        Expr::Eq(args) => Arc::new(Expr::Eq(args.clone())),
-        Expr::Lt(args) => Arc::new(Expr::Lt(args.clone())),
-        Expr::Gt(args) => Arc::new(Expr::Gt(args.clone())),
-        Expr::Not(expr) => Arc::new(Expr::Not(expr.clone())),
-        Expr::Or(args) => Arc::new(Expr::Or(args.clone())),
-        Expr::And(args) => Arc::new(Expr::And(args.clone())),
-        Expr::InAnswer => Arc::new(Expr::InAnswer),
-        Expr::Join(args) => Arc::new(Expr::Join(args.clone())),
-        Expr::Random(args) => Arc::new(Expr::Random(args.clone())),
     };
 
     MaybeOptimized { optimized, val: expr }
 }
 
-fn other_side_if(args: &BinaryArgs, predicate: impl Fn(&Expr) -> bool) -> Option<&Arc<Expr>> {
+fn maybe_const_eval_expr(expr: &Arc<Expr>) -> Option<Arc<Expr>> {
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    struct Bool(bool);
+
+    impl Bool {
+        pub fn to_literal(self) -> Arc<Expr> {
+            let lit = if self.0 { "true" } else { "false" };
+            Arc::new(Expr::Value(Arc::new(Value::Literal(lit.into()))))
+        }
+    }
+
+    fn is_value(expr: &Expr) -> bool {
+        match expr {
+            Expr::StackAddr(_) => true,
+            Expr::Value(_) => true,
+            Expr::StdoutLen => true,
+            Expr::InAnswer => true,
+            // may change between when checked on left and checked on right?
+            // not sure, but better to be safe
+            Expr::Timer => false,
+            _ => false,
+        }
+    }
+
+    fn is_staticly_comparable(expr: &Expr) -> bool {
+        macro_rules! args {
+            ($args:expr) => {
+                is_staticly_comparable(&$args.left) && is_staticly_comparable(&$args.right)
+            };
+        }
+
+        match expr {
+            Expr::Loc(loc) => match loc.as_ref() {
+                Loc::Temp(_) => true,
+                Loc::Deref(addr) => is_staticly_comparable(addr),
+            },
+            Expr::StackAddr(_) => true,
+            Expr::Value(_) => true,
+            Expr::StdoutDeref(expr) => is_staticly_comparable(expr),
+            Expr::StdoutLen => true,
+            // may change between when checked on left and checked on right?
+            // not sure, but better to be safe
+            Expr::Timer => false,
+            Expr::Add(args) => args!(args),
+            Expr::Sub(args) => args!(args),
+            Expr::Mul(args) => args!(args),
+            Expr::Div(args) => args!(args),
+            Expr::Mod(args) => args!(args),
+            Expr::Eq(args) => args!(args),
+            Expr::Lt(args) => args!(args),
+            Expr::Gt(args) => args!(args),
+            Expr::Not(expr) => is_staticly_comparable(expr),
+            Expr::Or(args) => args!(args),
+            Expr::And(args) => args!(args),
+            Expr::InAnswer => true,
+            Expr::Join(args) => args!(args),
+            Expr::Random(args) => args!(args),
+        }
+    }
+
+    match expr.as_ref() {
+        Expr::Add(args) => {
+            if let Some(a) =
+                a_side_if_b_is(args, |expr| is_literal("0")(expr) || is_literal("0.0")(expr))
+            {
+                return Some(a.clone());
+            }
+        },
+        Expr::Eq(args) => {
+            if is_value(&args.left) && is_value(&args.right) {
+                return Some(Bool(args.left == args.right).to_literal());
+            }
+
+            // handles other expressions that must be identical
+            // but that we can't actually compare the values for (e.g. temps/stack vars)
+            // because of this, we can tell if two value will be equal (stack[local:ab] == stack[local:ab])
+            // but not if they aren't equal (stack[local:ab] == "2")??
+            if is_staticly_comparable(&args.left)
+                && is_staticly_comparable(&args.right)
+                && args.left == args.right
+            {
+                return Some(Bool(true).to_literal());
+            }
+        },
+        _ => {},
+    }
+
+    None
+}
+
+fn l_side_if_r_is(args: &BinaryArgs, predicate: impl Fn(&Arc<Expr>) -> bool) -> Option<&Arc<Expr>> {
+    if predicate(&args.right) {
+        return Some(&args.left);
+    }
+
+    None
+}
+
+fn a_side_if_b_is(args: &BinaryArgs, predicate: impl Fn(&Arc<Expr>) -> bool) -> Option<&Arc<Expr>> {
     if predicate(&args.left) {
         return Some(&args.right);
     }
@@ -105,9 +181,38 @@ fn other_side_if(args: &BinaryArgs, predicate: impl Fn(&Expr) -> bool) -> Option
     None
 }
 
-fn is_literal(expected: &str) -> impl Fn(&Expr) -> bool {
+fn lr_sides_filter_map<T>(
+    args: &BinaryArgs,
+    filter_map: impl Fn(&Arc<Expr>) -> Option<T>,
+) -> Option<(T, T)> {
+    let left = filter_map(&args.left)?;
+    let right = filter_map(&args.right)?;
+    Some((left, right))
+}
+
+fn ab_sides_filter_map<A, B>(
+    args: &BinaryArgs,
+    filter_map_a: impl Fn(&Arc<Expr>) -> Option<A>,
+    filter_map_b: impl Fn(&Arc<Expr>) -> Option<B>,
+) -> Option<(A, B)> {
+    if let Some(a) = filter_map_a(&args.left)
+        && let Some(b) = filter_map_b(&args.right)
+    {
+        return Some((a, b));
+    }
+
+    if let Some(b) = filter_map_b(&args.left)
+        && let Some(a) = filter_map_a(&args.right)
+    {
+        return Some((a, b));
+    }
+
+    None
+}
+
+fn is_literal(expected: &str) -> impl Fn(&Arc<Expr>) -> bool {
     move |expr| {
-        let Expr::Value(value) = expr else { return false };
+        let Expr::Value(value) = expr.as_ref() else { return false };
         let Value::Literal(lit) = value.as_ref() else { return false };
         lit.as_ref() == expected
     }
