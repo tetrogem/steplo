@@ -263,7 +263,7 @@ fn compile_statement(
         },
         l::Statement::Native(native) => {
             let commands = match &native.val {
-                t::NativeOperation::In { dest_place } => {
+                l::NativeOperation::In { dest_place } => {
                     let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
 
                     Vec::from([
@@ -274,12 +274,12 @@ fn compile_statement(
                         },
                     ])
                 },
-                t::NativeOperation::Out { val } => {
+                l::NativeOperation::Out { val } => {
                     let val = compile_expr(&val.val, proc_kind, loc_m)?;
 
                     Vec::from([o::Command::Out(Arc::new(val))])
                 },
-                t::NativeOperation::Random { dest_place, min, max } => {
+                l::NativeOperation::Random { dest_place, min, max } => {
                     let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
                     let min = compile_expr(&min.val, proc_kind, loc_m)?;
                     let max = compile_expr(&max.val, proc_kind, loc_m)?;
@@ -292,8 +292,8 @@ fn compile_statement(
                         val: Arc::new(o::Expr::Random(args)),
                     }])
                 },
-                t::NativeOperation::StdoutClear => Vec::from([o::Command::ClearStdout]),
-                t::NativeOperation::StdoutLen { dest_place } => {
+                l::NativeOperation::StdoutClear => Vec::from([o::Command::ClearStdout]),
+                l::NativeOperation::StdoutLen { dest_place } => {
                     let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
 
                     Vec::from([o::Command::SetLoc {
@@ -301,7 +301,7 @@ fn compile_statement(
                         val: Arc::new(o::Expr::StdoutLen),
                     }])
                 },
-                t::NativeOperation::StdoutRead { dest_place, index } => {
+                l::NativeOperation::StdoutRead { dest_place, index } => {
                     let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
                     let index = compile_expr(&index.val, proc_kind, loc_m)?;
 
@@ -310,7 +310,7 @@ fn compile_statement(
                         val: Arc::new(o::Expr::StdoutDeref(Arc::new(index))),
                     }])
                 },
-                t::NativeOperation::StdoutWrite { val, index } => {
+                l::NativeOperation::StdoutWrite { val, index } => {
                     let val = compile_expr(&val.val, proc_kind, loc_m)?;
                     let index = compile_expr(&index.val, proc_kind, loc_m)?;
 
@@ -319,18 +319,13 @@ fn compile_statement(
                         val: Arc::new(val),
                     }])
                 },
-                t::NativeOperation::TimerGet { dest_place } => {
+                l::NativeOperation::TimerGet { dest_place } => {
                     let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
 
                     Vec::from([o::Command::SetLoc {
                         loc: Arc::new(dest_loc),
                         val: Arc::new(o::Expr::Timer),
                     }])
-                },
-                t::NativeOperation::Wait { duration_s } => {
-                    let duration_s = compile_expr(&duration_s.val, proc_kind, loc_m)?;
-
-                    Vec::from([o::Command::Wait { duration_s: Arc::new(duration_s) }])
                 },
             };
 
@@ -436,6 +431,13 @@ fn compile_call(
                     arg_assignments: Arc::new(arg_assignments),
                 },
             }
+        },
+        l::Call::Sleep { duration_s, then_sub_proc } => CompiledCall {
+            prereq_commands: Default::default(),
+            call: o::Call::Sleep {
+                duration_s: Arc::new(compile_expr(&duration_s.val, proc_kind, loc_m)?),
+                to: Arc::new(o::Expr::Value(Arc::new(o::Value::Label(*then_sub_proc)))),
+            },
         },
     })
 }

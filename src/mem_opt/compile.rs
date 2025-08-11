@@ -105,7 +105,8 @@ trait TargetManager {
     fn create_proc_root(&self, sp_uuid: &Uuid) -> ez::Op;
     fn create_jump(&self, proc_addr_expr: Arc<ez::Expr>) -> ez::Op;
     fn compile_label(&self, label: &Uuid) -> ez::Expr;
-    fn extra_program_start_ops(&self) -> Vec<Arc<ez::Op>>;
+    fn program_init_ops(&self) -> Vec<Arc<ez::Op>>;
+    fn program_control_flow_ops(&self) -> Vec<Arc<ez::Op>>;
     fn program_exit_call(&self) -> Vec<Arc<ez::Op>>;
     fn create_wait_s(&self, duration_s: Arc<ez::Expr>) -> Vec<ez::Op>;
 }
@@ -174,7 +175,11 @@ impl TargetManager for ScratchTargetManager {
         ez::Expr::Broadcast(self.get_broadcast(label).clone())
     }
 
-    fn extra_program_start_ops(&self) -> Vec<Arc<ez::Op>> {
+    fn program_init_ops(&self) -> Vec<Arc<ez::Op>> {
+        Vec::new()
+    }
+
+    fn program_control_flow_ops(&self) -> Vec<Arc<ez::Op>> {
         Vec::new()
     }
 
@@ -348,7 +353,20 @@ impl TargetManager for TurboWarpTargetManager {
         ez::Expr::Literal(Arc::new(ez::Literal::String(self.get_custom_block(label).name.clone())))
     }
 
-    fn extra_program_start_ops(&self) -> Vec<Arc<ez::Op>> {
+    fn program_init_ops(&self) -> Vec<Arc<ez::Op>> {
+        Vec::from([
+            Arc::new(ez::Op::Data(ez::DataOp::SetVariableTo {
+                variable: self.wait_start_s_variable.clone(),
+                value: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String("".into())))),
+            })),
+            Arc::new(ez::Op::Data(ez::DataOp::SetVariableTo {
+                variable: self.wait_duration_s_variable.clone(),
+                value: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::Num(0.)))),
+            })),
+        ])
+    }
+
+    fn program_control_flow_ops(&self) -> Vec<Arc<ez::Op>> {
         let mut dyn_stack = None;
 
         for custom_block in self.sp_uuid_to_custom_block.values() {
@@ -463,20 +481,7 @@ impl TargetManager for TurboWarpTargetManager {
             Vec::new()
         };
 
-        chain!(
-            [
-                Arc::new(ez::Op::Data(ez::DataOp::SetVariableTo {
-                    variable: self.wait_start_s_variable.clone(),
-                    value: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String("".into()))))
-                })),
-                Arc::new(ez::Op::Data(ez::DataOp::SetVariableTo {
-                    variable: self.wait_duration_s_variable.clone(),
-                    value: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::Num(0.))))
-                }))
-            ],
-            stack
-        )
-        .collect()
+        stack
     }
 
     fn program_exit_call(&self) -> Vec<Arc<ez::Op>> {
@@ -600,14 +605,19 @@ fn compile_proc(
             true => compile_m.target_manager.program_exit_call(),
         };
 
-        let extra_program_start_ops = match is_program_start {
-            true => compile_m.target_manager.extra_program_start_ops(),
-            false => Vec::new(),
+        let (program_init_ops, program_control_flow_ops) = match is_program_start {
+            true => (
+                compile_m.target_manager.program_init_ops(),
+                compile_m.target_manager.program_control_flow_ops(),
+            ),
+            false => (Default::default(), Default::default()),
         };
 
         let stack = ez::Stack {
             root: Arc::new(root),
-            rest: Arc::new(chain!(command_ops, call_ops, extra_program_start_ops).collect()),
+            rest: Arc::new(
+                chain!(program_init_ops, command_ops, call_ops, program_control_flow_ops).collect(),
+            ),
         };
         stacks.push(stack);
     }
@@ -649,10 +659,6 @@ fn compile_command(
                 index: compile_expr(compile_m, index),
                 item: compile_expr(compile_m, val),
             })])
-        },
-        Command::Wait { duration_s } => {
-            let duration_s = compile_expr(compile_m, duration_s);
-            compile_m.target_manager.create_wait_s(duration_s)
         },
     }
 }
@@ -714,6 +720,16 @@ fn compile_call(
                     rest: Arc::new(Vec::new()),
                 })))),
             })])
+        },
+        Call::Sleep { duration_s, to } => {
+            let duration_s = compile_expr(compile_m, duration_s);
+            let proc_addr_expr = compile_expr(compile_m, to);
+
+            chain!(
+                compile_m.target_manager.create_wait_s(duration_s),
+                [compile_m.target_manager.create_jump(proc_addr_expr)],
+            )
+            .collect()
         },
     }
 }

@@ -186,9 +186,6 @@ fn optimize_command(
                 index: tracker.record(optimize_expr(index.clone())),
                 val: tracker.record(optimize_expr(val.clone())),
             },
-            Command::Wait { duration_s } => {
-                Command::Wait { duration_s: tracker.record(optimize_expr(duration_s.clone())) }
-            },
         });
 
         command = tracker.record(optimizer.optimize(command));
@@ -215,6 +212,10 @@ fn optimize_call(mut call: Arc<Call<UMemLoc>>) -> OptimizationReport<Arc<Call<UM
                 cond: tracker.record(optimize_expr(cond.clone())),
                 then_to: tracker.record(optimize_expr(then_to.clone())),
                 else_to: tracker.record(optimize_expr(else_to.clone())),
+            },
+            Call::Sleep { duration_s, to } => Call::Sleep {
+                duration_s: tracker.record(optimize_expr(duration_s.clone())),
+                to: tracker.record(optimize_expr(to.clone())),
             },
         });
 
@@ -379,9 +380,6 @@ fn optimization_inline_trivial_temps(
                 index: expr_replace_trivial_temps(index, &trivial_temp_to_expr),
                 val: expr_replace_trivial_temps(val, &trivial_temp_to_expr),
             },
-            Command::Wait { duration_s } => Command::Wait {
-                duration_s: expr_replace_trivial_temps(duration_s, &trivial_temp_to_expr),
-            },
         };
 
         opt_commands.push(Arc::new(opt_command));
@@ -395,6 +393,10 @@ fn optimization_inline_trivial_temps(
         },
         Call::Jump(to) => Call::Jump(expr_replace_trivial_temps(to, &trivial_temp_to_expr)),
         Call::Exit => Call::Exit,
+        Call::Sleep { duration_s, to } => Call::Sleep {
+            duration_s: expr_replace_trivial_temps(duration_s, &trivial_temp_to_expr),
+            to: expr_replace_trivial_temps(to, &trivial_temp_to_expr),
+        },
     };
 
     let optimized = trivial_temp_to_expr.is_empty().not();
@@ -603,9 +605,6 @@ fn optimization_inline_assignments(
                         Command::Out(expr) => {
                             Command::Out(expr_inline_loc(expr, &loc_to_val, &mut optimized))
                         },
-                        Command::Wait { duration_s } => Command::Wait {
-                            duration_s: expr_inline_loc(duration_s, &loc_to_val, &mut optimized),
-                        },
                         Command::WriteStdout { index, val } => Command::WriteStdout {
                             index: expr_inline_loc(index, &loc_to_val, &mut optimized),
                             val: expr_inline_loc(val, &loc_to_val, &mut optimized),
@@ -624,7 +623,6 @@ fn optimization_inline_assignments(
                         Command::In => {},
                         Command::ClearStdout => {},
                         Command::Out(_expr) => {},
-                        Command::Wait { duration_s: _ } => {},
                         Command::WriteStdout { index: _, val: _ } => {},
                         Command::SetMemLoc { mem_loc, val } => {
                             // remove all cached locs dependent on this mem_loc
@@ -656,6 +654,10 @@ fn optimization_inline_assignments(
                 then_to: expr_inline_loc(then_to, &loc_to_val, &mut optimized),
                 else_to: expr_inline_loc(else_to, &loc_to_val, &mut optimized),
             },
+            Call::Sleep { duration_s, to } => Call::Sleep {
+                duration_s: expr_inline_loc(duration_s, &loc_to_val, &mut optimized),
+                to: expr_inline_loc(to, &loc_to_val, &mut optimized),
+            },
         }),
     });
 
@@ -669,7 +671,7 @@ fn optimization_inline_pure_redirect_calls(
 
     let mut optimized = false;
 
-    let optimize_jump = |to: &Expr<UMemLoc>| -> Option<Arc<Call<UMemLoc>>> {
+    let get_redirected_call = |to: &Expr<UMemLoc>| -> Option<Arc<Call<UMemLoc>>> {
         let Expr::Value(value) = to else { return None };
         let Value::Label(label) = value.as_ref() else { return None };
 
@@ -677,24 +679,25 @@ fn optimization_inline_pure_redirect_calls(
         Some(redirect_call.clone())
     };
 
-    let call_to_single_to = |call: &Call<UMemLoc>| -> Option<Arc<Expr<UMemLoc>>> {
+    let jump_filter_map = |call: &Call<UMemLoc>| -> Option<Arc<Expr<UMemLoc>>> {
         match call {
-            Call::Exit => None,
-            Call::Branch { .. } => None,
             Call::Jump(to) => Some(to.clone()),
+            _ => None,
         }
     };
 
     let optimize_call = |call: &Call<UMemLoc>| -> Option<Arc<Call<UMemLoc>>> {
         match call {
             Call::Exit => None,
-            Call::Jump(to) => optimize_jump(to),
+            Call::Jump(to) => get_redirected_call(to),
             Call::Branch { cond, then_to, else_to } => {
-                let then_to_redirect = optimize_jump(then_to);
-                let else_to_redirect = optimize_jump(else_to);
+                let then_redirected_call = get_redirected_call(then_to);
+                let else_redirected_call = get_redirected_call(else_to);
 
-                let then_to_optimized = then_to_redirect.and_then(|call| call_to_single_to(&call));
-                let else_to_optimized = else_to_redirect.and_then(|call| call_to_single_to(&call));
+                let then_to_optimized =
+                    then_redirected_call.and_then(|call| jump_filter_map(&call));
+                let else_to_optimized =
+                    else_redirected_call.and_then(|call| jump_filter_map(&call));
 
                 if then_to_optimized.is_none() && else_to_optimized.is_none() {
                     return None;
@@ -706,35 +709,30 @@ fn optimization_inline_pure_redirect_calls(
                     else_to: else_to_optimized.unwrap_or_else(|| else_to.clone()),
                 }))
             },
+            Call::Sleep { duration_s, to } => Some(Arc::new(Call::Sleep {
+                duration_s: duration_s.clone(),
+                to: get_redirected_call(to).and_then(|to| jump_filter_map(&to))?,
+            })),
         }
     };
 
-    let procs = procs
-        .iter()
-        .map(|proc| {
-            Arc::new(Proc {
-                kind: proc.kind.clone(),
-                sub_procs: Arc::new(
-                    proc.sub_procs
-                        .iter()
-                        .map(|sp| {
-                            Arc::new(SubProc {
-                                uuid: sp.uuid,
-                                commands: sp.commands.clone(),
-                                call: match optimize_call(&sp.call) {
-                                    Some(call) => {
-                                        optimized = true;
-                                        call
-                                    },
-                                    None => sp.call.clone(),
-                                },
-                            })
-                        })
-                        .collect(),
-                ),
-            })
-        })
-        .collect();
+    let procs = procs.iter().map(|proc| {
+        let sub_procs = proc.sub_procs.iter().map(|sp| {
+            let call = match optimize_call(&sp.call) {
+                None => sp.call.clone(),
+                Some(call) => {
+                    optimized = true;
+                    call
+                },
+            };
+
+            Arc::new(SubProc { uuid: sp.uuid, commands: sp.commands.clone(), call })
+        });
+
+        Arc::new(Proc { kind: proc.kind.clone(), sub_procs: Arc::new(sub_procs.collect()) })
+    });
+
+    let procs = procs.collect();
 
     OptimizationReport { optimized, val: procs }
 }
@@ -754,6 +752,7 @@ fn optimization_inline_pure_redirect_labels(
                 let Value::Label(to_label) = value.as_ref() else { return None };
                 Some((redirect_label, *to_label))
             },
+            Call::Sleep { duration_s, to } => None,
         })
         .collect::<BTreeMap<_, _>>();
 
@@ -935,13 +934,6 @@ fn optimization_inline_pure_redirect_labels(
                                                         ),
                                                     }
                                                 },
-                                                Command::Wait { duration_s } => Command::Wait {
-                                                    duration_s: expr_replace_pure_redirect_labels(
-                                                        &mut optimized,
-                                                        &pure_redirect_label_to_to_label,
-                                                        duration_s,
-                                                    ),
-                                                },
                                             };
 
                                             Arc::new(command)
@@ -982,10 +974,10 @@ fn optimization_inline_sub_procs(
                             if let Call::Jump(to_label) = sp.call.as_ref()
                                 && let Expr::Value(to_label) = to_label.as_ref()
                                 && let Value::Label(to_label) = to_label.as_ref()
+                                && let to_sp =
+                                    label_to_sp.get(to_label).expect("no sp with label found")
+                                && sp_always_jumps_to_itself(to_sp).not()
                             {
-                                let to_sp =
-                                    label_to_sp.get(to_label).expect("no sp with label found");
-
                                 let commands = Arc::new(
                                     sp.commands
                                         .iter()
@@ -1010,6 +1002,25 @@ fn optimization_inline_sub_procs(
         .collect();
 
     OptimizationReport { optimized, val: procs }
+}
+
+fn sp_always_jumps_to_itself(sp: &SubProc<UMemLoc>) -> bool {
+    let always_jump_labels = match sp.call.as_ref() {
+        Call::Exit => Default::default(),
+        Call::Jump(to) => Vec::from([to]),
+        Call::Branch { .. } => Default::default(),
+        Call::Sleep { duration_s: _, to } => Vec::from([to]),
+    };
+
+    for label in always_jump_labels {
+        let Expr::Value(label) = label.as_ref() else { continue };
+        let Value::Label(label) = label.as_ref() else { continue };
+        if *label == sp.uuid {
+            return true;
+        }
+    }
+
+    false
 }
 
 fn optimization_remove_unused_sub_procs(
@@ -1068,7 +1079,6 @@ fn optimization_remove_unused_sub_procs(
             Command::WriteStdout { index, val } => {
                 chain!(expr_find_used_labels(index), expr_find_used_labels(val)).collect()
             },
-            Command::Wait { duration_s } => expr_find_used_labels(duration_s),
         }
     }
 
@@ -1082,6 +1092,9 @@ fn optimization_remove_unused_sub_procs(
                 expr_find_used_labels(else_to)
             )
             .collect(),
+            Call::Sleep { duration_s, to } => {
+                chain!(expr_find_used_labels(duration_s), expr_find_used_labels(to)).collect()
+            },
         }
     }
 
@@ -1612,7 +1625,6 @@ fn find_unused_temps(sp: &SubProc<UMemLoc>) -> BTreeSet<Arc<TempVar>> {
                 used_temps.extend(expr_get_used_temps(index));
                 used_temps.extend(expr_get_used_temps(val));
             },
-            Command::Wait { duration_s } => used_temps.extend(expr_get_used_temps(duration_s)),
         }
     }
 
@@ -1624,6 +1636,10 @@ fn find_unused_temps(sp: &SubProc<UMemLoc>) -> BTreeSet<Arc<TempVar>> {
         },
         Call::Jump(to) => used_temps.extend(expr_get_used_temps(to)),
         Call::Exit => {},
+        Call::Sleep { duration_s, to } => {
+            used_temps.extend(expr_get_used_temps(duration_s));
+            used_temps.extend(expr_get_used_temps(to));
+        },
     }
 
     unused_temps.difference(&used_temps).cloned().collect()

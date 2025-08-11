@@ -126,6 +126,9 @@ pub fn designate_registers(
                     chain!(cond.to_mem_locs(), then_to.to_mem_locs(), else_to.to_mem_locs())
                         .collect()
                 },
+                ast::Call::Sleep { duration_s, to } => {
+                    chain!(duration_s.to_mem_locs(), to.to_mem_locs()).collect()
+                },
             };
 
             for umem in call_umem_locs {
@@ -160,7 +163,6 @@ pub fn designate_registers(
                     ast::Command::WriteStdout { index, val } => {
                         chain!(index.to_mem_locs(), val.to_mem_locs()).collect()
                     },
-                    ast::Command::Wait { duration_s } => duration_s.to_mem_locs(),
                 };
 
                 let temps = add(&mem_locs);
@@ -198,9 +200,6 @@ pub fn designate_registers(
                         index: index.to_rmem(temp_m),
                         val: val.to_rmem(temp_m),
                     },
-                    ast::Command::Wait { duration_s } => {
-                        ast::Command::Wait { duration_s: duration_s.to_rmem(temp_m) }
-                    },
                 };
 
                 commands.push(Arc::new(command));
@@ -219,6 +218,10 @@ pub fn designate_registers(
                     then_to: then_to.to_rmem(&mut temp_m),
                     else_to: else_to.to_rmem(&mut temp_m),
                 },
+                ast::Call::Sleep { duration_s, to } => Call::Sleep {
+                    duration_s: duration_s.to_rmem(&mut temp_m),
+                    to: to.to_rmem(&mut temp_m),
+                },
             };
 
             let call_umem_locs = match sp.call.as_ref() {
@@ -227,6 +230,9 @@ pub fn designate_registers(
                 ast::Call::Branch { cond, then_to, else_to } => {
                     chain!(cond.to_mem_locs(), then_to.to_mem_locs(), else_to.to_mem_locs())
                         .collect()
+                },
+                ast::Call::Sleep { duration_s, to } => {
+                    chain!(duration_s.to_mem_locs(), to.to_mem_locs()).collect()
                 },
             };
 

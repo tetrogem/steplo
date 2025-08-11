@@ -51,6 +51,12 @@ fn optimization_tempify_local_vars(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>
         .map(|sp| {
             let mut tempifiable_local_addr_to_temp = BTreeMap::new();
 
+            macro_rules! expr {
+                ($expr:expr) => {
+                    Arc::new(expr_replace_locals_with_temps($expr, &tempifiable_local_addr_to_temp))
+                };
+            }
+
             let commands = sp
                 .commands
                 .iter()
@@ -58,33 +64,15 @@ fn optimization_tempify_local_vars(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>
                     let command = match command.as_ref() {
                         Command::In => Command::In,
                         Command::ClearStdout => Command::ClearStdout,
-                        Command::Out(expr) => Command::Out(Arc::new(
-                            expr_replace_locals_with_temps(expr, &tempifiable_local_addr_to_temp),
-                        )),
-                        Command::Wait { duration_s } => Command::Wait {
-                            duration_s: Arc::new(expr_replace_locals_with_temps(
-                                duration_s,
-                                &tempifiable_local_addr_to_temp,
-                            )),
-                        },
-                        Command::WriteStdout { index, val } => Command::WriteStdout {
-                            index: Arc::new(expr_replace_locals_with_temps(
-                                index,
-                                &tempifiable_local_addr_to_temp,
-                            )),
-                            val: Arc::new(expr_replace_locals_with_temps(
-                                val,
-                                &tempifiable_local_addr_to_temp,
-                            )),
+                        Command::Out(expr) => Command::Out(expr!(expr)),
+                        Command::WriteStdout { index, val } => {
+                            Command::WriteStdout { index: expr!(index), val: expr!(val) }
                         },
                         Command::SetLoc { loc, val } => {
                             // compute val using existing temp
                             // (in case local var used itself in its expr, we want...
                             // ...to use the previous temp)
-                            let val = expr_replace_locals_with_temps(
-                                val,
-                                &tempifiable_local_addr_to_temp,
-                            );
+                            let val = expr!(val);
 
                             // create new temp for new assignment for this local
                             // (since temps are single assignment)
@@ -113,14 +101,11 @@ fn optimization_tempify_local_vars(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>
                                             }
                                         },
                                     },
-                                    addr => Loc::Deref(Arc::new(expr_replace_locals_with_temps(
-                                        addr,
-                                        &tempifiable_local_addr_to_temp,
-                                    ))),
+                                    addr => Loc::Deref(expr!(addr)),
                                 },
                             };
 
-                            Command::SetLoc { loc: Arc::new(loc), val: Arc::new(val) }
+                            Command::SetLoc { loc: Arc::new(loc), val }
                         },
                     };
 
@@ -130,32 +115,16 @@ fn optimization_tempify_local_vars(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>
 
             let call = match sp.call.as_ref() {
                 Call::Exit => Call::Exit,
-                Call::Jump { to } => Call::Jump {
-                    to: Arc::new(expr_replace_locals_with_temps(
-                        to,
-                        &tempifiable_local_addr_to_temp,
-                    )),
-                },
+                Call::Jump { to } => Call::Jump { to: expr!(to) },
                 Call::Branch { cond, then_to, else_to } => Call::Branch {
-                    cond: Arc::new(expr_replace_locals_with_temps(
-                        cond,
-                        &tempifiable_local_addr_to_temp,
-                    )),
-                    then_to: Arc::new(expr_replace_locals_with_temps(
-                        then_to,
-                        &tempifiable_local_addr_to_temp,
-                    )),
-                    else_to: Arc::new(expr_replace_locals_with_temps(
-                        else_to,
-                        &tempifiable_local_addr_to_temp,
-                    )),
+                    cond: expr!(cond),
+                    then_to: expr!(then_to),
+                    else_to: expr!(else_to),
                 },
-                Call::Return { to } => Call::Return {
-                    to: Arc::new(expr_replace_locals_with_temps(
-                        to,
-                        &tempifiable_local_addr_to_temp,
-                    )),
+                Call::Sleep { duration_s, to } => {
+                    Call::Sleep { duration_s: expr!(duration_s), to: expr!(to) }
                 },
+                Call::Return { to } => Call::Return { to: expr!(to) },
                 Call::Func { to_func_name, arg_assignments } => Call::Func {
                     to_func_name: to_func_name.clone(),
                     arg_assignments: Arc::new(
@@ -164,10 +133,7 @@ fn optimization_tempify_local_vars(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>
                             .map(|aa| ArgAssignment {
                                 arg_uuid: aa.arg_uuid,
                                 arg_offset: aa.arg_offset,
-                                expr: Arc::new(expr_replace_locals_with_temps(
-                                    &aa.expr,
-                                    &tempifiable_local_addr_to_temp,
-                                )),
+                                expr: expr!(&aa.expr),
                             })
                             .collect(),
                     ),
@@ -214,9 +180,6 @@ fn find_read_before_write_local_vars(proc: &Arc<Proc>) -> BTreeSet<Uuid> {
                 Command::In => (Default::default(), Default::default()),
                 Command::ClearStdout => (Default::default(), Default::default()),
                 Command::Out(expr) => (Default::default(), expr_find_read_local_vars(expr)),
-                Command::Wait { duration_s } => {
-                    (Default::default(), expr_find_read_local_vars(duration_s))
-                },
                 Command::WriteStdout { index, val } => (
                     Default::default(),
                     chain!(expr_find_read_local_vars(index), expr_find_read_local_vars(val))
@@ -250,6 +213,10 @@ fn find_read_before_write_local_vars(proc: &Arc<Proc>) -> BTreeSet<Uuid> {
                 expr_find_read_local_vars(else_to)
             )
             .collect(),
+            Call::Sleep { duration_s, to } => {
+                chain!(expr_find_read_local_vars(duration_s), expr_find_read_local_vars(to))
+                    .collect()
+            },
             Call::Return { to } => expr_find_read_local_vars(to),
             Call::Func { to_func_name: _, arg_assignments } => {
                 arg_assignments.iter().flat_map(|aa| expr_find_read_local_vars(&aa.expr)).collect()
@@ -415,6 +382,10 @@ fn find_addr_expr_used_local_vars(proc: &Arc<Proc>) -> BTreeSet<Uuid> {
                 addr_expr_used_local_vars.extend(expr_find_addr_expr_used_local_vars(then_to));
                 addr_expr_used_local_vars.extend(expr_find_addr_expr_used_local_vars(else_to));
             },
+            Call::Sleep { duration_s, to } => {
+                addr_expr_used_local_vars.extend(expr_find_addr_expr_used_local_vars(duration_s));
+                addr_expr_used_local_vars.extend(expr_find_addr_expr_used_local_vars(to));
+            },
             Call::Return { to } => {
                 addr_expr_used_local_vars.extend(expr_find_addr_expr_used_local_vars(to));
             },
@@ -434,7 +405,6 @@ fn command_find_addr_expr_used_local_vars(command: &Command) -> BTreeSet<Uuid> {
         Command::In => Default::default(),
         Command::ClearStdout => Default::default(),
         Command::Out(expr) => expr_find_addr_expr_used_local_vars(expr),
-        Command::Wait { duration_s } => expr_find_addr_expr_used_local_vars(duration_s),
         Command::WriteStdout { index, val } => chain!(
             expr_find_addr_expr_used_local_vars(index),
             expr_find_addr_expr_used_local_vars(val)
@@ -613,7 +583,10 @@ fn optimization_inline_sp_jumps(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>> {
                 && let Expr::Value(to_value) = to.as_ref()
                 && let Value::Label(to_label) = to_value.as_ref()
                 && let Some(to_sp) = sp_uuid_to_sp.get(to_label)
+                // sub procs can't inline themselves -- avoid infinite loops
+                && sp_can_jump_to_itself(to_sp).not()
             {
+                // dbg!(to_sp.uuid, &to_sp.call, sp.uuid, &sp.call);
                 optimized = true;
 
                 let commands =
@@ -636,4 +609,25 @@ fn optimization_inline_sp_jumps(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>> {
     };
 
     MaybeOptimized { optimized, val: Arc::new(proc) }
+}
+
+fn sp_can_jump_to_itself(sp: &SubProc) -> bool {
+    let always_jump_labels = match sp.call.as_ref() {
+        Call::Exit => Default::default(),
+        Call::Jump { to } => Vec::from([to]),
+        Call::Branch { cond: _, then_to, else_to } => Vec::from([then_to, else_to]),
+        Call::Sleep { duration_s: _, to } => Vec::from([to]),
+        Call::Return { to } => Vec::from([to]),
+        Call::Func { .. } => Default::default(),
+    };
+
+    for label in always_jump_labels {
+        let Expr::Value(label) = label.as_ref() else { continue };
+        let Value::Label(label) = label.as_ref() else { continue };
+        if *label == sp.uuid {
+            return true;
+        }
+    }
+
+    false
 }

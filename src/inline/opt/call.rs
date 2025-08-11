@@ -20,6 +20,9 @@ pub fn optimize_call(call: &Arc<Call>) -> MaybeOptimized<Arc<Call>> {
         Call::Branch { cond, then_to, else_to } => {
             Call::Branch { cond: expr!(cond), then_to: expr!(then_to), else_to: expr!(else_to) }
         },
+        Call::Sleep { duration_s, to } => {
+            Call::Sleep { duration_s: expr!(duration_s), to: expr!(to) }
+        },
         Call::Func { to_func_name, arg_assignments } => {
             let arg_assignments = arg_assignments
                 .iter()

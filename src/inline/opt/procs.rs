@@ -77,8 +77,6 @@ fn proc_inline_funcs(
                 return Vec::from([sp.clone()]);
             };
 
-            dbg!(&inlineable_func_proc);
-
             // add all of the inlined function's stack to this proc's stack
             let func_arg_to_inlined = inlineable_func_proc
                 .ordered_arg_infos
@@ -123,6 +121,17 @@ fn proc_inline_funcs(
                 .map(|sp| (sp.uuid, Uuid::new_v4()))
                 .collect::<BTreeMap<_, _>>();
 
+            macro_rules! inline_expr {
+                ($expr:expr) => {
+                    Arc::new(inline_expr(
+                        $expr,
+                        &func_arg_to_inlined,
+                        &func_local_to_inlined,
+                        &func_label_to_inlined,
+                    ))
+                };
+            }
+
             let inlined_func_sps = inlineable_func_proc
                 .sub_procs
                 .iter()
@@ -142,41 +151,16 @@ fn proc_inline_funcs(
 
                     let call = match sp.call.as_ref() {
                         Call::Exit => Call::Exit,
-                        Call::Return { to } => Call::Jump {
-                            to: Arc::new(inline_expr(
-                                to,
-                                &func_arg_to_inlined,
-                                &func_local_to_inlined,
-                                &func_label_to_inlined,
-                            )),
-                        },
-                        Call::Jump { to } => Call::Jump {
-                            to: Arc::new(inline_expr(
-                                to,
-                                &func_arg_to_inlined,
-                                &func_local_to_inlined,
-                                &func_label_to_inlined,
-                            )),
-                        },
+                        Call::Return { to } => Call::Jump { to: inline_expr!(to) },
+                        Call::Jump { to } => Call::Jump { to: inline_expr!(to) },
                         Call::Branch { cond, then_to, else_to } => Call::Branch {
-                            cond: Arc::new(inline_expr(
-                                cond,
-                                &func_arg_to_inlined,
-                                &func_local_to_inlined,
-                                &func_label_to_inlined,
-                            )),
-                            then_to: Arc::new(inline_expr(
-                                then_to,
-                                &func_arg_to_inlined,
-                                &func_local_to_inlined,
-                                &func_label_to_inlined,
-                            )),
-                            else_to: Arc::new(inline_expr(
-                                else_to,
-                                &func_arg_to_inlined,
-                                &func_local_to_inlined,
-                                &func_label_to_inlined,
-                            )),
+                            cond: inline_expr!(cond),
+                            then_to: inline_expr!(then_to),
+                            else_to: inline_expr!(else_to),
+                        },
+                        Call::Sleep { duration_s, to } => Call::Sleep {
+                            duration_s: inline_expr!(duration_s),
+                            to: inline_expr!(to),
                         },
                         Call::Func { to_func_name, arg_assignments } => {
                             let arg_assignments = arg_assignments
@@ -184,12 +168,7 @@ fn proc_inline_funcs(
                                 .map(|aa| ArgAssignment {
                                     arg_uuid: aa.arg_uuid,
                                     arg_offset: aa.arg_offset,
-                                    expr: Arc::new(inline_expr(
-                                        &aa.expr,
-                                        &func_arg_to_inlined,
-                                        &func_local_to_inlined,
-                                        &func_label_to_inlined,
-                                    )),
+                                    expr: inline_expr!(&aa.expr),
                                 })
                                 .collect();
 
@@ -279,13 +258,6 @@ fn command_replace_stack_addrs(
             inlined_arg_to_local,
             inlined_local_to_local,
         ))),
-        Command::Wait { duration_s } => Command::Wait {
-            duration_s: Arc::new(expr_replace_stack_addrs(
-                duration_s,
-                inlined_arg_to_local,
-                inlined_local_to_local,
-            )),
-        },
         Command::WriteStdout { index, val } => Command::WriteStdout {
             index: Arc::new(expr_replace_stack_addrs(
                 index,
@@ -456,9 +428,6 @@ fn command_replace_labels(
         Command::ClearStdout => Command::ClearStdout,
         Command::Out(expr) => {
             Command::Out(Arc::new(expr_replace_labels(expr, func_label_to_inlined)))
-        },
-        Command::Wait { duration_s } => Command::Wait {
-            duration_s: Arc::new(expr_replace_labels(duration_s, func_label_to_inlined)),
         },
         Command::WriteStdout { index, val } => Command::WriteStdout {
             index: Arc::new(expr_replace_labels(index, func_label_to_inlined)),
@@ -661,7 +630,6 @@ fn command_find_used_stack_addrs(command: &Command) -> BTreeSet<StackAddr> {
         Command::In => Default::default(),
         Command::ClearStdout => Default::default(),
         Command::Out(expr) => expr_find_used_stack_addrs(expr),
-        Command::Wait { duration_s } => expr_find_used_stack_addrs(duration_s),
         Command::WriteStdout { index, val } => {
             chain!(expr_find_used_stack_addrs(index), expr_find_used_stack_addrs(val)).collect()
         },
@@ -681,6 +649,9 @@ fn call_find_used_stack_addrs(call: &Call) -> BTreeSet<StackAddr> {
             expr_find_used_stack_addrs(else_to)
         )
         .collect(),
+        Call::Sleep { duration_s, to } => {
+            chain!(expr_find_used_stack_addrs(duration_s), expr_find_used_stack_addrs(to)).collect()
+        },
         Call::Return { to } => expr_find_used_stack_addrs(to),
         Call::Func { to_func_name: _, arg_assignments } => {
             arg_assignments.iter().flat_map(|aa| expr_find_used_stack_addrs(&aa.expr)).collect()
@@ -785,7 +756,6 @@ fn command_find_used_labels(command: &Command) -> BTreeSet<Uuid> {
         Command::In => Default::default(),
         Command::ClearStdout => Default::default(),
         Command::Out(expr) => expr_find_used_labels(expr),
-        Command::Wait { duration_s } => expr_find_used_labels(duration_s),
         Command::WriteStdout { index, val } => {
             chain!(expr_find_used_labels(index), expr_find_used_labels(val)).collect()
         },
@@ -844,6 +814,9 @@ fn call_find_used_labels(call: &Call) -> BTreeSet<Uuid> {
             expr_find_used_labels(else_to)
         )
         .collect(),
+        Call::Sleep { duration_s, to } => {
+            chain!(expr_find_used_labels(duration_s), expr_find_used_labels(to)).collect()
+        },
         Call::Return { to } => expr_find_used_labels(to),
         Call::Func { to_func_name: _, arg_assignments } => {
             arg_assignments.iter().flat_map(|aa| expr_find_used_labels(&aa.expr)).collect()

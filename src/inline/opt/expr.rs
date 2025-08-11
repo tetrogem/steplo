@@ -1,8 +1,17 @@
-use std::sync::Arc;
+use std::{
+    ops::{Add, Div, Mul, Neg, Not, Sub},
+    str::FromStr,
+    sync::Arc,
+};
 
-use crate::inline::{
-    ast::{BinaryArgs, Expr, Loc, Value},
-    opt::{MaybeOptimized, tracked_exhaust_optimize},
+use anyhow::bail;
+
+use crate::{
+    inline::{
+        ast::{BinaryArgs, Expr, Loc, Value},
+        opt::{MaybeOptimized, tracked_exhaust_optimize},
+    },
+    utils::IsInteger,
 };
 
 pub fn optimize_expr(expr: &Arc<Expr>) -> MaybeOptimized<Arc<Expr>> {
@@ -72,6 +81,10 @@ fn optimization_const_evaluate_exprs(expr: &Arc<Expr>) -> MaybeOptimized<Arc<Exp
 }
 
 fn maybe_const_eval_expr(expr: &Arc<Expr>) -> Option<Arc<Expr>> {
+    fn make_str_literal(str: &str) -> Arc<Expr> {
+        Arc::new(Expr::Value(Arc::new(Value::Literal(str.into()))))
+    }
+
     #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
     struct Bool(bool);
 
@@ -82,7 +95,142 @@ fn maybe_const_eval_expr(expr: &Arc<Expr>) -> Option<Arc<Expr>> {
         }
     }
 
-    fn is_value(expr: &Expr) -> bool {
+    impl FromStr for Bool {
+        type Err = anyhow::Error;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            Ok(match s {
+                "true" => Self(true),
+                "false" => Self(false),
+                _ => bail!("str is not \"true\" or \"false\""),
+            })
+        }
+    }
+
+    impl Not for Bool {
+        type Output = Bool;
+
+        fn not(self) -> Self::Output {
+            Self(self.0.not())
+        }
+    }
+
+    #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
+    struct Int(f64);
+
+    #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
+    struct Float(f64);
+
+    impl FromStr for Int {
+        type Err = anyhow::Error;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            if s.contains('.') {
+                bail!("Int literal cannot contain decimal");
+            }
+
+            let num: f64 = s.parse()?;
+            if num.is_integer().not() {
+                bail!("Int's f64 repr is not an integer")
+            }
+
+            Ok(Self(num))
+        }
+    }
+
+    impl FromStr for Float {
+        type Err = anyhow::Error;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            Ok(Self(s.parse()?))
+        }
+    }
+
+    impl Int {
+        pub fn to_literal(self) -> Arc<Expr> {
+            make_str_literal(&format!("{}", self.0))
+        }
+    }
+
+    impl Float {
+        pub fn to_literal(self) -> Arc<Expr> {
+            make_str_literal(&format!("{:?}", self.0))
+        }
+    }
+
+    impl Add<Int> for Int {
+        type Output = Int;
+
+        fn add(self, rhs: Self) -> Self::Output {
+            Self(self.0 + rhs.0)
+        }
+    }
+
+    impl Add<Float> for Float {
+        type Output = Float;
+
+        fn add(self, rhs: Self) -> Self::Output {
+            Self(self.0 + rhs.0)
+        }
+    }
+
+    impl Sub<Int> for Int {
+        type Output = Int;
+
+        fn sub(self, rhs: Int) -> Self::Output {
+            Self(self.0 - rhs.0)
+        }
+    }
+
+    impl Sub<Float> for Float {
+        type Output = Float;
+
+        fn sub(self, rhs: Float) -> Self::Output {
+            Self(self.0 - rhs.0)
+        }
+    }
+
+    impl Mul<Int> for Int {
+        type Output = Int;
+
+        fn mul(self, rhs: Int) -> Self::Output {
+            Self(self.0 * rhs.0)
+        }
+    }
+
+    impl Mul<Float> for Float {
+        type Output = Float;
+
+        fn mul(self, rhs: Float) -> Self::Output {
+            Self(self.0 * rhs.0)
+        }
+    }
+
+    impl Div<Float> for Float {
+        type Output = Float;
+
+        fn div(self, rhs: Float) -> Self::Output {
+            Self(self.0 / rhs.0)
+        }
+    }
+
+    impl Neg for Int {
+        type Output = Int;
+
+        fn neg(self) -> Self::Output {
+            Self(-self.0)
+        }
+    }
+
+    impl Neg for Float {
+        type Output = Float;
+
+        fn neg(self) -> Self::Output {
+            Self(-self.0)
+        }
+    }
+
+    fn is_value_like(expr: &Expr) -> bool {
         match expr {
             Expr::StackAddr(_) => true,
             Expr::Value(_) => true,
@@ -139,8 +287,30 @@ fn maybe_const_eval_expr(expr: &Arc<Expr>) -> Option<Arc<Expr>> {
                 return Some(a.clone());
             }
         },
+        // Expr::Sub(args) => {
+        //     if let Some(a) =
+        //         l_side_if_r_is(args, |expr| is_literal("0")(expr) || is_literal("0.0")(expr))
+        //     {
+        //         return Some(a.clone());
+        //     }
+        // },
+        // Expr::Mul(args) => {
+        //     if a_side_if_b_is(args, is_literal("0")).is_some() {
+        //         return Some(Int(0.).to_literal());
+        //     }
+
+        //     if a_side_if_b_is(args, is_literal("0.0")).is_some() {
+        //         return Some(Float(0.).to_literal());
+        //     }
+
+        //     if let Some(a) =
+        //         a_side_if_b_is(args, |expr| is_literal("1")(expr) || is_literal("1.0")(expr))
+        //     {
+        //         return Some(a.clone());
+        //     }
+        // },
         Expr::Eq(args) => {
-            if is_value(&args.left) && is_value(&args.right) {
+            if is_value_like(&args.left) && is_value_like(&args.right) {
                 return Some(Bool(args.left == args.right).to_literal());
             }
 
@@ -155,6 +325,21 @@ fn maybe_const_eval_expr(expr: &Arc<Expr>) -> Option<Arc<Expr>> {
                 return Some(Bool(true).to_literal());
             }
         },
+        // Expr::Lt(args) => {
+        //     if let Some((l, r)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+        //         return Some(Bool(l < r).to_literal());
+        //     }
+        // },
+        // Expr::Gt(args) => {
+        //     if let Some((l, r)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+        //         return Some(Bool(l > r).to_literal());
+        //     }
+        // },
+        // Expr::Not(expr) => {
+        //     if let Some(bool) = parse_filter_map::<Bool>(expr) {
+        //         return Some(bool.not().to_literal());
+        //     }
+        // },
         _ => {},
     }
 
@@ -216,4 +401,10 @@ fn is_literal(expected: &str) -> impl Fn(&Arc<Expr>) -> bool {
         let Value::Literal(lit) = value.as_ref() else { return false };
         lit.as_ref() == expected
     }
+}
+
+fn parse_filter_map<T: FromStr>(expr: &Arc<Expr>) -> Option<T> {
+    let Expr::Value(value) = expr.as_ref() else { return None };
+    let Value::Literal(lit) = value.as_ref() else { return None };
+    lit.parse::<T>().ok()
 }

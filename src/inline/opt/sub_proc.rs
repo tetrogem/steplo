@@ -53,8 +53,6 @@ fn optimization_inline_trivial_temp_exprs(sp: &Arc<SubProc>) -> MaybeOptimized<A
         })
         .collect::<BTreeMap<_, _>>();
 
-    dbg!(&temp_to_trivial_expr);
-
     let commands = sp
         .commands
         .iter()
@@ -111,7 +109,6 @@ fn command_inline_temps(
         Command::In => Command::In,
         Command::ClearStdout => Command::ClearStdout,
         Command::Out(expr) => Command::Out(expr!(expr)),
-        Command::Wait { duration_s } => Command::Wait { duration_s: expr!(duration_s) },
         Command::WriteStdout { index, val } => {
             Command::WriteStdout { index: expr!(index), val: expr!(val) }
         },
@@ -148,6 +145,9 @@ fn call_inline_temps(
         Call::Jump { to } => Call::Jump { to: expr!(to) },
         Call::Branch { cond, then_to, else_to } => {
             Call::Branch { cond: expr!(cond), then_to: expr!(then_to), else_to: expr!(else_to) }
+        },
+        Call::Sleep { duration_s, to } => {
+            Call::Sleep { duration_s: expr!(duration_s), to: expr!(to) }
         },
         Call::Return { to } => Call::Return { to: expr!(to) },
         Call::Func { to_func_name, arg_assignments } => Call::Func {
@@ -275,7 +275,6 @@ fn command_count_temp_reads(command: &Command, temp_to_reads: &mut BTreeMap<Arc<
         Command::In => {},
         Command::ClearStdout => {},
         Command::Out(expr) => expr_count_temp_reads(expr, temp_to_reads),
-        Command::Wait { duration_s } => expr_count_temp_reads(duration_s, temp_to_reads),
         Command::WriteStdout { index, val } => {
             expr_count_temp_reads(index, temp_to_reads);
             expr_count_temp_reads(val, temp_to_reads);
@@ -299,6 +298,10 @@ fn call_count_temp_reads(call: &Call, temp_to_reads: &mut BTreeMap<Arc<TempVar>,
             expr_count_temp_reads(cond, temp_to_reads);
             expr_count_temp_reads(then_to, temp_to_reads);
             expr_count_temp_reads(else_to, temp_to_reads);
+        },
+        Call::Sleep { duration_s, to } => {
+            expr_count_temp_reads(duration_s, temp_to_reads);
+            expr_count_temp_reads(to, temp_to_reads);
         },
         Call::Return { to } => expr_count_temp_reads(to, temp_to_reads),
         Call::Func { to_func_name: _, arg_assignments } => {
@@ -399,7 +402,6 @@ fn optimization_inline_trivial_derefs(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<S
                 Command::In => Command::In,
                 Command::ClearStdout => Command::ClearStdout,
                 Command::Out(expr) => Command::Out(expr!(expr)),
-                Command::Wait { duration_s } => Command::Wait { duration_s: expr!(duration_s) },
                 Command::WriteStdout { index, val } => {
                     Command::WriteStdout { index: expr!(index), val: expr!(val) }
                 },
@@ -422,6 +424,9 @@ fn optimization_inline_trivial_derefs(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<S
         Call::Jump { to } => Call::Jump { to: expr!(to) },
         Call::Branch { cond, then_to, else_to } => {
             Call::Branch { cond: expr!(cond), then_to: expr!(then_to), else_to: expr!(else_to) }
+        },
+        Call::Sleep { duration_s, to } => {
+            Call::Sleep { duration_s: expr!(duration_s), to: expr!(to) }
         },
         Call::Func { to_func_name, arg_assignments } => Call::Func {
             to_func_name: to_func_name.clone(),

@@ -75,7 +75,6 @@ fn export_command(name_m: &mut NameManager, command: &Command) -> String {
         Command::WriteStdout { index, val } => {
             format!("stdout[{}] = {}", export_expr(name_m, index), export_expr(name_m, val))
         },
-        Command::Wait { duration_s } => format!("wait_s {}", export_expr(name_m, duration_s)),
     };
 
     format!("{command_name};")
@@ -91,6 +90,13 @@ fn export_call(name_m: &mut NameManager, call: &Call) -> String {
                 export_expr(name_m, cond),
                 export_expr(name_m, then_to),
                 export_expr(name_m, else_to)
+            )
+        },
+        Call::Sleep { duration_s, to } => {
+            format!(
+                "sleep_s {} then jump {}",
+                export_expr(name_m, duration_s),
+                export_expr(name_m, to)
             )
         },
         Call::Return { to } => format!("return {}", export_expr(name_m, to)),

@@ -18,7 +18,6 @@ pub fn optimize_command(command: &Arc<Command>) -> MaybeOptimized<Arc<Command>> 
         Command::In => Command::In,
         Command::ClearStdout => Command::ClearStdout,
         Command::Out(expr) => Command::Out(expr!(expr)),
-        Command::Wait { duration_s } => Command::Wait { duration_s: expr!(duration_s) },
         Command::WriteStdout { index, val } => {
             Command::WriteStdout { index: expr!(index), val: expr!(val) }
         },

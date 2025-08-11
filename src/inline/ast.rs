@@ -78,13 +78,13 @@ pub enum Command {
     Out(Arc<Expr>),
     ClearStdout,
     WriteStdout { index: Arc<Expr>, val: Arc<Expr> },
-    Wait { duration_s: Arc<Expr> },
 }
 
 #[derive(Debug)]
 pub enum Call {
     Jump { to: Arc<Expr> },
     Branch { cond: Arc<Expr>, then_to: Arc<Expr>, else_to: Arc<Expr> },
+    Sleep { duration_s: Arc<Expr>, to: Arc<Expr> },
     Func { to_func_name: Arc<str>, arg_assignments: Arc<Vec<ArgAssignment>> },
     Return { to: Arc<Expr> },
     Exit,

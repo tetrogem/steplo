@@ -243,9 +243,6 @@ fn compile_command(
             index: Arc::new(compile_expr(index, stack_m, proc_kind)?),
             val: Arc::new(compile_expr(val, stack_m, proc_kind)?),
         },
-        a::Command::Wait { duration_s } => {
-            o::Command::Wait { duration_s: Arc::new(compile_expr(duration_s, stack_m, proc_kind)?) }
-        },
     })
 }
 
@@ -267,6 +264,13 @@ fn compile_call(
                 cond: Arc::new(compile_expr(cond, stack_m, proc_kind)?),
                 then_to: Arc::new(compile_expr(then_to, stack_m, proc_kind)?),
                 else_to: Arc::new(compile_expr(else_to, stack_m, proc_kind)?),
+            },
+        },
+        a::Call::Sleep { duration_s, to } => CompiledCall {
+            prereq_commands: Default::default(),
+            call: o::Call::Sleep {
+                duration_s: Arc::new(compile_expr(duration_s, stack_m, proc_kind)?),
+                to: Arc::new(compile_expr(to, stack_m, proc_kind)?),
             },
         },
         a::Call::Func { to_func_name, arg_assignments } => {
