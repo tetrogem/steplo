@@ -9,7 +9,7 @@ use anyhow::bail;
 use crate::{
     inline::{
         ast::{BinaryArgs, Expr, Loc, Value},
-        opt::{MaybeOptimized, tracked_exhaust_optimize},
+        opt::{MaybeOptimized, OptimizationFn, tracked_exhaust_optimize},
     },
     utils::IsInteger,
 };
@@ -29,7 +29,7 @@ pub fn optimize_expr(expr: &Arc<Expr>) -> MaybeOptimized<Arc<Expr>> {
         };
     }
 
-    let expr = match expr.as_ref() {
+    let mut expr = match expr.as_ref() {
         Expr::Loc(loc) => {
             let loc = match loc.as_ref() {
                 Loc::Temp(temp) => Loc::Temp(temp.clone()),
@@ -59,9 +59,11 @@ pub fn optimize_expr(expr: &Arc<Expr>) -> MaybeOptimized<Arc<Expr>> {
         Expr::Random(args) => Arc::new(Expr::Random(args!(args))),
     };
 
-    let expr = tracked_exhaust_optimize(&mut optimized, expr.clone(), |expr| {
-        optimization_const_evaluate_exprs(&expr)
-    });
+    const OPTIMIZATIONS: [OptimizationFn<Arc<Expr>>; 1] = [optimization_const_evaluate_exprs];
+
+    for optimization in OPTIMIZATIONS {
+        expr = tracked_exhaust_optimize(&mut optimized, expr, |expr| optimization(&expr));
+    }
 
     MaybeOptimized { optimized, val: expr }
 }
@@ -92,6 +94,14 @@ fn maybe_const_eval_expr(expr: &Arc<Expr>) -> Option<Arc<Expr>> {
         pub fn to_literal(self) -> Arc<Expr> {
             let lit = if self.0 { "true" } else { "false" };
             Arc::new(Expr::Value(Arc::new(Value::Literal(lit.into()))))
+        }
+
+        pub fn and(self, rhs: Self) -> Self {
+            Self(self.0 && rhs.0)
+        }
+
+        pub fn or(self, rhs: Self) -> Self {
+            Self(self.0 || rhs.0)
         }
     }
 
@@ -287,28 +297,28 @@ fn maybe_const_eval_expr(expr: &Arc<Expr>) -> Option<Arc<Expr>> {
                 return Some(a.clone());
             }
         },
-        // Expr::Sub(args) => {
-        //     if let Some(a) =
-        //         l_side_if_r_is(args, |expr| is_literal("0")(expr) || is_literal("0.0")(expr))
-        //     {
-        //         return Some(a.clone());
-        //     }
-        // },
-        // Expr::Mul(args) => {
-        //     if a_side_if_b_is(args, is_literal("0")).is_some() {
-        //         return Some(Int(0.).to_literal());
-        //     }
+        Expr::Sub(args) => {
+            if let Some(a) =
+                l_side_if_r_is(args, |expr| is_literal("0")(expr) || is_literal("0.0")(expr))
+            {
+                return Some(a.clone());
+            }
+        },
+        Expr::Mul(args) => {
+            if a_side_if_b_is(args, is_literal("0")).is_some() {
+                return Some(Int(0.).to_literal());
+            }
 
-        //     if a_side_if_b_is(args, is_literal("0.0")).is_some() {
-        //         return Some(Float(0.).to_literal());
-        //     }
+            if a_side_if_b_is(args, is_literal("0.0")).is_some() {
+                return Some(Float(0.).to_literal());
+            }
 
-        //     if let Some(a) =
-        //         a_side_if_b_is(args, |expr| is_literal("1")(expr) || is_literal("1.0")(expr))
-        //     {
-        //         return Some(a.clone());
-        //     }
-        // },
+            if let Some(a) =
+                a_side_if_b_is(args, |expr| is_literal("1")(expr) || is_literal("1.0")(expr))
+            {
+                return Some(a.clone());
+            }
+        },
         Expr::Eq(args) => {
             if is_value_like(&args.left) && is_value_like(&args.right) {
                 return Some(Bool(args.left == args.right).to_literal());
@@ -325,21 +335,31 @@ fn maybe_const_eval_expr(expr: &Arc<Expr>) -> Option<Arc<Expr>> {
                 return Some(Bool(true).to_literal());
             }
         },
-        // Expr::Lt(args) => {
-        //     if let Some((l, r)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
-        //         return Some(Bool(l < r).to_literal());
-        //     }
-        // },
-        // Expr::Gt(args) => {
-        //     if let Some((l, r)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
-        //         return Some(Bool(l > r).to_literal());
-        //     }
-        // },
-        // Expr::Not(expr) => {
-        //     if let Some(bool) = parse_filter_map::<Bool>(expr) {
-        //         return Some(bool.not().to_literal());
-        //     }
-        // },
+        Expr::Lt(args) => {
+            if let Some((l, r)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                return Some(Bool(l < r).to_literal());
+            }
+        },
+        Expr::Gt(args) => {
+            if let Some((l, r)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                return Some(Bool(l > r).to_literal());
+            }
+        },
+        Expr::Not(expr) => {
+            if let Some(bool) = parse_filter_map::<Bool>(expr) {
+                return Some(bool.not().to_literal());
+            }
+        },
+        Expr::And(args) => {
+            if let Some((l, r)) = lr_sides_filter_map(args, parse_filter_map::<Bool>) {
+                return Some(l.and(r).to_literal());
+            }
+        },
+        Expr::Or(args) => {
+            if let Some((l, r)) = lr_sides_filter_map(args, parse_filter_map::<Bool>) {
+                return Some(l.or(r).to_literal());
+            }
+        },
         _ => {},
     }
 

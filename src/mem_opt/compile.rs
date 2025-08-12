@@ -1,7 +1,7 @@
 use itertools::{Itertools, chain};
 use std::{collections::BTreeMap, ops::Not, sync::Arc};
 
-use crate::{Target, ez};
+use crate::{Target, ez, mem_opt::ast::UMemLoc};
 use uuid::Uuid;
 
 use super::{
@@ -675,36 +675,10 @@ fn compile_call(
         }]),
         Call::Branch { cond, then_to, else_to } => {
             let compiled_cond = compile_expr(compile_m, cond);
-            let wrap_cond = 'wrap: {
-                let ez::Expr::Derived(op) = compiled_cond.as_ref() else { break 'wrap true };
-                let ez::Op::Operator(op) = op.as_ref() else { break 'wrap true };
-
-                matches!(
-                    op,
-                    ez::OperatorOp::And { .. }
-                        | ez::OperatorOp::Equals { .. }
-                        | ez::OperatorOp::GreaterThan { .. }
-                        | ez::OperatorOp::LessThan { .. }
-                        | ez::OperatorOp::Not { .. }
-                        | ez::OperatorOp::Or { .. }
-                )
-                .not()
-            };
-
-            let compiled_cond = match wrap_cond {
-                false => compiled_cond,
-                true => Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
-                    ez::OperatorOp::Equals {
-                        operand_a: compiled_cond,
-                        operand_b: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String(
-                            "true".into(),
-                        )))),
-                    },
-                )))),
-            };
+            let compiled_bool_cond = boolify_expr(&compiled_cond);
 
             Vec::from([ez::Op::Control(ez::ControlOp::IfElse {
-                condition: compiled_cond,
+                condition: compiled_bool_cond,
                 then_substack: Some(Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
                     root: {
                         let proc_addr_expr = compile_expr(compile_m, then_to);
@@ -731,6 +705,32 @@ fn compile_call(
             )
             .collect()
         },
+    }
+}
+
+fn boolify_expr(expr: &Arc<ez::Expr>) -> Arc<ez::Expr> {
+    let wrap_cond = 'wrap: {
+        let ez::Expr::Derived(op) = expr.as_ref() else { break 'wrap true };
+        let ez::Op::Operator(op) = op.as_ref() else { break 'wrap true };
+
+        matches!(
+            op,
+            ez::OperatorOp::And { .. }
+                | ez::OperatorOp::Equals { .. }
+                | ez::OperatorOp::GreaterThan { .. }
+                | ez::OperatorOp::LessThan { .. }
+                | ez::OperatorOp::Not { .. }
+                | ez::OperatorOp::Or { .. }
+        )
+        .not()
+    };
+
+    match wrap_cond {
+        false => expr.clone(),
+        true => Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::Equals {
+            operand_a: expr.clone(),
+            operand_b: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::String("true".into())))),
+        })))),
     }
 }
 
@@ -801,15 +801,15 @@ fn compile_expr(
             operand_b: compile_expr(compile_m, &args.right),
         }))),
         Expr::Not(expr) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::Not {
-            operand: compile_expr(compile_m, expr),
+            operand: boolify_expr(&compile_expr(compile_m, expr)),
         }))),
         Expr::Or(args) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::Or {
-            operand_a: compile_expr(compile_m, &args.left),
-            operand_b: compile_expr(compile_m, &args.right),
+            operand_a: boolify_expr(&compile_expr(compile_m, &args.left)),
+            operand_b: boolify_expr(&compile_expr(compile_m, &args.right)),
         }))),
         Expr::And(args) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::And {
-            operand_a: compile_expr(compile_m, &args.left),
-            operand_b: compile_expr(compile_m, &args.right),
+            operand_a: boolify_expr(&compile_expr(compile_m, &args.left)),
+            operand_b: boolify_expr(&compile_expr(compile_m, &args.right)),
         }))),
         Expr::InAnswer => ez::Expr::Derived(Arc::new(ez::Op::Sensing(ez::SensingOp::Answer))),
         Expr::Join(args) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::Join {

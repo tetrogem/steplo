@@ -1,0 +1,18 @@
+main |a: num, b: num| {
+    a = 100;
+    b = 987;
+
+    out(("A: " ~ a));
+    out(("B: " ~ b));
+
+    swap(&a, &b);
+
+    out(("A: " ~ a));
+    out(("B: " ~ b));
+}
+
+func swap(a: &num, b: &num) |temp: num| {
+    temp = *a;
+    *a = *b;
+    *b = temp;
+}

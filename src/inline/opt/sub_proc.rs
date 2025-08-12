@@ -22,10 +22,10 @@ pub fn optimize_sub_proc(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<SubProc>> {
     let mut sp = Arc::new(SubProc { uuid: sp.uuid, commands: Arc::new(commands), call });
 
     const OPTIMIZATIONS: [OptimizationFn<Arc<SubProc>>; 4] = [
-        optimization_inline_trivial_temp_exprs,
-        optimization_inline_single_read_temps,
+        optimization_inline_constant_trivial_temp_exprs,
+        optimization_inline_single_read_constant_temps,
         optimization_remove_zero_read_temps,
-        optimization_inline_trivial_derefs,
+        optimization_inline_constant_trivial_derefs,
     ];
 
     for optimization in OPTIMIZATIONS {
@@ -35,7 +35,9 @@ pub fn optimize_sub_proc(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<SubProc>> {
     MaybeOptimized { optimized, val: sp }
 }
 
-fn optimization_inline_trivial_temp_exprs(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<SubProc>> {
+fn optimization_inline_constant_trivial_temp_exprs(
+    sp: &Arc<SubProc>,
+) -> MaybeOptimized<Arc<SubProc>> {
     let mut optimized = false;
 
     let temp_to_trivial_expr = sp
@@ -45,7 +47,7 @@ fn optimization_inline_trivial_temp_exprs(sp: &Arc<SubProc>) -> MaybeOptimized<A
             let Command::SetLoc { loc, val } = command.as_ref() else { return None };
             let Loc::Temp(temp) = loc.as_ref() else { return None };
 
-            if is_trivial_expr(val).not() {
+            if (is_trivial_expr(val) && is_constant_expr(val)).not() {
                 return None;
             }
 
@@ -90,6 +92,45 @@ fn is_base_trivial_expr(expr: &Expr) -> bool {
         },
         Expr::Loc(loc) => matches!(loc.as_ref(), Loc::Temp(_)),
         _ => false,
+    }
+}
+
+// a "constant" expr is one that's value will not change if it is moved to execute at a different
+// time or place within the program; it's value will always remain the same no matter the circumstances
+fn is_constant_expr(expr: &Expr) -> bool {
+    macro_rules! args {
+        ($args:expr) => {
+            is_constant_expr(&$args.left) && is_constant_expr(&$args.right)
+        };
+    }
+
+    match expr {
+        Expr::Loc(loc) => match loc.as_ref() {
+            // temp locs are single assign, as long as they are moved within the same sub proc
+            // their value will be constant
+            Loc::Temp(_) => true,
+            // the value a stack addr points to can change if it is set at a different time
+            Loc::Deref(_) => false,
+        },
+        Expr::StackAddr(_) => true,
+        Expr::Value(_) => true,
+        Expr::StdoutDeref(_) => false,
+        Expr::StdoutLen => false,
+        Expr::Timer => false,
+        Expr::Add(args) => args!(args),
+        Expr::Sub(args) => args!(args),
+        Expr::Mul(args) => args!(args),
+        Expr::Div(args) => args!(args),
+        Expr::Mod(args) => args!(args),
+        Expr::Eq(args) => args!(args),
+        Expr::Lt(args) => args!(args),
+        Expr::Gt(args) => args!(args),
+        Expr::Not(expr) => is_constant_expr(expr),
+        Expr::Or(args) => args!(args),
+        Expr::And(args) => args!(args),
+        Expr::InAnswer => false,
+        Expr::Join(args) => args!(args),
+        Expr::Random(_) => false,
     }
 }
 
@@ -218,10 +259,12 @@ fn expr_inline_temps(
     MaybeOptimized { optimized, val: expr }
 }
 
-fn optimization_inline_single_read_temps(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<SubProc>> {
+fn optimization_inline_single_read_constant_temps(
+    sp: &Arc<SubProc>,
+) -> MaybeOptimized<Arc<SubProc>> {
     let mut optimized = false;
 
-    let single_use_temp_to_expr = find_single_read_temps_to_exprs(sp);
+    let single_use_temp_to_expr = find_single_read_temps_to_constant_exprs(sp);
 
     let commands = sp
         .commands
@@ -242,7 +285,7 @@ fn optimization_inline_single_read_temps(sp: &Arc<SubProc>) -> MaybeOptimized<Ar
     MaybeOptimized { optimized, val: Arc::new(sp) }
 }
 
-fn find_single_read_temps_to_exprs(sp: &SubProc) -> BTreeMap<Arc<TempVar>, Arc<Expr>> {
+fn find_single_read_temps_to_constant_exprs(sp: &SubProc) -> BTreeMap<Arc<TempVar>, Arc<Expr>> {
     let mut temp_to_reads = BTreeMap::new();
     sp_count_temp_reads(sp, &mut temp_to_reads);
 
@@ -253,7 +296,7 @@ fn find_single_read_temps_to_exprs(sp: &SubProc) -> BTreeMap<Arc<TempVar>, Arc<E
             let Loc::Temp(temp) = loc.as_ref() else { return None };
 
             let reads = temp_to_reads.get(temp).copied().unwrap_or_default();
-            if reads != 1 {
+            if reads != 1 || is_constant_expr(val).not() {
                 return None;
             }
 
@@ -380,16 +423,16 @@ fn optimization_remove_zero_read_temps(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<
     MaybeOptimized { optimized, val: Arc::new(sp) }
 }
 
-fn optimization_inline_trivial_derefs(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<SubProc>> {
+fn optimization_inline_constant_trivial_derefs(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<SubProc>> {
     let mut optimized = false;
 
-    let mut deref_addr_to_trivial_expr = BTreeMap::new();
+    let mut deref_addr_to_constant_trivial_expr = BTreeMap::new();
 
     macro_rules! expr {
         ($expr:expr) => {
             track_optimize(
                 &mut optimized,
-                expr_inline_trivial_derefs($expr, &deref_addr_to_trivial_expr),
+                expr_inline_constant_trivial_derefs($expr, &deref_addr_to_constant_trivial_expr),
             )
         };
     }
@@ -410,8 +453,9 @@ fn optimization_inline_trivial_derefs(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<S
 
                     if let Loc::Deref(addr) = loc.as_ref()
                         && is_trivial_expr(&val)
+                        && is_constant_expr(&val)
                     {
-                        deref_addr_to_trivial_expr.insert(addr.clone(), val.clone());
+                        deref_addr_to_constant_trivial_expr.insert(addr.clone(), val.clone());
                     }
 
                     Command::SetLoc { loc: loc.clone(), val }
@@ -450,9 +494,9 @@ fn optimization_inline_trivial_derefs(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<S
     MaybeOptimized { optimized, val: Arc::new(sp) }
 }
 
-fn expr_inline_trivial_derefs(
+fn expr_inline_constant_trivial_derefs(
     expr: &Expr,
-    deref_addr_to_trivial_expr: &BTreeMap<Arc<Expr>, Arc<Expr>>,
+    deref_addr_to_constant_trivial_expr: &BTreeMap<Arc<Expr>, Arc<Expr>>,
 ) -> MaybeOptimized<Arc<Expr>> {
     let mut optimized = false;
 
@@ -460,7 +504,7 @@ fn expr_inline_trivial_derefs(
         ($expr:expr) => {
             track_optimize(
                 &mut optimized,
-                expr_inline_trivial_derefs($expr, &deref_addr_to_trivial_expr),
+                expr_inline_constant_trivial_derefs($expr, &deref_addr_to_constant_trivial_expr),
             )
         };
     }
@@ -469,7 +513,7 @@ fn expr_inline_trivial_derefs(
         ($expr:expr) => {
             Arc::new(track_optimize(
                 &mut optimized,
-                args_inline_trivial_derefs($expr, &deref_addr_to_trivial_expr),
+                args_inline_constant_trivial_derefs($expr, &deref_addr_to_constant_trivial_expr),
             ))
         };
     }
@@ -477,7 +521,7 @@ fn expr_inline_trivial_derefs(
     let expr = match expr {
         Expr::Loc(loc) => match loc.as_ref() {
             Loc::Temp(temp) => Arc::new(Expr::Loc(Arc::new(Loc::Temp(temp.clone())))),
-            Loc::Deref(addr) => match deref_addr_to_trivial_expr.get(addr) {
+            Loc::Deref(addr) => match deref_addr_to_constant_trivial_expr.get(addr) {
                 None => Arc::new(Expr::Loc(Arc::new(Loc::Deref(expr!(addr))))),
                 Some(trivial_expr) => trivial_expr.clone(),
             },
@@ -506,9 +550,9 @@ fn expr_inline_trivial_derefs(
     MaybeOptimized { optimized, val: expr }
 }
 
-fn args_inline_trivial_derefs(
+fn args_inline_constant_trivial_derefs(
     args: &BinaryArgs,
-    deref_addr_to_trivial_expr: &BTreeMap<Arc<Expr>, Arc<Expr>>,
+    deref_addr_to_constant_trivial_expr: &BTreeMap<Arc<Expr>, Arc<Expr>>,
 ) -> MaybeOptimized<BinaryArgs> {
     let mut optimized = false;
 
@@ -516,7 +560,7 @@ fn args_inline_trivial_derefs(
         ($expr:expr) => {
             track_optimize(
                 &mut optimized,
-                expr_inline_trivial_derefs($expr, &deref_addr_to_trivial_expr),
+                expr_inline_constant_trivial_derefs($expr, &deref_addr_to_constant_trivial_expr),
             )
         };
     }

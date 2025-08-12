@@ -8,6 +8,7 @@ mod utils;
 use std::{
     fs::{self, File},
     io::Read,
+    ops::Not,
     path::Path,
     sync::Arc,
 };
@@ -42,6 +43,9 @@ struct Args {
     /// Disable optimizations
     #[arg(long)]
     no_opt: bool,
+    // Enables experimental optimizations
+    #[arg(long = "X-opt")]
+    x_opt: bool,
     /// Output intermediate optimization artifacts
     #[arg(long)]
     opt_artifacts: bool,
@@ -116,7 +120,7 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
         });
     }
 
-    let inline_opt_ast = if args.no_opt {
+    let inline_opt_ast = if args.no_opt || args.x_opt.not() {
         inline_opt_ast
     } else {
         let inline_opt_ast =

@@ -265,14 +265,10 @@ fn expr_find_written_and_read_local_vars(expr: &Expr) -> WrittenAndReadLocalVars
         },
         Expr::StdoutLen => Default::default(),
         Expr::Timer => Default::default(),
-        Expr::Add(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
-        Expr::Sub(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
+        // add and sub can count towards writes for offsets e.g. (stack[local:ab + "2"]) is a write
+        // but stack[stack[local:ab]] and stack[local:ab * 2] are not
+        Expr::Add(args) => args_find_written_and_read_local_vars(args),
+        Expr::Sub(args) => args_find_written_and_read_local_vars(args),
         Expr::Mul(args) => WrittenAndReadLocalVars {
             written: Default::default(),
             read: args_find_read_local_vars(args),
@@ -318,6 +314,16 @@ fn expr_find_written_and_read_local_vars(expr: &Expr) -> WrittenAndReadLocalVars
             written: Default::default(),
             read: args_find_read_local_vars(args),
         },
+    }
+}
+
+fn args_find_written_and_read_local_vars(args: &BinaryArgs) -> WrittenAndReadLocalVars {
+    let left_written_and_read = expr_find_written_and_read_local_vars(&args.left);
+    let right_written_and_read = expr_find_written_and_read_local_vars(&args.right);
+
+    WrittenAndReadLocalVars {
+        written: chain!(left_written_and_read.written, right_written_and_read.written).collect(),
+        read: chain!(left_written_and_read.read, right_written_and_read.read).collect(),
     }
 }
 
