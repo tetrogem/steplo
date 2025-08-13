@@ -23,9 +23,9 @@ A struct type `A` is a subtype of another struct type `B` if:
 1. `A` & `B` share the same number of fields, with the same names, in the same order
 2. The type of a given field in `A` is a subtype of that same field's type in `B`
 ```
-main |coords: { x: num, y: num }, strs: { x: val, y: val }| {
+main |coords: { x: num, y: num }, vals: { x: val, y: val }| {
     coords = { x: 1.1, y: -2 };
-    strs = coords;
+    vals = coords;
 }
 ```
 

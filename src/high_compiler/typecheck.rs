@@ -1511,12 +1511,7 @@ fn eval_binary_expr(
             for "%";
             NUM_TYPE, NUM_TYPE => NUM_TYPE;
         ),
-        l::BinaryParenExprOp::Eq
-        | l::BinaryParenExprOp::Neq
-        | l::BinaryParenExprOp::Gt
-        | l::BinaryParenExprOp::Lt
-        | l::BinaryParenExprOp::Gte
-        | l::BinaryParenExprOp::Lte => 'expect: {
+        l::BinaryParenExprOp::Eq | l::BinaryParenExprOp::Neq => 'expect: {
             let comparable = 'comparable: {
                 if left_type.is_subtype_of(&STR_TYPE) && right_type.is_subtype_of(&STR_TYPE) {
                     break 'comparable true;
@@ -1527,6 +1522,41 @@ fn eval_binary_expr(
                 }
 
                 if left_type.is_subtype_of(&BOOL_TYPE) && right_type.is_subtype_of(&BOOL_TYPE) {
+                    break 'comparable true;
+                }
+
+                if let l::Type::Enum { name: left_name } = left_type.as_ref()
+                    && let l::Type::Enum { name: right_name } = right_type.as_ref()
+                    && left_name == right_name
+                {
+                    break 'comparable true;
+                }
+
+                false
+            };
+
+            if comparable {
+                break 'expect Ok(BOOL_TYPE.clone());
+            }
+
+            Err(CompileErrorSet::new_error(
+                item.range,
+                CompileError::Type(TypeError::Uncomparable {
+                    left: vague(&left_type),
+                    right: vague(&right_type),
+                }),
+            ))
+        },
+        l::BinaryParenExprOp::Gt
+        | l::BinaryParenExprOp::Lt
+        | l::BinaryParenExprOp::Gte
+        | l::BinaryParenExprOp::Lte => 'expect: {
+            let comparable = 'comparable: {
+                if left_type.is_subtype_of(&STR_TYPE) && right_type.is_subtype_of(&STR_TYPE) {
+                    break 'comparable true;
+                }
+
+                if left_type.is_subtype_of(&NUM_TYPE) && right_type.is_subtype_of(&NUM_TYPE) {
                     break 'comparable true;
                 }
 

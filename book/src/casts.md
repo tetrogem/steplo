@@ -1,68 +1,35 @@
 # Type Casting & Transmutation
 
 ## Casting
-Casting is the inverse of type coercion, and must be manually declared and guaranteed by the programmer. For example, if we coerced an `int` to a `val` like so:
+You can cast a type `A` to another type `B` if they both have the same underlying representation, and the cast would not break any invariants of type `A` or type `B`.
+
+Unlike type coercion, casts must be explicitly declared with the typecast `<type>` operator.
+
+The underlying representation of a type is how it is stored in memory as primitive types. For example, an array of two `uint`s `[uint; 2]` and a struct containing only two `uint` fields `{ foo: uint, bar: uint }` would both be stored in memory as 2 cells, both containing `uints`. Because of this, they can be casted between each other:
 ```
-main |foo: val, bar: int| {
-    bar = 10;
-    foo = bar; // automatically coerces `int` to `val`
+main |arr: [uint; 2], str: { foo: uint, bar: uint }| {
+    arr = [123, 456];
+    str = <{ foo: uint, bar: uint }>arr;
+    arr = <[uint; 2]>str;
 }
 ```
 
-We cannot automatically do the opposite to get our `int` back from the `val` variable:
+There are some types that you cannot cast to or from though, even if they have the same underlying representations. Most notably, this includes reference types. This is because casting would break the invariant of a reference being a memory address to a *specific* type (note: the programmer is still responsible for upholding that the reference is alive and hasn't been freed before use). As all references are underlyingly represented by `uint`s, casting would allow for a reference to any type to be casted to a reference of any other type, which is not safe behavior.
+
 ```
-main |foo: val, bar: int| {
-    bar = 10;
-    foo = bar;
-    bar = foo; // error: `foo` may be a `val` that is not an `int` (e.g, a `num`, `bool`, or string)
+main |num: num, num_ref: &num, str_ref: &str| {
+    num = 10;
+    num_ref = &num;
+    // this is not allowed
+    str_ref = <&str>num_ref;
 }
 ```
 
-Since in this case, we *know* bar is `10`, we can tell the compiler we are sure the value of `foo` is in fact assignable to an `int` with a typecast. You can typecast with the cast `<type>` operator:
-```
-main |foo: val, bar: int| {
-    bar = 10;
-    foo = bar;
-    bar = <int>foo; // no error!
-}
-```
-
-This is dangerous though; In the future, code could be added that breaks this guarentee, which could lead to runtimes errors the compiler won't warn about:
-```
-main |foo: val, bar: int| {
-    bar = 10;
-    foo = bar;
-    foo = "hello world"!;
-    bar = <int>foo; // this isn't actually an int anymore, but the compiler gives no warning!
-}
-```
-
-## When is Casting Allowed?
-You can't cast all types to all other types. You can only cast type `A` to type `B` if the following conditions are met:
-1. `B` is a subtype of `A` OR The in-memory representation of `A` is a subtype of `B`
-2. `B` contains no reference types
-
-For example: Casting type `val` to `int` is ok, because:
-1. ✅ `int` is a subtype of `val`
-2. ✅ `val` is not a reference type
-
-Another example: Casting type `&int` to `val` is ok, because:
-1. ✅ The in-memory representation of `&int` (which is a `uint`) is a subtype of `val`
-2. ✅ `val` is not a reference type
-
-Now for an example of a cast that is not allowed: You cannot cast from a `&any` to a `&int`, because:
-1. ❌ `&int` is not a subtype of `&any`
-2. ❌ `&int` is a reference type
-
-You also cannot cast from an `any` to a `&int`, because:
-1. ✅ `&int` is a subtype of `any`
-2. ❌ `&int` is a reference type
-
-This last cast is disallowed as treating an arbitrary address as a `&int` may break the invariants of the type actually located at that memory address. Casts ensure that they only may possible break the resulting expression being casted, not affecting other values in the program. In order to tell the compiler you'd like to consider a reference to be a different type, you'd need to employ transmuting.
+Instead, if you must convert between reference types, you would need to perform a **transmutation**.
 
 ## Transmuting
 
-Any type can be transmuted to any other type of the same size. Unlike casting, no additional checks are done to ensure this conversion makes sense. You can transmute with the transmute `<<type>>` operator:
+Any type can be transmuted to any other type of the same size. Unlike casting, no additional checks are done to ensure this conversion makes sense or is safe. You can transmute with the transmute `<<type>>` operator:
 
 ```
 main |integer: int, int_ref: &int, float_ref: &num| {

@@ -2,10 +2,10 @@
 
 The following functions are automatically added to and available in every Steplo program:
 
-## `func out(value: any)`
+## `func out(value: val)`
 Prints the given value to stdout.
 
-## `func in(return: &val)`
+## `func in(return: &str)`
 Prompts the user for text input, and pauses the program's execution until it's received.
 
 ## `random_num(return: &num, min: num, max: num)`
@@ -20,7 +20,7 @@ Returns a random `uint` between `min` and `max` (inclusive).
 ## `stdout_clear()`
 Clears stdout.
 
-## `stdout_read(return: &val, index: uint)`
+## `stdout_read(return: &str, index: uint)`
 Reads the value of line number `index` (starting at 0) of stdout.
 
 ## `stdout_write(value: val, index: uint)`

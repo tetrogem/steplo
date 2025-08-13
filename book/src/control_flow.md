@@ -65,3 +65,25 @@ main |i: int| {
     // this program will output: `10 9 8 7 6 5 4 3 2 1`
 }
 ```
+
+## Match Statements
+Match statements allow for exhaustively executing a certain case based on the current variant of an enum value. Since they must be exhaustive, unlike if statements, there must be a case inside of the switch for each enum variant that the value could be; Omitting any will cause the code to no longer compile.
+
+```
+enum PlayerState { Playing | Paused | Stopped }
+
+main |state: PlayerState| {
+    state = #Paused;
+
+    // will print "The video is paused!"
+    match state {
+        #Playing -> out("The video is playing!");
+        #Paused -> out("The video is paused!");
+        #Stopped -> {
+            // you can use braces to run multiple statements
+            out("The video is stopped!");
+            out("Please select a new video to watch.")
+        }
+    }
+}
+```
