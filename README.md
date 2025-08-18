@@ -47,7 +47,7 @@ Its goals include:
 ---
 
 ## ✨ Features
-*✅ = Implemented | 🚧 = Planned*
+*✅ = Implemented | ⚠️ = Experimental | 🚧 = Planned*
 
 | Status | Feature |
 | :---: | --- |
@@ -59,15 +59,16 @@ Its goals include:
 | ✅ | Branching / Control Flow |
 | ✅ | Recursion |
 | ✅ | Structs |
+| ✅ | Enums |
 | ✅ | Optimizer |
 | ✅ | Static Typing |
 | ✅ | Typecasting & Transmutations |
 | ✅ | Typechecker |
-| ✅ | Native Scratch Functionality (e.g. RNG, user input) |
+| ✅ | Native Scratch Functionality (e.g. RNG, user input, waiting, timer) |
 | ✅ | Helpful Compiler Errors |
 | ✅ | TurboWarp-specific optimizations  |
+| ⚠️ | Function Inlining |
 | 🚧 | Tuples |
-| 🚧 | Enums |
 | 🚧 | Discriminated/Tagged Unions |
 | 🚧 | Module System |
 | 🚧 | External Linking / Libraries |
