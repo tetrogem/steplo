@@ -1,6 +1,6 @@
 main |i: int| {
     out("Enter how many iterations to do:");
-    in(<<&val>>&i);
+    in(<<&str>>&i);
 
     out("Start!");
 

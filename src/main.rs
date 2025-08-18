@@ -1,5 +1,6 @@
 mod ez;
 mod high_compiler;
+mod inline;
 mod ir;
 mod mem_opt;
 mod utils;
@@ -7,14 +8,14 @@ mod utils;
 use std::{
     fs::{self, File},
     io::Read,
+    ops::Not,
     path::Path,
     sync::Arc,
 };
 
-use high_compiler::{compile, compile_error, grammar_ast, grammar_to_logic, link, srced, token};
+use high_compiler::{compile_error, grammar_ast, grammar_to_logic, link, srced, token};
 
 use clap::Parser;
-use compile::compile;
 use grammar_ast::parse;
 use include_dir::{Dir, include_dir};
 use link::link;
@@ -42,9 +43,12 @@ struct Args {
     /// Disable optimizations
     #[arg(long)]
     no_opt: bool,
+    /// Enables experimental optimizations
+    #[arg(long = "X-opt")]
+    x_opt: bool,
     /// Output intermediate optimization artifacts
     #[arg(long)]
-    out_opt: bool,
+    opt_artifacts: bool,
     /// The platform to optimize the compiled project for
     #[arg(long)]
     target: SerdeTarget,
@@ -99,9 +103,50 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
     };
 
     let linked = time("Linking...", || link(&ast));
-    let mem_opt_ast = time("Compiling high-level to designation IR...", || compile(linked))?;
+    let inline_opt_ast = time("Compiling high-level to inlining IR...", || {
+        high_compiler::compile_to_inline::compile(&linked)
+    })?;
 
-    if args.out_opt {
+    if args.opt_artifacts {
+        time("Writing intermediate inline 0 file...", || {
+            let asm_export = inline::export::export(inline_opt_ast.iter().map(AsRef::as_ref));
+            let name = src_path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .expect("input file should have stem");
+
+            let path = Path::new(&args.out_path).join(format!("{name}.inline0"));
+            fs::write(path, asm_export).expect("inline export should succeed");
+        });
+    }
+
+    let inline_opt_ast = if args.no_opt || args.x_opt.not() {
+        inline_opt_ast
+    } else {
+        let inline_opt_ast =
+            time("Optimizing inline IR...", || inline::opt::optimize(&inline_opt_ast));
+
+        if args.opt_artifacts {
+            time("Writing intermediate inline 1 file...", || {
+                let asm_export = inline::export::export(inline_opt_ast.iter().map(AsRef::as_ref));
+                let name = src_path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .expect("input file should have stem");
+
+                let path = Path::new(&args.out_path).join(format!("{name}.inline1"));
+                fs::write(path, asm_export).expect("inline export should succeed");
+            });
+        }
+
+        inline_opt_ast
+    };
+
+    let mem_opt_ast = time("Compiling high-level to designation IR...", || {
+        inline::compile_to_mem_opt::compile(&inline_opt_ast)
+    })?;
+
+    if args.opt_artifacts {
         time("Writing intermediate opt 0 file...", || {
             let asm_export = mem_opt::export::export(mem_opt_ast.iter().map(AsRef::as_ref));
             let name = src_path
@@ -117,10 +162,11 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
     let mem_opt_ast = if args.no_opt {
         mem_opt_ast
     } else {
-        let mem_opt_ast =
-            time("Optimizing code...", || mem_opt::opt::optimize(mem_opt_ast.iter().cloned()));
+        let mem_opt_ast = time("Optimizing designation IR...", || {
+            mem_opt::opt::optimize(mem_opt_ast.iter().cloned())
+        });
 
-        if args.out_opt {
+        if args.opt_artifacts {
             time("Writing intermediate opt 1 file...", || {
                 let asm_export = mem_opt::export::export(mem_opt_ast.iter().map(AsRef::as_ref));
                 let name = src_path

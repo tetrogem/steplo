@@ -1,6 +1,7 @@
 use std::{
     fs::{self, File},
     io::Write,
+    ops::Not,
     path::{Path, PathBuf},
     time::Instant,
 };
@@ -79,4 +80,14 @@ fn write_files(
     let out_zip_file = File::create(out_zip_path).expect("should be able to create out zip file");
     let zip_writer = ZipWriter::new(out_zip_file);
     zip_writer.create_from_directory(out_folder).expect("creating zip should succeed");
+}
+
+pub trait IsInteger {
+    fn is_integer(&self) -> bool;
+}
+
+impl IsInteger for f64 {
+    fn is_integer(&self) -> bool {
+        (self.is_infinite() || self.is_nan() || self.is_subnormal() || self.round() != *self).not()
+    }
 }

@@ -42,6 +42,8 @@ pub enum Token {
     Struct,
     Enum,
     Type,
+    Hashtag,
+    Match,
 }
 
 fn consume_char(
@@ -117,6 +119,7 @@ fn consume_word(
         "struct" => Token::Struct,
         "enum" => Token::Enum,
         "type" => Token::Type,
+        "match" => Token::Match,
         _ => {
             if word.is_empty() {
                 bail!("Word is empty");
@@ -238,6 +241,7 @@ pub fn tokenize(code: &str) -> anyhow::Result<Vec<Srced<Token>>> {
             '%' => consume_char(&mut chars, Some(Token::Percent))?,
             '&' => consume_char(&mut chars, Some(Token::Ampersand))?,
             ':' => consume_char(&mut chars, Some(Token::Colon))?,
+            '#' => consume_char(&mut chars, Some(Token::Hashtag))?,
             '"' => Some(consume_string(&mut chars)?),
             '/' => match chars.peek().map(|c| c.char) {
                 Some('/') => Some(consume_comment(&mut chars)?),

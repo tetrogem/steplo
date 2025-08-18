@@ -78,6 +78,13 @@ pub(crate) enum TypeError {
     UnknownAlias {
         name: Arc<str>,
     },
+    UnknownEnum {
+        name: Arc<str>,
+    },
+    UnknownVariant {
+        enum_name: Arc<str>,
+        variant_name: Arc<str>,
+    },
     IndexInvalidField {
         struct_type: Arc<VagueType>,
         field_name: Arc<str>,
@@ -89,6 +96,15 @@ pub(crate) enum TypeError {
         field_type: Arc<VagueType>,
         field_name: Arc<str>,
     },
+    UnmatchableCase,
+    NonExhaustiveMatch {
+        unmatched_cases: Arc<Vec<Arc<str>>>,
+    },
+    CannotInfer,
+    Uncomparable {
+        left: Arc<VagueType>,
+        right: Arc<VagueType>,
+    },
 }
 
 #[derive(Debug)]
@@ -99,6 +115,7 @@ pub enum VagueType {
     Ref(Arc<VagueType>),
     Array { ty: Arc<VagueType>, len: Option<u32> },
     Struct(Option<Arc<Vec<Arc<VagueTypeField>>>>),
+    Enum { name: Option<Arc<str>> },
 }
 
 #[derive(Debug)]
@@ -127,45 +144,68 @@ impl From<&Type> for VagueType {
                     })
                     .collect(),
             ))),
+            Type::Enum { name } => Self::Enum { name: Some(name.clone()) },
         }
     }
 }
 
-impl Display for VagueType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Any => write!(f, "any"),
-            Self::Unknown => write!(f, "_"),
-            Self::Primitive(base) => {
-                let base = match base {
-                    PrimitiveType::Val => "val",
-                    PrimitiveType::Num => "num",
-                    PrimitiveType::Int => "int",
-                    PrimitiveType::Uint => "uint",
-                    PrimitiveType::Bool => "bool",
-                };
+enum VagueTypeDisplay {
+    Ticked(Arc<str>),
+    Unticked(Arc<str>),
+}
 
-                write!(f, "{base}")
+impl VagueTypeDisplay {
+    pub fn str(&self) -> &Arc<str> {
+        match self {
+            Self::Ticked(str) => str,
+            Self::Unticked(str) => str,
+        }
+    }
+
+    pub fn display(&self) -> String {
+        match self {
+            Self::Ticked(str) => format!("`{str}`"),
+            Self::Unticked(str) => str.to_string(),
+        }
+    }
+}
+
+impl VagueType {
+    pub fn to_display(&self) -> VagueTypeDisplay {
+        match self {
+            Self::Any => VagueTypeDisplay::Ticked("any".into()),
+            Self::Unknown => VagueTypeDisplay::Ticked("_".into()),
+            Self::Primitive(base) => match base {
+                PrimitiveType::Val => VagueTypeDisplay::Ticked("val".into()),
+                PrimitiveType::Str => VagueTypeDisplay::Ticked("str".into()),
+                PrimitiveType::Num => VagueTypeDisplay::Ticked("num".into()),
+                PrimitiveType::Int => VagueTypeDisplay::Ticked("int".into()),
+                PrimitiveType::Uint => VagueTypeDisplay::Ticked("uint".into()),
+                PrimitiveType::Bool => VagueTypeDisplay::Ticked("bool".into()),
             },
-            Self::Ref(ty) => write!(f, "&{}", ty.as_ref()),
+            Self::Ref(ty) => VagueTypeDisplay::Ticked(format!("&{}", ty.to_display().str()).into()),
             Self::Array { ty, len } => {
                 let len = match len {
                     Some(len) => &len.to_string(),
                     None => "_",
                 };
 
-                write!(f, "[{ty}; {len}]")
+                VagueTypeDisplay::Ticked(format!("[{}; {len}]", ty.to_display().str()).into())
             },
             Self::Struct(fields) => {
                 let fields = match fields {
                     None => "...",
                     Some(fields) => &fields
                         .iter()
-                        .map(|field| format!("{}: {}", field.name, field.ty))
+                        .map(|field| format!("{}: {}", field.name, field.ty.to_display().str()))
                         .join(", "),
                 };
 
-                write!(f, "{{ {fields} }}")
+                VagueTypeDisplay::Ticked(format!("{{ {fields} }}").into())
+            },
+            Self::Enum { name } => match name {
+                Some(name) => VagueTypeDisplay::Ticked(name.clone()),
+                None => VagueTypeDisplay::Unticked("enum".into()),
             },
         }
     }
@@ -203,7 +243,6 @@ enum CollapsedGrammarError {
     ExpectedTokenString { expected: HashSet<Arc<[TokenKind]>> },
 }
 
-#[allow(clippy::enum_variant_names)]
 enum CollapsedLogicError {
     InvalidArrayTypeLen,
     InvalidNumLiteral,
@@ -248,8 +287,15 @@ enum CollapsedTypeError {
         expected: Arc<[(Arc<VagueType>, Arc<VagueType>)]>,
         found: (Arc<VagueType>, Arc<VagueType>),
     },
-    UnknownAlias {
+    UnknownType {
         name: Arc<str>,
+    },
+    UnknownEnum {
+        name: Arc<str>,
+    },
+    UnknownVariant {
+        enum_name: Arc<str>,
+        variant_name: Arc<str>,
     },
     IndexInvalidField {
         struct_type: Arc<VagueType>,
@@ -261,6 +307,15 @@ enum CollapsedTypeError {
     StructLiteralMissingField {
         field_name: Arc<str>,
         field_type: Arc<VagueType>,
+    },
+    UnmatchableCase,
+    NonExhaustiveMatch {
+        unmatched_cases: Arc<Vec<Arc<str>>>,
+    },
+    CannotInfer,
+    Uncomparable {
+        left: Arc<VagueType>,
+        right: Arc<VagueType>,
     },
 }
 
@@ -378,6 +433,8 @@ impl CollapsedCompileError {
                     TokenKind::Struct => TokenString::Keyword("struct"),
                     TokenKind::Enum => TokenString::Keyword("enum"),
                     TokenKind::Type => TokenString::Keyword("type"),
+                    TokenKind::Hashtag => TokenString::Punctuation("#"),
+                    TokenKind::Match => TokenString::Keyword("match"),
                 }
             }
 
@@ -466,25 +523,46 @@ impl CollapsedCompileError {
             },
             Self::Type(ty) => match ty {
                 CollapsedTypeError::Mismatch { expected, found } => {
-                    format!("Expected `{expected}`; Found `{found}`")
+                    format!(
+                        "Expected {}; Found {}",
+                        expected.to_display().display(),
+                        found.to_display().display()
+                    )
                 },
                 CollapsedTypeError::InvalidCast { from, to } => {
-                    format!("Unable to cast `{from}` to `{to}`")
+                    format!(
+                        "Unable to cast {} to {}",
+                        from.to_display().display(),
+                        to.to_display().display()
+                    )
                 },
                 CollapsedTypeError::InvalidTransmute { from, to } => {
-                    format!("Unable to transmute `{from}` to `{to}`")
+                    format!(
+                        "Unable to transmute {} to {}",
+                        from.to_display().display(),
+                        to.to_display().display()
+                    )
                 },
                 CollapsedTypeError::OffsetIndexNonArray { found } => {
-                    format!("Unable to index a type that isn't an array; Found: `{found}`")
+                    format!(
+                        "Unable to index a type that isn't an array; Found: {}",
+                        found.to_display().display()
+                    )
                 },
                 CollapsedTypeError::FieldIndexNonStruct { found } => {
-                    format!("Unable to get field of type that isn't a struct; Found: `{found}`")
+                    format!(
+                        "Unable to get field of type that isn't a struct; Found: {}",
+                        found.to_display().display()
+                    )
                 },
                 CollapsedTypeError::IdentNotFound { name } => {
                     format!("Identifier `{name}` was not found in scope")
                 },
                 CollapsedTypeError::DerefNonRef { found } => {
-                    format!("Unable to dereference a type that isn't a reference; Found: `{found}`")
+                    format!(
+                        "Unable to dereference a type that isn't a reference; Found: {}",
+                        found.to_display().display()
+                    )
                 },
                 CollapsedTypeError::FuncNotFound { name } => {
                     format!("Function `{name}` was not found")
@@ -495,25 +573,58 @@ impl CollapsedCompileError {
                     )
                 },
                 CollapsedTypeError::BinaryOpOperandsMismatch { op, expected, found } => {
-                    let fmt_binary_op_expr =
-                        |(left, right): &(_, _)| format!("`{left}` {op} `{right}`");
+                    let fmt_binary_op_expr = |(left, right): &(Arc<VagueType>, Arc<VagueType>)| {
+                        format!(
+                            "{} {} {}",
+                            left.to_display().display(),
+                            op,
+                            right.to_display().display()
+                        )
+                    };
 
                     let expected = expected.iter().map(fmt_binary_op_expr).join(", ");
                     let found = fmt_binary_op_expr(found);
 
                     format!("Expected one of: {expected}; Found {found}")
                 },
-                CollapsedTypeError::UnknownAlias { name } => {
-                    format!("Unable to find type alias `{name}`")
+                CollapsedTypeError::UnknownType { name } => {
+                    format!("Unable to find type `{name}`")
+                },
+                CollapsedTypeError::UnknownEnum { name } => {
+                    format!("Unable to find enum `{name}`")
+                },
+                CollapsedTypeError::UnknownVariant { enum_name, variant_name } => {
+                    format!("Enum `{enum_name}` does not have variant `{variant_name}`")
                 },
                 CollapsedTypeError::IndexInvalidField { struct_type, field_name } => {
-                    format!("Field `{field_name}` is not in type `{struct_type}`")
+                    format!(
+                        "Field `{field_name}` is not in type {}",
+                        struct_type.to_display().display()
+                    )
                 },
                 CollapsedTypeError::AssignCellExprToCompoundPlace { place_size } => {
                     format!("Cannot assign cell expression to place with size {place_size}")
                 },
                 CollapsedTypeError::StructLiteralMissingField { field_name, field_type } => {
-                    format!("Struct literal is missing field `{field_name}: {field_type}`")
+                    format!(
+                        "Struct literal is missing field `{field_name}` with type {}",
+                        field_type.to_display().display()
+                    )
+                },
+                CollapsedTypeError::UnmatchableCase => "This case will never be matched".into(),
+                CollapsedTypeError::NonExhaustiveMatch { unmatched_cases } => format!(
+                    "Match statement does not cover the following cases: `{}`",
+                    unmatched_cases.iter().map(|x| x.to_string()).join(" | ")
+                ),
+                CollapsedTypeError::CannotInfer => {
+                    "Cannot infer type; Explicit type is needed".into()
+                },
+                CollapsedTypeError::Uncomparable { left, right } => {
+                    format!(
+                        "Cannot compare types {} and {}",
+                        left.to_display().display(),
+                        right.to_display().display()
+                    )
                 },
             },
         }
@@ -572,7 +683,7 @@ impl From<CompileError> for CollapsedCompileError {
                 TypeError::BinaryOpOperandsMismatch { op, expected, found } => {
                     CollapsedTypeError::BinaryOpOperandsMismatch { op, expected, found }
                 },
-                TypeError::UnknownAlias { name } => CollapsedTypeError::UnknownAlias { name },
+                TypeError::UnknownAlias { name } => CollapsedTypeError::UnknownType { name },
                 TypeError::IndexInvalidField { struct_type, field_name } => {
                     CollapsedTypeError::IndexInvalidField { struct_type, field_name }
                 },
@@ -581,6 +692,18 @@ impl From<CompileError> for CollapsedCompileError {
                 },
                 TypeError::StructLiteralMissingField { field_name, field_type } => {
                     CollapsedTypeError::StructLiteralMissingField { field_name, field_type }
+                },
+                TypeError::UnknownEnum { name } => CollapsedTypeError::UnknownEnum { name },
+                TypeError::UnknownVariant { enum_name, variant_name } => {
+                    CollapsedTypeError::UnknownVariant { enum_name, variant_name }
+                },
+                TypeError::UnmatchableCase => CollapsedTypeError::UnmatchableCase,
+                TypeError::NonExhaustiveMatch { unmatched_cases } => {
+                    CollapsedTypeError::NonExhaustiveMatch { unmatched_cases }
+                },
+                TypeError::CannotInfer => CollapsedTypeError::CannotInfer,
+                TypeError::Uncomparable { left, right } => {
+                    CollapsedTypeError::Uncomparable { left, right }
                 },
             }),
         }

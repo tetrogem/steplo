@@ -1,18 +1,13 @@
-main |i: uint, nums: val| {
+main |i: uint, nums: uint| {
     out("Enter how many iterations to perform:");
-    in(&nums);
+    in(<<&str>>&nums);
 
     i = 1;
     while (i <= nums) {
-        if ((i % 15) == 0) {
-            out("FizzBuzz");
-        } else if ((i % 3) == 0) {
-            out("Fizz");
-        } else if ((i % 5) == 0) {
-            out("Buzz");
-        } else {
-            out(i);
-        }
+        if ((i % 15) == 0) out("FizzBuzz");
+        else if ((i % 3) == 0) out("Fizz");
+        else if ((i % 5) == 0) out("Buzz");
+        else out(i);
 
         i = (i + 1);
     }

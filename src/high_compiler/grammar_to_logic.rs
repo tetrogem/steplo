@@ -1,6 +1,9 @@
 use std::collections::VecDeque;
+use std::ops::Not;
 use std::str::FromStr;
 use std::sync::Arc;
+
+use itertools::Itertools;
 
 use crate::compile_error::CompileError;
 use crate::compile_error::CompileErrorSet;
@@ -9,6 +12,7 @@ use crate::grammar_ast as g;
 use crate::high_compiler::srced::SrcRange;
 use crate::logic_ast as l;
 use crate::srced::Srced;
+use crate::utils::IsInteger;
 
 trait FromList<T> {
     fn from_list(value: T) -> Self;
@@ -40,6 +44,18 @@ where
     let tos = tos.collect::<Result<Vec<_>, _>>()?;
 
     Ok(Arc::new(Srced { val: tos, range: list.range }))
+}
+
+fn convert_list<List, From, To>(list: &g::Ref<List>) -> l::Ref<Vec<l::Ref<To>>>
+where
+    for<'a> VecDeque<g::Ref<From>>: FromList<&'a g::Ref<List>>,
+    for<'a> &'a g::Ref<From>: Into<To>,
+{
+    let deque = VecDeque::from_list(list);
+    let tos = deque.iter().map(|x| -> l::Ref<To> { convert(x) });
+    let tos = tos.collect::<Vec<_>>();
+
+    Arc::new(Srced { val: tos, range: list.range })
 }
 
 pub fn grammar_to_ast(grammar: &g::Ref<g::Program>) -> Result<l::Ref<l::Program>, CompileErrorSet> {
@@ -95,6 +111,20 @@ impl<T> FromList<&g::Ref<g::SemiList<T>>> for VecDeque<g::Ref<T>> {
     }
 }
 
+impl<T> FromList<&g::Ref<g::PipeList<T>>> for VecDeque<g::Ref<T>> {
+    fn from_list(value: &g::Ref<g::PipeList<T>>) -> Self {
+        match &value.val {
+            g::PipeList::Empty(_) => Default::default(),
+            g::PipeList::Tail(tail) => VecDeque::from([tail.clone()]),
+            g::PipeList::Link(link) => {
+                let mut vec = VecDeque::from_list(&link.val.next);
+                vec.push_front(link.val.item.clone());
+                vec
+            },
+        }
+    }
+}
+
 impl TryFrom<&g::Ref<g::TopItem>> for l::TopItem {
     type Error = CompileErrorSet;
 
@@ -112,6 +142,9 @@ impl TryFrom<&g::Ref<g::TopItem>> for l::TopItem {
                 range: x.range,
                 val: l::TypeItem::Alias(try_convert(x)?),
             })),
+            g::TopItem::Enum(x) => {
+                Self::Type(Arc::new(Srced { range: x.range, val: l::TypeItem::Enum(convert(x)) }))
+            },
         })
     }
 }
@@ -141,6 +174,12 @@ impl TryFrom<&g::Ref<g::TypeAlias>> for l::TypeAlias {
 
     fn try_from(value: &g::Ref<g::TypeAlias>) -> Result<Self, Self::Error> {
         Ok(Self { name: convert(&value.val.name), ty: try_convert(&value.val.ty)? })
+    }
+}
+
+impl From<&g::Ref<g::EnumItem>> for l::EnumItem {
+    fn from(value: &g::Ref<g::EnumItem>) -> Self {
+        Self { name: convert(&value.val.name), variants: convert_list(&value.val.variants) }
     }
 }
 
@@ -184,15 +223,15 @@ impl TryFrom<&g::Ref<g::Type>> for l::TypeHint {
                     .val
                     .iter()
                     .map(|field| {
-                        Ok(Arc::new(Srced {
+                        Arc::new(Srced {
                             range: field.range,
                             val: l::FieldTypeHint {
                                 name: field.val.name.clone(),
                                 ty: field.val.ty.clone(),
                             },
-                        }))
+                        })
                     })
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .collect_vec();
 
                 Self::Struct(Arc::new(Srced {
                     range: fields.iter().fold(Default::default(), |acc, x| acc.merge(x.range)),
@@ -209,11 +248,12 @@ impl From<&g::Ref<g::BaseType>> for l::TypeHint {
         match name.val.str.as_ref() {
             "any" => Self::Any,
             "val" => Self::Primitive(l::PrimitiveType::Val),
+            "str" => Self::Primitive(l::PrimitiveType::Str),
             "num" => Self::Primitive(l::PrimitiveType::Num),
             "int" => Self::Primitive(l::PrimitiveType::Int),
             "uint" => Self::Primitive(l::PrimitiveType::Uint),
             "bool" => Self::Primitive(l::PrimitiveType::Bool),
-            _ => Self::Alias(convert(name)),
+            _ => Self::Nominal(convert(name)),
         }
     }
 }
@@ -233,7 +273,14 @@ impl TryFrom<&g::Ref<g::Body>> for l::Body {
     type Error = CompileErrorSet;
 
     fn try_from(value: &g::Ref<g::Body>) -> Result<Self, Self::Error> {
-        Ok(Self { items: try_convert_list(&value.val.items)? })
+        Ok(Self {
+            items: match &value.val {
+                g::Body::Single(item) => {
+                    Arc::new(Srced { range: item.range, val: Vec::from([try_convert(item)?]) })
+                },
+                g::Body::Multi(body) => try_convert_list(&body.val.items)?,
+            },
+        })
     }
 }
 
@@ -245,6 +292,7 @@ impl TryFrom<&g::Ref<g::BodyItem>> for l::BodyItem {
             g::BodyItem::Statement(x) => Self::Statement(try_convert(x)?),
             g::BodyItem::If(x) => Self::If(try_convert(x)?),
             g::BodyItem::While(x) => Self::While(try_convert(x)?),
+            g::BodyItem::Match(x) => Self::Match(try_convert(x)?),
         })
     }
 }
@@ -291,6 +339,31 @@ impl TryFrom<&g::Ref<g::WhileItem>> for l::WhileItem {
             condition: try_convert(&value.val.condition)?,
             body: try_convert(&value.val.body)?,
         })
+    }
+}
+
+impl TryFrom<&g::Ref<g::MatchItem>> for l::MatchItem {
+    type Error = CompileErrorSet;
+
+    fn try_from(value: &g::Ref<g::MatchItem>) -> Result<Self, Self::Error> {
+        Ok(Self { expr: try_convert(&value.val.expr)?, cases: try_convert_list(&value.val.cases)? })
+    }
+}
+
+impl TryFrom<&g::Ref<g::MatchCase>> for l::MatchCase {
+    type Error = CompileErrorSet;
+
+    fn try_from(value: &g::Ref<g::MatchCase>) -> Result<Self, Self::Error> {
+        Ok(Self { variant: convert(&value.val.variant), body: try_convert(&value.val.body)? })
+    }
+}
+
+impl From<&g::Ref<g::VariantLiteral>> for l::VariantLiteral {
+    fn from(value: &g::Ref<g::VariantLiteral>) -> Self {
+        Self {
+            enum_name: convert_maybe(&value.val.enum_name).map(convert),
+            variant_name: convert(&value.val.variant_name),
+        }
     }
 }
 
@@ -450,10 +523,10 @@ impl TryFrom<&g::Ref<g::Literal>> for l::Literal {
 
     fn try_from(value: &g::Ref<g::Literal>) -> Result<Self, Self::Error> {
         Ok(match &value.val {
-            g::Literal::Str(x) => l::Literal::Val(x.val.str.clone()),
+            g::Literal::Str(x) => l::Literal::Str(x.val.str.clone()),
             g::Literal::Num(x) => {
                 let num: f64 = parse_num_literal(x)?;
-                if num.is_infinite() || num.is_nan() || num.is_subnormal() || num.round() != num {
+                if num.is_integer().not() {
                     Self::Num(num)
                 } else {
                     match num.is_sign_positive() {
@@ -466,6 +539,7 @@ impl TryFrom<&g::Ref<g::Literal>> for l::Literal {
                 g::BoolLiteral::True(_) => l::Literal::Bool(true),
                 g::BoolLiteral::False(_) => l::Literal::Bool(false),
             },
+            g::Literal::Variant(x) => l::Literal::Variant(convert(x)),
         })
     }
 }

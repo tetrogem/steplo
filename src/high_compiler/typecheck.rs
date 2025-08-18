@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ops::Not,
     sync::{Arc, LazyLock},
 };
@@ -20,6 +20,9 @@ static ANY_TYPE: LazyLock<Arc<l::Type>> = LazyLock::new(|| Arc::new(l::Type::Any
 
 static VAL_TYPE: LazyLock<Arc<l::Type>> =
     LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Val)));
+
+static STR_TYPE: LazyLock<Arc<l::Type>> =
+    LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Str)));
 
 static NUM_TYPE: LazyLock<Arc<l::Type>> =
     LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Num)));
@@ -50,35 +53,52 @@ fn try_tr<L, T, Error, F: FnOnce(&l::Ref<L>) -> Result<T, Error>>(
 }
 
 struct TypeAliasManager {
+    enum_to_variants: HashMap<Arc<str>, Arc<Vec<Arc<str>>>>,
     alias_to_type_hint: HashMap<Arc<str>, l::Ref<TypeHint>>,
 }
 
 impl TypeAliasManager {
     pub fn new(program: &l::Ref<l::Program>) -> Self {
-        let aliases = program.val.items.val.iter().filter_map(|item| match &item.val {
-            l::TopItem::Exe(_) => None,
-            l::TopItem::Type(item) => match &item.val {
-                l::TypeItem::Alias(alias) => Some(alias),
-            },
-        });
+        let mut enum_to_variants = HashMap::new();
+        let mut alias_to_type_hint = HashMap::new();
 
-        Self {
-            alias_to_type_hint: aliases
-                .map(|alias| (alias.val.name.val.str.clone(), alias.val.ty.clone()))
-                .collect(),
+        for item in program.val.items.val.iter() {
+            let l::TopItem::Type(item) = &item.val else { continue };
+
+            match &item.val {
+                l::TypeItem::Alias(x) => {
+                    alias_to_type_hint.insert(x.val.name.val.str.clone(), x.val.ty.clone());
+                },
+                l::TypeItem::Enum(x) => {
+                    enum_to_variants.insert(
+                        x.val.name.val.str.clone(),
+                        Arc::new(x.val.variants.val.iter().map(|v| v.val.str.clone()).collect()),
+                    );
+                },
+            }
         }
+
+        Self { enum_to_variants, alias_to_type_hint }
     }
 
     pub fn resolve(&self, hint: &l::Ref<l::TypeHint>) -> Result<l::Type, CompileErrorSet> {
         Ok(match &hint.val {
-            l::TypeHint::Alias(name) => match self.alias_to_type_hint.get(&name.val.str) {
-                Some(hint) => self.resolve(hint)?,
-                None => {
-                    return Err(CompileErrorSet::new_error(
-                        name.range,
-                        CompileError::Type(TypeError::UnknownAlias { name: name.val.str.clone() }),
-                    ));
-                },
+            l::TypeHint::Nominal(name) => {
+                if self.enum_to_variants.get(&name.val.str).is_some() {
+                    l::Type::Enum { name: name.val.str.clone() }
+                } else {
+                    match self.alias_to_type_hint.get(&name.val.str) {
+                        Some(hint) => self.resolve(hint)?,
+                        None => {
+                            return Err(CompileErrorSet::new_error(
+                                name.range,
+                                CompileError::Type(TypeError::UnknownAlias {
+                                    name: name.val.str.clone(),
+                                }),
+                            ));
+                        },
+                    }
+                }
             },
             l::TypeHint::Any => l::Type::Any,
             l::TypeHint::Primitive(p) => l::Type::Primitive(*p),
@@ -101,6 +121,62 @@ impl TypeAliasManager {
                 l::Type::Struct(Arc::new(fields))
             },
         })
+    }
+
+    pub fn id_variant(
+        &self,
+        enum_name: &EnumName,
+        variant_name: &l::Ref<l::Name>,
+        variant_literal_range: SrcRange,
+    ) -> Result<u32, CompileErrorSet> {
+        let variants = self.all_variants(enum_name, variant_literal_range)?;
+
+        let Some((id, _)) = variants.iter().enumerate().find(|(_, v)| *v == &variant_name.val.str)
+        else {
+            return Err(CompileErrorSet::new_error(
+                variant_name.range,
+                CompileError::Type(TypeError::UnknownVariant {
+                    enum_name: enum_name.str().clone(),
+                    variant_name: variant_name.val.str.clone(),
+                }),
+            ));
+        };
+
+        Ok(id as u32)
+    }
+
+    pub fn all_variants(
+        &self,
+        enum_name: &EnumName,
+        variant_literal_range: SrcRange,
+    ) -> Result<&Arc<Vec<Arc<str>>>, CompileErrorSet> {
+        let enum_name_range = match enum_name {
+            EnumName::Name(name) => name.range,
+            EnumName::Str(_) => variant_literal_range,
+        };
+
+        let Some(variants) = self.enum_to_variants.get(enum_name.str()) else {
+            return Err(CompileErrorSet::new_error(
+                enum_name_range,
+                CompileError::Type(TypeError::UnknownEnum { name: enum_name.str().clone() }),
+            ));
+        };
+
+        Ok(variants)
+    }
+}
+
+enum EnumName {
+    Name(l::Ref<l::Name>),
+    Str(Arc<str>),
+}
+
+impl EnumName {
+    pub fn str(&self) -> &Arc<str> {
+        match self {
+            Self::Name(name) => &name.val.str,
+            Self::Str(str) => &str,
+        }
     }
 }
 
@@ -255,11 +331,17 @@ fn typecheck_body(
             x.val
                 .iter()
                 .map(|x| {
-                    try_tr(x, |x| {
-                        typecheck_body_item(x, ident_to_type, func_to_params, type_alias_m)
-                    })
+                    let item = try_tr(x, |x| {
+                        let body_item =
+                            typecheck_body_item(x, ident_to_type, func_to_params, type_alias_m)?;
+
+                        Ok(body_item.map(|bi| tr(x, |_| bi)))
+                    })?;
+
+                    Ok(item.val.as_ref().map(|val| val.clone()))
                 })
-                .collect::<Result<_, _>>()
+                .filter_map(|x| x.transpose())
+                .collect::<Result<Vec<_>, _>>()
         })?,
     })
 }
@@ -269,17 +351,140 @@ fn typecheck_body_item(
     ident_to_type: &IdentToTypeHint,
     func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
-) -> Result<t::BodyItem, CompileErrorSet> {
+) -> Result<Option<t::BodyItem>, CompileErrorSet> {
     Ok(match &item.val {
-        l::BodyItem::Statement(x) => t::BodyItem::Statement(try_tr(x, |x| {
+        l::BodyItem::Statement(x) => Some(t::BodyItem::Statement(try_tr(x, |x| {
             typecheck_statement(x, ident_to_type, func_to_params, type_alias_m)
-        })?),
-        l::BodyItem::If(x) => t::BodyItem::If(try_tr(x, |x| {
+        })?)),
+        l::BodyItem::If(x) => Some(t::BodyItem::If(try_tr(x, |x| {
             typecheck_if(x, ident_to_type, func_to_params, type_alias_m)
-        })?),
-        l::BodyItem::While(x) => t::BodyItem::While(try_tr(x, |x| {
+        })?)),
+        l::BodyItem::While(x) => Some(t::BodyItem::While(try_tr(x, |x| {
             typecheck_while(x, ident_to_type, func_to_params, type_alias_m)
-        })?),
+        })?)),
+        l::BodyItem::Match(match_item) => {
+            let expr_ty = eval_expr(&match_item.val.expr, None, ident_to_type, type_alias_m)?;
+            let l::Type::Enum { name: enum_name } = expr_ty.as_ref() else {
+                return Err(CompileErrorSet::new_error(
+                    match_item.val.expr.range,
+                    CompileError::Type(TypeError::Mismatch {
+                        expected: Arc::new(VagueType::Enum { name: None }),
+                        found: vague(&expr_ty),
+                    }),
+                ));
+            };
+
+            let all_variants = type_alias_m
+                .all_variants(&EnumName::Str(enum_name.clone()), match_item.val.expr.range)?;
+
+            let mut unmatched_variants = all_variants.iter().collect::<HashSet<_>>();
+
+            struct CaseBranch {
+                condition: t::Ref<t::Expr>,
+                body: t::Ref<t::Body>,
+            }
+
+            let mut branches = Vec::new();
+
+            for case in match_item.val.cases.val.iter() {
+                let variant = &case.val.variant;
+
+                if let Some(lit_enum_name) = &variant.val.enum_name
+                    && &lit_enum_name.val.str != enum_name
+                {
+                    return Err(CompileErrorSet::new_error(
+                        variant.range,
+                        CompileError::Type(TypeError::Mismatch {
+                            expected: Arc::new(VagueType::Enum { name: Some(enum_name.clone()) }),
+                            found: Arc::new(VagueType::Enum {
+                                name: Some(lit_enum_name.val.str.clone()),
+                            }),
+                        }),
+                    ));
+                }
+
+                if unmatched_variants.remove(&variant.val.variant_name.val.str).not() {
+                    return Err(CompileErrorSet::new_error(
+                        variant.range,
+                        CompileError::Type(TypeError::UnmatchableCase),
+                    ));
+                }
+
+                let case_condition = try_tr(variant, |v| {
+                    Ok(t::Expr::Paren(try_tr(v, |v| {
+                        Ok(t::ParenExpr::Binary(try_tr(v, |v| {
+                            Ok(t::BinaryParenExpr {
+                                left: try_tr(&match_item.val.expr, |expr| {
+                                    typecheck_expr(expr, None, ident_to_type, type_alias_m)
+                                })?,
+                                op: tr(v, |_| t::BinaryParenExprOp::Eq),
+                                right: try_tr(v, |v| {
+                                    Ok(t::Expr::Literal(try_tr(v, |v| {
+                                        typecheck_variant_literal(
+                                            &match &v.val.enum_name {
+                                                Some(name) => EnumName::Name(name.clone()),
+                                                None => EnumName::Str(enum_name.clone()),
+                                            },
+                                            &v.val.variant_name,
+                                            v.range,
+                                            type_alias_m,
+                                        )
+                                    })?))
+                                })?,
+                            })
+                        })?))
+                    })?))
+                })?;
+
+                let case_body = try_tr(&case.val.body, |x| {
+                    typecheck_body(x, ident_to_type, func_to_params, type_alias_m)
+                })?;
+
+                branches.push(Arc::new(Srced {
+                    range: case.range,
+                    val: CaseBranch { condition: case_condition, body: case_body },
+                }));
+            }
+
+            // TODO: make this do a binary search instead to save on the number of checks?
+            let mut if_item: Option<t::Ref<t::IfItem>> = None;
+
+            for branch in branches.into_iter().rev() {
+                if_item = Some(try_tr(&branch, |branch| {
+                    Ok(t::IfItem {
+                        condition: branch.val.condition.clone(),
+                        then_body: branch.val.body.clone(),
+                        else_item: match if_item {
+                            None => None,
+                            Some(if_item) => Some(tr(&if_item, |x| t::ElseItem {
+                                body: tr(x, |x| t::Body {
+                                    items: tr(x, |x| {
+                                        Vec::from([tr(x, |x| t::BodyItem::If(x.clone()))])
+                                    }),
+                                }),
+                            })),
+                        },
+                    })
+                })?);
+            }
+
+            if unmatched_variants.is_empty().not() {
+                let unmatched_variants = all_variants
+                    .iter()
+                    .filter(|v| unmatched_variants.contains(v))
+                    .cloned()
+                    .collect_vec();
+
+                return Err(CompileErrorSet::new_error(
+                    match_item.range,
+                    CompileError::Type(TypeError::NonExhaustiveMatch {
+                        unmatched_cases: Arc::new(unmatched_variants),
+                    }),
+                ));
+            }
+
+            if_item.map(t::BodyItem::If)
+        },
     })
 }
 
@@ -289,19 +494,21 @@ fn typecheck_if(
     func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::IfItem, CompileErrorSet> {
-    let condition_type = eval_expr(&item.val.condition, ident_to_type, type_alias_m)?;
-    if condition_type.is_subtype_of(&VAL_TYPE).not() {
+    let condition_type = eval_expr(&item.val.condition, None, ident_to_type, type_alias_m)?;
+    if condition_type.is_subtype_of(&BOOL_TYPE).not() {
         return Err(CompileErrorSet::new_error(
             item.val.condition.range,
             CompileError::Type(TypeError::Mismatch {
-                expected: vague(&VAL_TYPE),
+                expected: vague(&BOOL_TYPE),
                 found: vague(&condition_type),
             }),
         ));
     };
 
     Ok(t::IfItem {
-        condition: try_tr(&item.val.condition, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+        condition: try_tr(&item.val.condition, |x| {
+            typecheck_expr(x, None, ident_to_type, type_alias_m)
+        })?,
         then_body: try_tr(&item.val.then_body, |x| {
             typecheck_body(x, ident_to_type, func_to_params, type_alias_m)
         })?,
@@ -324,12 +531,12 @@ fn typecheck_while(
     func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::WhileItem, CompileErrorSet> {
-    let condition_type = eval_expr(&item.val.condition, ident_to_type, type_alias_m)?;
-    if condition_type.is_subtype_of(&VAL_TYPE).not() {
+    let condition_type = eval_expr(&item.val.condition, None, ident_to_type, type_alias_m)?;
+    if condition_type.is_subtype_of(&BOOL_TYPE).not() {
         return Err(CompileErrorSet::new_error(
             item.val.condition.range,
             CompileError::Type(TypeError::Mismatch {
-                expected: vague(&VAL_TYPE),
+                expected: vague(&BOOL_TYPE),
                 found: vague(&condition_type),
             }),
         ));
@@ -338,7 +545,9 @@ fn typecheck_while(
     typecheck_body(&item.val.body, ident_to_type, func_to_params, type_alias_m)?;
 
     Ok(t::WhileItem {
-        condition: try_tr(&item.val.condition, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+        condition: try_tr(&item.val.condition, |x| {
+            typecheck_expr(x, None, ident_to_type, type_alias_m)
+        })?,
         body: try_tr(&item.val.body, |x| {
             typecheck_body(x, ident_to_type, func_to_params, type_alias_m)
         })?,
@@ -370,31 +579,33 @@ fn typecheck_native_op(
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::NativeOperation, CompileErrorSet> {
     Ok(match &item.val {
-        l::NativeOperation::Out { place } => t::NativeOperation::Out {
-            place: try_tr(place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
+        l::NativeOperation::Out { val } => t::NativeOperation::Out {
+            val: try_tr(val, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
         },
         l::NativeOperation::In { dest_place } => t::NativeOperation::In {
             dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
         },
         l::NativeOperation::Random { dest_place, min, max } => t::NativeOperation::Random {
             dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
-            min: try_tr(min, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
-            max: try_tr(max, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+            min: try_tr(min, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
+            max: try_tr(max, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
         },
         l::NativeOperation::StdoutClear => t::NativeOperation::StdoutClear,
         l::NativeOperation::StdoutRead { dest_place, index } => t::NativeOperation::StdoutRead {
             dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
-            index: try_tr(index, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+            index: try_tr(index, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
         },
         l::NativeOperation::StdoutWrite { val, index } => t::NativeOperation::StdoutWrite {
-            val: try_tr(val, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
-            index: try_tr(index, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+            val: try_tr(val, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
+            index: try_tr(index, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
         },
         l::NativeOperation::StdoutLen { dest_place } => t::NativeOperation::StdoutLen {
             dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
         },
         l::NativeOperation::Wait { duration_s } => t::NativeOperation::Wait {
-            duration_s: try_tr(duration_s, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+            duration_s: try_tr(duration_s, |x| {
+                typecheck_expr(x, None, ident_to_type, type_alias_m)
+            })?,
         },
         l::NativeOperation::TimerGet { dest_place } => t::NativeOperation::TimerGet {
             dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_to_type, type_alias_m))?,
@@ -508,9 +719,14 @@ fn typecheck_place(
         head: try_tr(&item.val.head, |x| typecheck_place_head(x, ident_to_type, type_alias_m))?,
         offset: match place_eval.offset {
             None => None,
-            Some(offset) => {
-                Some(try_tr(&offset, |x| typecheck_expr(x, ident_to_type, type_alias_m))?)
-            },
+            Some(offset) => Some(match offset.as_ref() {
+                PlaceOffset::Static(index) => tr(index, |_| t::Offset::Static(index.clone())),
+                PlaceOffset::Expr(expr) => try_tr(expr, |x| {
+                    Ok(t::Offset::Expr(try_tr(x, |x| {
+                        typecheck_expr(x, None, ident_to_type, type_alias_m)
+                    })?))
+                })?,
+            }),
         },
     })
 }
@@ -527,25 +743,58 @@ impl LReffer {
 
 struct EvalPlaceRes {
     ty: Arc<l::Type>,
-    offset: Option<l::Ref<l::Expr>>,
+    offset: Option<Arc<PlaceOffset>>,
+}
+
+enum PlaceOffset {
+    Static(l::Ref<u32>),
+    Expr(l::Ref<l::Expr>),
+}
+
+impl PlaceOffset {
+    pub fn range(&self) -> SrcRange {
+        match self {
+            Self::Static(x) => x.range,
+            Self::Expr(x) => x.range,
+        }
+    }
+
+    pub fn update_index(&self, offset: PlaceOffset) -> PlaceOffset {
+        let to_expr = |offset: &PlaceOffset| match offset {
+            PlaceOffset::Expr(expr) => expr.clone(),
+            PlaceOffset::Static(index) => {
+                let lr = LReffer { range: index.range };
+                lr.of(l::Expr::Literal(lr.of(l::Literal::Int(f64::from(index.val)))))
+            },
+        };
+
+        let offset_range = self.range().merge(offset.range());
+        let lr = LReffer { range: offset_range };
+
+        match (&self, offset) {
+            (PlaceOffset::Static(curr_static), PlaceOffset::Static(next_static)) => {
+                PlaceOffset::Static(lr.of(curr_static.val + next_static.val))
+            },
+            (curr, next) => PlaceOffset::Expr(lr.of(l::Expr::Paren(lr.of(l::ParenExpr::Binary(
+                lr.of(l::BinaryParenExpr {
+                    left: to_expr(curr),
+                    op: lr.of(l::BinaryParenExprOp::Add),
+                    right: to_expr(&next),
+                }),
+            ))))),
+        }
+    }
 }
 
 impl EvalPlaceRes {
-    fn update_index(&mut self, ty: Arc<l::Type>, offset: l::Ref<l::Expr>) {
-        self.ty = ty;
-        self.offset = Some(match &self.offset {
+    fn update_index(&mut self, ty: Arc<l::Type>, offset: PlaceOffset) {
+        let updated_offset = match &self.offset {
             None => offset,
-            Some(curr_offset) => {
-                let offset_range = curr_offset.range.merge(offset.range);
-                let lr = LReffer { range: offset_range };
+            Some(curr_offset) => curr_offset.update_index(offset),
+        };
 
-                lr.of(l::Expr::Paren(lr.of(l::ParenExpr::Binary(lr.of(l::BinaryParenExpr {
-                    left: curr_offset.clone(),
-                    op: lr.of(l::BinaryParenExprOp::Add),
-                    right: offset,
-                })))))
-            },
-        });
+        self.ty = ty;
+        self.offset = Some(Arc::new(updated_offset));
     }
 }
 
@@ -577,7 +826,7 @@ fn eval_place(
                             lr.of(l::Expr::Literal(lr.of(l::Literal::Uint(f64::from(ty.size()))))),
                     })))));
 
-                res.update_index(ty.clone(), index_offset);
+                res.update_index(ty.clone(), PlaceOffset::Expr(index_offset));
             },
             l::PlaceIndex::Field(index_field) => {
                 let l::Type::Struct(struct_fields) = res.ty.as_ref() else {
@@ -610,10 +859,7 @@ fn eval_place(
 
                 let lr = LReffer { range: index.range };
 
-                let index_offset =
-                    lr.of(l::Expr::Literal(lr.of(l::Literal::Uint(f64::from(offset)))));
-
-                res.update_index(index_field_ty, index_offset);
+                res.update_index(index_field_ty, PlaceOffset::Static(lr.of(offset)));
             },
         };
     }
@@ -674,7 +920,7 @@ fn typecheck_deref(
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::Deref, CompileErrorSet> {
     Ok(t::Deref {
-        addr: try_tr(&item.val.addr, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+        addr: try_tr(&item.val.addr, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
     })
 }
 
@@ -683,7 +929,7 @@ fn eval_deref(
     ident_to_type: &IdentToTypeHint,
     type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
-    let addr_type = eval_expr(&item.val.addr, ident_to_type, type_alias_m)?;
+    let addr_type = eval_expr(&item.val.addr, None, ident_to_type, type_alias_m)?;
     let l::Type::Ref(deref_type) = addr_type.as_ref() else {
         return Err(CompileErrorSet::new_error(
             item.range,
@@ -692,6 +938,35 @@ fn eval_deref(
     };
 
     Ok(deref_type.clone())
+}
+
+fn merge_t_offsets(
+    curr_offset: &t::Ref<t::Offset>,
+    next_offset: &t::Ref<t::Offset>,
+) -> t::Ref<t::Offset> {
+    let to_expr = |offset: &t::Offset| match offset {
+        t::Offset::Expr(expr) => expr.clone(),
+        t::Offset::Static(index) => tr(index, |index| {
+            t::Expr::Literal(tr(index, |index| t::Literal::Int(f64::from(index.val))))
+        }),
+    };
+
+    let lr = LReffer { range: curr_offset.range.merge(next_offset.range) };
+
+    let merged_offset = match (&curr_offset.val, &next_offset.val) {
+        (t::Offset::Static(curr_static), t::Offset::Static(next_static)) => {
+            t::Offset::Static(lr.of(curr_static.val + next_static.val))
+        },
+        (curr, next) => t::Offset::Expr(lr.of(t::Expr::Paren(lr.of(t::ParenExpr::Binary(lr.of(
+            t::BinaryParenExpr {
+                left: to_expr(curr),
+                op: lr.of(t::BinaryParenExprOp::Add),
+                right: to_expr(&next),
+            },
+        )))))),
+    };
+
+    lr.of(merged_offset)
 }
 
 fn typecheck_copy(
@@ -708,24 +983,14 @@ fn typecheck_copy(
                     offset,
                     expr: tr(&place, |x| {
                         t::Expr::Place(tr(x, |x| {
-                            let offset_expr =
-                                t::Expr::Literal(tr(x, |_| t::Literal::Uint(offset as f64)));
+                            let curr_offset = tr(x, |x| t::Offset::Static(tr(x, |_| offset)));
 
-                            let offset_expr = match &place.val.offset {
-                                None => offset_expr,
-                                Some(place_offset_expr) => t::Expr::Paren(tr(x, |x| {
-                                    t::ParenExpr::Binary(tr(x, |x| t::BinaryParenExpr {
-                                        left: tr(x, |_| offset_expr),
-                                        op: tr(x, |_| t::BinaryParenExprOp::Add),
-                                        right: place_offset_expr.clone(),
-                                    }))
-                                })),
+                            let offset = match &place.val.offset {
+                                None => curr_offset,
+                                Some(next_offset) => merge_t_offsets(&curr_offset, next_offset),
                             };
 
-                            t::Place {
-                                head: x.val.head.clone(),
-                                offset: Some(tr(x, |_| offset_expr)),
-                            }
+                            t::Place { head: x.val.head.clone(), offset: Some(offset) }
                         }))
                     }),
                 })
@@ -757,7 +1022,9 @@ fn typecheck_assign_expr(
         l::AssignExpr::Expr(x) => match expected_type.size() {
             1 => Vec::from([t::AssignExpr {
                 offset: 0,
-                expr: try_tr(x, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+                expr: try_tr(x, |x| {
+                    typecheck_expr(x, Some(expected_type), ident_to_type, type_alias_m)
+                })?,
             }]),
             size => typecheck_copy(x, size, ident_to_type, type_alias_m)?,
         },
@@ -865,7 +1132,7 @@ fn eval_assign_expr(
     type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
     match &item.val {
-        l::AssignExpr::Expr(x) => eval_expr(x, ident_to_type, type_alias_m),
+        l::AssignExpr::Expr(x) => eval_expr(x, Some(expected_type), ident_to_type, type_alias_m),
         l::AssignExpr::Array { single_exprs, spread_expr } => {
             let l::Type::Array { ty: expected_el_type, len: expected_len } = expected_type.as_ref()
             else {
@@ -962,19 +1229,46 @@ fn eval_assign_expr(
     }
 }
 
+fn infer_enum_name(
+    variant_literal: &l::Ref<l::VariantLiteral>,
+    expected_type: Option<&Arc<l::Type>>,
+) -> Result<Arc<str>, CompileErrorSet> {
+    let enum_name = match &variant_literal.val.enum_name {
+        Some(enum_name) => &enum_name.val.str,
+        None => match expected_type.map(AsRef::as_ref) {
+            Some(l::Type::Enum { name }) => name,
+            _ => {
+                return Err(CompileErrorSet::new_error(
+                    variant_literal.range,
+                    CompileError::Type(TypeError::CannotInfer),
+                ));
+            },
+        },
+    };
+
+    Ok(enum_name.clone())
+}
+
 fn typecheck_expr(
     item: &l::Ref<l::Expr>,
+    expected_type: Option<&Arc<l::Type>>,
     ident_to_type: &IdentToTypeHint,
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::Expr, CompileErrorSet> {
     Ok(match &item.val {
-        l::Expr::Literal(x) => t::Expr::Literal(tr(x, |x| match &x.val {
-            l::Literal::Val(x) => t::Literal::Val(x.clone()),
-            l::Literal::Num(x) => t::Literal::Num(*x),
-            l::Literal::Int(x) => t::Literal::Int(*x),
-            l::Literal::Uint(x) => t::Literal::Uint(*x),
-            l::Literal::Bool(x) => t::Literal::Bool(*x),
-        })),
+        l::Expr::Literal(x) => t::Expr::Literal(try_tr(x, |x| match &x.val {
+            l::Literal::Str(x) => Ok(t::Literal::Str(x.clone())),
+            l::Literal::Num(x) => Ok(t::Literal::Num(*x)),
+            l::Literal::Int(x) => Ok(t::Literal::Int(*x)),
+            l::Literal::Uint(x) => Ok(t::Literal::Uint(*x)),
+            l::Literal::Bool(x) => Ok(t::Literal::Bool(*x)),
+            l::Literal::Variant(x) => Ok(typecheck_variant_literal(
+                &EnumName::Str(infer_enum_name(x, expected_type)?),
+                &x.val.variant_name,
+                x.range,
+                type_alias_m,
+            )?),
+        })?),
         l::Expr::Place(x) => {
             t::Expr::Place(try_tr(x, |x| typecheck_place(x, ident_to_type, type_alias_m))?)
         },
@@ -984,23 +1278,27 @@ fn typecheck_expr(
         l::Expr::Paren(x) => {
             t::Expr::Paren(try_tr(x, |x| typecheck_paren_expr(x, ident_to_type, type_alias_m))?)
         },
-        l::Expr::Cast { expr, .. } => typecheck_expr(expr, ident_to_type, type_alias_m)?,
-        l::Expr::Transmute { expr, .. } => typecheck_expr(expr, ident_to_type, type_alias_m)?,
+        l::Expr::Cast { expr, .. } => typecheck_expr(expr, None, ident_to_type, type_alias_m)?,
+        l::Expr::Transmute { expr, .. } => typecheck_expr(expr, None, ident_to_type, type_alias_m)?,
     })
 }
 
 fn eval_expr(
     item: &l::Ref<l::Expr>,
+    expected_type: Option<&Arc<l::Type>>,
     ident_to_type: &IdentToTypeHint,
     type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
     match &item.val {
         l::Expr::Literal(x) => Ok(match &x.val {
-            l::Literal::Val(_) => VAL_TYPE.clone(),
+            l::Literal::Str(_) => STR_TYPE.clone(),
             l::Literal::Num(_) => NUM_TYPE.clone(),
             l::Literal::Int(_) => INT_TYPE.clone(),
             l::Literal::Uint(_) => UINT_TYPE.clone(),
             l::Literal::Bool(_) => BOOL_TYPE.clone(),
+            l::Literal::Variant(x) => {
+                Arc::new(l::Type::Enum { name: infer_enum_name(x, expected_type)?.clone() })
+            },
         }),
         l::Expr::Place(x) => eval_place(x, ident_to_type, type_alias_m).map(|res| res.ty),
         l::Expr::Ref(place) => {
@@ -1010,7 +1308,7 @@ fn eval_expr(
         l::Expr::Paren(x) => eval_paren_expr(x, ident_to_type, type_alias_m),
         l::Expr::Cast { ty, expr } => {
             let cast_ty = Arc::new(type_alias_m.resolve(ty)?);
-            let expr_ty = eval_expr(expr, ident_to_type, type_alias_m)?;
+            let expr_ty = eval_expr(expr, None, ident_to_type, type_alias_m)?;
             if expr_ty.can_cast_to(&cast_ty).not() {
                 return Err(CompileErrorSet::new_error(
                     item.range,
@@ -1025,7 +1323,7 @@ fn eval_expr(
         },
         l::Expr::Transmute { ty, expr } => {
             let cast_ty = Arc::new(type_alias_m.resolve(ty)?);
-            let expr_ty = eval_expr(expr, ident_to_type, type_alias_m)?;
+            let expr_ty = eval_expr(expr, None, ident_to_type, type_alias_m)?;
             if expr_ty.can_transmute_to(&cast_ty).not() {
                 return Err(CompileErrorSet::new_error(
                     item.range,
@@ -1039,6 +1337,16 @@ fn eval_expr(
             Ok(cast_ty.clone())
         },
     }
+}
+
+fn typecheck_variant_literal(
+    enum_name: &EnumName,
+    variant_name: &l::Ref<l::Name>,
+    variant_literal_range: SrcRange,
+    type_alias_m: &TypeAliasManager,
+) -> Result<t::Literal, CompileErrorSet> {
+    let variant_id = type_alias_m.id_variant(enum_name, variant_name, variant_literal_range)?;
+    Ok(t::Literal::Uint(f64::from(variant_id)))
 }
 
 fn typecheck_paren_expr(
@@ -1083,7 +1391,9 @@ fn typecheck_unary_expr(
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::UnaryParenExpr, CompileErrorSet> {
     Ok(t::UnaryParenExpr {
-        operand: try_tr(&item.val.operand, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+        operand: try_tr(&item.val.operand, |x| {
+            typecheck_expr(x, None, ident_to_type, type_alias_m)
+        })?,
         op: tr(&item.val.op, |x| typecheck_variants!(&x.val, UnaryParenExprOp => [Not])),
     })
 }
@@ -1094,7 +1404,7 @@ fn eval_unary_expr(
     type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
     let operand = &item.val.operand;
-    let operand_type = eval_expr(operand, ident_to_type, type_alias_m)?;
+    let operand_type = eval_expr(operand, None, ident_to_type, type_alias_m)?;
     match item.val.op.val {
         l::UnaryParenExprOp::Not => {
             if operand_type.is_subtype_of(&BOOL_TYPE).not() {
@@ -1118,8 +1428,8 @@ fn typecheck_binary_expr(
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::BinaryParenExpr, CompileErrorSet> {
     Ok(t::BinaryParenExpr {
-        left: try_tr(&item.val.left, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
-        right: try_tr(&item.val.right, |x| typecheck_expr(x, ident_to_type, type_alias_m))?,
+        left: try_tr(&item.val.left, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
+        right: try_tr(&item.val.right, |x| typecheck_expr(x, None, ident_to_type, type_alias_m))?,
         op: tr(&item.val.op, |x| {
             typecheck_variants!(&x.val, BinaryParenExprOp => [
                 Add,
@@ -1146,8 +1456,8 @@ fn eval_binary_expr(
     ident_to_type: &IdentToTypeHint,
     type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
-    let left_type = eval_expr(&item.val.left, ident_to_type, type_alias_m)?;
-    let right_type = eval_expr(&item.val.right, ident_to_type, type_alias_m)?;
+    let left_type = eval_expr(&item.val.left, None, ident_to_type, type_alias_m)?;
+    let right_type = eval_expr(&item.val.right, None, ident_to_type, type_alias_m)?;
 
     macro_rules! expect_types {
         (
@@ -1201,30 +1511,77 @@ fn eval_binary_expr(
             for "%";
             NUM_TYPE, NUM_TYPE => NUM_TYPE;
         ),
-        l::BinaryParenExprOp::Eq => expect_types!(
-            for "==";
-            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
-        ),
-        l::BinaryParenExprOp::Neq => expect_types!(
-            for "!=";
-            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
-        ),
-        l::BinaryParenExprOp::Gt => expect_types!(
-            for ">";
-            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
-        ),
-        l::BinaryParenExprOp::Lt => expect_types!(
-            for "<";
-            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
-        ),
-        l::BinaryParenExprOp::Gte => expect_types!(
-            for ">=";
-            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
-        ),
-        l::BinaryParenExprOp::Lte => expect_types!(
-            for "<=";
-            ANY_TYPE, ANY_TYPE => BOOL_TYPE;
-        ),
+        l::BinaryParenExprOp::Eq | l::BinaryParenExprOp::Neq => 'expect: {
+            let comparable = 'comparable: {
+                if left_type.is_subtype_of(&STR_TYPE) && right_type.is_subtype_of(&STR_TYPE) {
+                    break 'comparable true;
+                }
+
+                if left_type.is_subtype_of(&NUM_TYPE) && right_type.is_subtype_of(&NUM_TYPE) {
+                    break 'comparable true;
+                }
+
+                if left_type.is_subtype_of(&BOOL_TYPE) && right_type.is_subtype_of(&BOOL_TYPE) {
+                    break 'comparable true;
+                }
+
+                if let l::Type::Enum { name: left_name } = left_type.as_ref()
+                    && let l::Type::Enum { name: right_name } = right_type.as_ref()
+                    && left_name == right_name
+                {
+                    break 'comparable true;
+                }
+
+                false
+            };
+
+            if comparable {
+                break 'expect Ok(BOOL_TYPE.clone());
+            }
+
+            Err(CompileErrorSet::new_error(
+                item.range,
+                CompileError::Type(TypeError::Uncomparable {
+                    left: vague(&left_type),
+                    right: vague(&right_type),
+                }),
+            ))
+        },
+        l::BinaryParenExprOp::Gt
+        | l::BinaryParenExprOp::Lt
+        | l::BinaryParenExprOp::Gte
+        | l::BinaryParenExprOp::Lte => 'expect: {
+            let comparable = 'comparable: {
+                if left_type.is_subtype_of(&STR_TYPE) && right_type.is_subtype_of(&STR_TYPE) {
+                    break 'comparable true;
+                }
+
+                if left_type.is_subtype_of(&NUM_TYPE) && right_type.is_subtype_of(&NUM_TYPE) {
+                    break 'comparable true;
+                }
+
+                if let l::Type::Enum { name: left_name } = left_type.as_ref()
+                    && let l::Type::Enum { name: right_name } = right_type.as_ref()
+                    && left_name == right_name
+                {
+                    break 'comparable true;
+                }
+
+                false
+            };
+
+            if comparable {
+                break 'expect Ok(BOOL_TYPE.clone());
+            }
+
+            Err(CompileErrorSet::new_error(
+                item.range,
+                CompileError::Type(TypeError::Uncomparable {
+                    left: vague(&left_type),
+                    right: vague(&right_type),
+                }),
+            ))
+        },
         l::BinaryParenExprOp::And => expect_types!(
             for "&&";
             BOOL_TYPE, BOOL_TYPE => BOOL_TYPE;
@@ -1235,7 +1592,7 @@ fn eval_binary_expr(
         ),
         l::BinaryParenExprOp::Join => expect_types!(
             for "~";
-            VAL_TYPE, VAL_TYPE => VAL_TYPE;
+            VAL_TYPE, VAL_TYPE => STR_TYPE;
         ),
     }
 }

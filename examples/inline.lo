@@ -1,0 +1,28 @@
+main |a: num, b: num| {
+    a = 10;
+    print(a);
+
+    double(&b, a);
+    print(b);
+
+    sum(&a, a, b);
+    print(a);
+
+    out("Finished!");
+}
+
+func double(ret: &num, x: num) || {
+    *ret = (x * 2);
+}
+
+func sum(ret: &num, a: num, b: num) || {
+    *ret = (a + b);
+}
+
+func print(num: num) |str: str| {
+    str = "";
+    str = (str ~ "The value is: ");
+    str = (str ~ num);
+    str = (str ~ "!");
+    out(str);
+}

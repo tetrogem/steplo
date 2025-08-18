@@ -1,12 +1,16 @@
+use anyhow::{Context, bail};
 use itertools::{Itertools, chain};
 use uuid::Uuid;
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     mem,
-    ops::Not,
+    ops::{Add, Div, Mul, Neg, Not, Sub},
+    str::FromStr,
     sync::Arc,
 };
+
+use crate::utils::IsInteger;
 
 use super::ast::{
     BinaryArgs, Call, Command, Expr, Proc, ProcKind, SubProc, TempVar, UMemLoc, Value,
@@ -55,6 +59,7 @@ fn optimize_procs(
                 f: optimization_remove_unused_sub_procs,
                 name: "remove_unused_sub_procs",
             },
+            Optimization { f: optimization_inline_sub_procs, name: "inline_sub_procs" },
         ]),
     };
 
@@ -105,6 +110,7 @@ fn optimize_sub_proc(mut sp: Arc<SubProc<UMemLoc>>) -> OptimizationReport<Arc<Su
         optimizations: Vec::from([
             Optimization { f: optimization_inline_trivial_temps, name: "inline_trivial_temps" },
             Optimization { f: optimization_remove_unused_temps, name: "remove_unused_temps" },
+            // Optimization { f: optimization_inline_assignments, name: "inline_assignments" },
         ]),
     };
 
@@ -180,9 +186,6 @@ fn optimize_command(
                 index: tracker.record(optimize_expr(index.clone())),
                 val: tracker.record(optimize_expr(val.clone())),
             },
-            Command::Wait { duration_s } => {
-                Command::Wait { duration_s: tracker.record(optimize_expr(duration_s.clone())) }
-            },
         });
 
         command = tracker.record(optimizer.optimize(command));
@@ -209,6 +212,10 @@ fn optimize_call(mut call: Arc<Call<UMemLoc>>) -> OptimizationReport<Arc<Call<UM
                 cond: tracker.record(optimize_expr(cond.clone())),
                 then_to: tracker.record(optimize_expr(then_to.clone())),
                 else_to: tracker.record(optimize_expr(else_to.clone())),
+            },
+            Call::Sleep { duration_s, to } => Call::Sleep {
+                duration_s: tracker.record(optimize_expr(duration_s.clone())),
+                to: tracker.record(optimize_expr(to.clone())),
             },
         });
 
@@ -373,9 +380,6 @@ fn optimization_inline_trivial_temps(
                 index: expr_replace_trivial_temps(index, &trivial_temp_to_expr),
                 val: expr_replace_trivial_temps(val, &trivial_temp_to_expr),
             },
-            Command::Wait { duration_s } => Command::Wait {
-                duration_s: expr_replace_trivial_temps(duration_s, &trivial_temp_to_expr),
-            },
         };
 
         opt_commands.push(Arc::new(opt_command));
@@ -389,6 +393,10 @@ fn optimization_inline_trivial_temps(
         },
         Call::Jump(to) => Call::Jump(expr_replace_trivial_temps(to, &trivial_temp_to_expr)),
         Call::Exit => Call::Exit,
+        Call::Sleep { duration_s, to } => Call::Sleep {
+            duration_s: expr_replace_trivial_temps(duration_s, &trivial_temp_to_expr),
+            to: expr_replace_trivial_temps(to, &trivial_temp_to_expr),
+        },
     };
 
     let optimized = trivial_temp_to_expr.is_empty().not();
@@ -430,6 +438,231 @@ fn optimization_remove_unused_temps(
     }
 }
 
+#[deprecated]
+fn optimization_inline_assignments(
+    sp: Arc<SubProc<UMemLoc>>,
+) -> OptimizationReport<Arc<SubProc<UMemLoc>>> {
+    let mut optimized = false;
+
+    #[derive(PartialEq, Eq, PartialOrd, Ord)]
+    enum Loc {
+        Temp { loc: Arc<UMemLoc> },
+        Stack { addr: Arc<Expr<UMemLoc>> },
+    }
+
+    let mut loc_to_val: BTreeMap<Loc, Arc<Expr<UMemLoc>>> = Default::default();
+
+    fn expr_inline_loc(
+        expr: &Expr<UMemLoc>,
+        loc_to_val: &BTreeMap<Loc, Arc<Expr<UMemLoc>>>,
+        optimized: &mut bool,
+    ) -> Arc<Expr<UMemLoc>> {
+        match expr {
+            Expr::MemLoc(mem_loc) => match loc_to_val.get(&Loc::Temp { loc: mem_loc.clone() }) {
+                Some(val) => {
+                    *optimized = true;
+                    val.clone()
+                },
+                None => Arc::new(Expr::MemLoc(mem_loc.clone())),
+            },
+            Expr::StackDeref(addr) => match loc_to_val.get(&Loc::Stack { addr: addr.clone() }) {
+                Some(val) => {
+                    *optimized = true;
+                    val.clone()
+                },
+                None => Arc::new(Expr::StackDeref(expr_inline_loc(addr, loc_to_val, optimized))),
+            },
+            Expr::Add(args) => Arc::new(Expr::Add(args_inline_locs(args, loc_to_val, optimized))),
+            Expr::And(args) => Arc::new(Expr::And(args_inline_locs(args, loc_to_val, optimized))),
+            Expr::Div(args) => Arc::new(Expr::Div(args_inline_locs(args, loc_to_val, optimized))),
+            Expr::Eq(args) => Arc::new(Expr::Eq(args_inline_locs(args, loc_to_val, optimized))),
+            Expr::Gt(args) => Arc::new(Expr::Gt(args_inline_locs(args, loc_to_val, optimized))),
+            Expr::InAnswer => Arc::new(Expr::InAnswer),
+            Expr::Join(args) => Arc::new(Expr::Join(args_inline_locs(args, loc_to_val, optimized))),
+            Expr::Lt(args) => Arc::new(Expr::Lt(args_inline_locs(args, loc_to_val, optimized))),
+            Expr::Mod(args) => Arc::new(Expr::Mod(args_inline_locs(args, loc_to_val, optimized))),
+            Expr::Mul(args) => Arc::new(Expr::Mul(args_inline_locs(args, loc_to_val, optimized))),
+            Expr::Not(expr) => Arc::new(Expr::Not(expr_inline_loc(expr, loc_to_val, optimized))),
+            Expr::Or(args) => Arc::new(Expr::Or(args_inline_locs(args, loc_to_val, optimized))),
+            Expr::Random(args) => {
+                Arc::new(Expr::Random(args_inline_locs(args, loc_to_val, optimized)))
+            },
+            Expr::StdoutDeref(addr) => {
+                Arc::new(Expr::StdoutDeref(expr_inline_loc(addr, loc_to_val, optimized)))
+            },
+            Expr::StdoutLen => Arc::new(Expr::StdoutLen),
+            Expr::Sub(args) => Arc::new(Expr::Sub(args_inline_locs(args, loc_to_val, optimized))),
+            Expr::Timer => Arc::new(Expr::Timer),
+            Expr::Value(value) => Arc::new(Expr::Value(value.clone())),
+        }
+    }
+
+    fn args_inline_locs(
+        args: &BinaryArgs<UMemLoc>,
+        loc_to_val: &BTreeMap<Loc, Arc<Expr<UMemLoc>>>,
+        optimized: &mut bool,
+    ) -> Arc<BinaryArgs<UMemLoc>> {
+        Arc::new(BinaryArgs {
+            left: expr_inline_loc(&args.left, loc_to_val, optimized),
+            right: expr_inline_loc(&args.right, loc_to_val, optimized),
+        })
+    }
+
+    fn loc_contains_mem_loc(loc: &Loc, mem_loc: &UMemLoc) -> bool {
+        match loc {
+            Loc::Temp { loc } => loc.as_ref() == mem_loc,
+            Loc::Stack { addr } => expr_contains_mem_loc(addr, mem_loc),
+        }
+    }
+
+    fn expr_contains_mem_loc(expr: &Expr<UMemLoc>, mem_loc: &UMemLoc) -> bool {
+        match expr {
+            Expr::MemLoc(ml) => ml.as_ref() == mem_loc,
+            Expr::Add(args) => args_contains_mem_loc(args, mem_loc),
+            Expr::And(args) => args_contains_mem_loc(args, mem_loc),
+            Expr::Div(args) => args_contains_mem_loc(args, mem_loc),
+            Expr::Eq(args) => args_contains_mem_loc(args, mem_loc),
+            Expr::Gt(args) => args_contains_mem_loc(args, mem_loc),
+            Expr::InAnswer => false,
+            Expr::Join(args) => args_contains_mem_loc(args, mem_loc),
+            Expr::Lt(args) => args_contains_mem_loc(args, mem_loc),
+            Expr::Mod(args) => args_contains_mem_loc(args, mem_loc),
+            Expr::Mul(args) => args_contains_mem_loc(args, mem_loc),
+            Expr::Not(expr) => expr_contains_mem_loc(expr, mem_loc),
+            Expr::Or(args) => args_contains_mem_loc(args, mem_loc),
+            Expr::Random(args) => args_contains_mem_loc(args, mem_loc),
+            Expr::StackDeref(expr) => expr_contains_mem_loc(expr, mem_loc),
+            Expr::StdoutDeref(expr) => expr_contains_mem_loc(expr, mem_loc),
+            Expr::StdoutLen => false,
+            Expr::Sub(args) => args_contains_mem_loc(args, mem_loc),
+            Expr::Timer => false,
+            Expr::Value(_) => false,
+        }
+    }
+
+    fn args_contains_mem_loc(args: &BinaryArgs<UMemLoc>, mem_loc: &UMemLoc) -> bool {
+        expr_contains_mem_loc(&args.left, mem_loc) || expr_contains_mem_loc(&args.right, mem_loc)
+    }
+
+    fn loc_contains_stack_deref(loc: &Loc, deref_addr: &Expr<UMemLoc>) -> bool {
+        match loc {
+            Loc::Temp { .. } => false,
+            Loc::Stack { addr } => {
+                addr.as_ref() == deref_addr || expr_contains_stack_deref(addr, deref_addr)
+            },
+        }
+    }
+
+    fn expr_contains_stack_deref(expr: &Expr<UMemLoc>, deref_addr: &Expr<UMemLoc>) -> bool {
+        match expr {
+            Expr::StackDeref(expr) => {
+                expr.as_ref() == deref_addr || expr_contains_stack_deref(expr, deref_addr)
+            },
+            Expr::MemLoc(_) => false,
+            Expr::Add(args) => args_contains_stack_deref(args, deref_addr),
+            Expr::And(args) => args_contains_stack_deref(args, deref_addr),
+            Expr::Div(args) => args_contains_stack_deref(args, deref_addr),
+            Expr::Eq(args) => args_contains_stack_deref(args, deref_addr),
+            Expr::Gt(args) => args_contains_stack_deref(args, deref_addr),
+            Expr::InAnswer => false,
+            Expr::Join(args) => args_contains_stack_deref(args, deref_addr),
+            Expr::Lt(args) => args_contains_stack_deref(args, deref_addr),
+            Expr::Mod(args) => args_contains_stack_deref(args, deref_addr),
+            Expr::Mul(args) => args_contains_stack_deref(args, deref_addr),
+            Expr::Not(expr) => expr_contains_stack_deref(expr, deref_addr),
+            Expr::Or(args) => args_contains_stack_deref(args, deref_addr),
+            Expr::Random(args) => args_contains_stack_deref(args, deref_addr),
+            Expr::StdoutDeref(expr) => expr_contains_stack_deref(expr, deref_addr),
+            Expr::StdoutLen => false,
+            Expr::Sub(args) => args_contains_stack_deref(args, deref_addr),
+            Expr::Timer => false,
+            Expr::Value(_) => false,
+        }
+    }
+
+    fn args_contains_stack_deref(args: &BinaryArgs<UMemLoc>, deref_addr: &Expr<UMemLoc>) -> bool {
+        expr_contains_stack_deref(&args.left, deref_addr)
+            || expr_contains_stack_deref(&args.right, deref_addr)
+    }
+
+    fn is_inlineable_val(val: &Expr<UMemLoc>) -> bool {
+        match val {
+            Expr::Value(_) => true,
+            _ => false,
+        }
+    }
+
+    let sub_proc = Arc::new(SubProc {
+        uuid: sp.uuid,
+        commands: Arc::new(
+            sp.commands
+                .iter()
+                .map(|command| {
+                    let inlined_command = match command.as_ref() {
+                        Command::In => Command::In,
+                        Command::ClearStdout => Command::ClearStdout,
+                        Command::Out(expr) => {
+                            Command::Out(expr_inline_loc(expr, &loc_to_val, &mut optimized))
+                        },
+                        Command::WriteStdout { index, val } => Command::WriteStdout {
+                            index: expr_inline_loc(index, &loc_to_val, &mut optimized),
+                            val: expr_inline_loc(val, &loc_to_val, &mut optimized),
+                        },
+                        Command::SetMemLoc { mem_loc, val } => Command::SetMemLoc {
+                            mem_loc: mem_loc.clone(),
+                            val: expr_inline_loc(val, &loc_to_val, &mut optimized),
+                        },
+                        Command::SetStack { addr, val } => Command::SetStack {
+                            addr: expr_inline_loc(addr, &loc_to_val, &mut optimized),
+                            val: expr_inline_loc(val, &loc_to_val, &mut optimized),
+                        },
+                    };
+
+                    match &inlined_command {
+                        Command::In => {},
+                        Command::ClearStdout => {},
+                        Command::Out(_expr) => {},
+                        Command::WriteStdout { index: _, val: _ } => {},
+                        Command::SetMemLoc { mem_loc, val } => {
+                            // remove all cached locs dependent on this mem_loc
+                            loc_to_val.retain(|loc, _| loc_contains_mem_loc(loc, mem_loc).not());
+
+                            if is_inlineable_val(val) {
+                                loc_to_val.insert(Loc::Temp { loc: mem_loc.clone() }, val.clone());
+                            }
+                        },
+                        Command::SetStack { addr, val } => {
+                            // remove all cached locs dependent on this mem_loc
+                            loc_to_val.retain(|loc, _| loc_contains_stack_deref(loc, addr).not());
+
+                            if is_inlineable_val(val) {
+                                loc_to_val.insert(Loc::Stack { addr: addr.clone() }, val.clone());
+                            }
+                        },
+                    }
+
+                    Arc::new(inlined_command)
+                })
+                .collect(),
+        ),
+        call: Arc::new(match sp.call.as_ref() {
+            Call::Exit => Call::Exit,
+            Call::Jump(expr) => Call::Jump(expr_inline_loc(expr, &loc_to_val, &mut optimized)),
+            Call::Branch { cond, then_to, else_to } => Call::Branch {
+                cond: expr_inline_loc(cond, &loc_to_val, &mut optimized),
+                then_to: expr_inline_loc(then_to, &loc_to_val, &mut optimized),
+                else_to: expr_inline_loc(else_to, &loc_to_val, &mut optimized),
+            },
+            Call::Sleep { duration_s, to } => Call::Sleep {
+                duration_s: expr_inline_loc(duration_s, &loc_to_val, &mut optimized),
+                to: expr_inline_loc(to, &loc_to_val, &mut optimized),
+            },
+        }),
+    });
+
+    OptimizationReport { optimized, val: sub_proc }
+}
+
 fn optimization_inline_pure_redirect_calls(
     procs: Vec<Arc<Proc<UMemLoc>>>,
 ) -> OptimizationReport<Vec<Arc<Proc<UMemLoc>>>> {
@@ -437,7 +670,7 @@ fn optimization_inline_pure_redirect_calls(
 
     let mut optimized = false;
 
-    let optimize_jump = |to: &Expr<UMemLoc>| -> Option<Arc<Call<UMemLoc>>> {
+    let get_redirected_call = |to: &Expr<UMemLoc>| -> Option<Arc<Call<UMemLoc>>> {
         let Expr::Value(value) = to else { return None };
         let Value::Label(label) = value.as_ref() else { return None };
 
@@ -445,24 +678,25 @@ fn optimization_inline_pure_redirect_calls(
         Some(redirect_call.clone())
     };
 
-    let call_to_single_to = |call: &Call<UMemLoc>| -> Option<Arc<Expr<UMemLoc>>> {
+    let jump_filter_map = |call: &Call<UMemLoc>| -> Option<Arc<Expr<UMemLoc>>> {
         match call {
-            Call::Exit => None,
-            Call::Branch { .. } => None,
             Call::Jump(to) => Some(to.clone()),
+            _ => None,
         }
     };
 
     let optimize_call = |call: &Call<UMemLoc>| -> Option<Arc<Call<UMemLoc>>> {
         match call {
             Call::Exit => None,
-            Call::Jump(to) => optimize_jump(to),
+            Call::Jump(to) => get_redirected_call(to),
             Call::Branch { cond, then_to, else_to } => {
-                let then_to_redirect = optimize_jump(then_to);
-                let else_to_redirect = optimize_jump(else_to);
+                let then_redirected_call = get_redirected_call(then_to);
+                let else_redirected_call = get_redirected_call(else_to);
 
-                let then_to_optimized = then_to_redirect.and_then(|call| call_to_single_to(&call));
-                let else_to_optimized = else_to_redirect.and_then(|call| call_to_single_to(&call));
+                let then_to_optimized =
+                    then_redirected_call.and_then(|call| jump_filter_map(&call));
+                let else_to_optimized =
+                    else_redirected_call.and_then(|call| jump_filter_map(&call));
 
                 if then_to_optimized.is_none() && else_to_optimized.is_none() {
                     return None;
@@ -474,35 +708,30 @@ fn optimization_inline_pure_redirect_calls(
                     else_to: else_to_optimized.unwrap_or_else(|| else_to.clone()),
                 }))
             },
+            Call::Sleep { duration_s, to } => Some(Arc::new(Call::Sleep {
+                duration_s: duration_s.clone(),
+                to: get_redirected_call(to).and_then(|to| jump_filter_map(&to))?,
+            })),
         }
     };
 
-    let procs = procs
-        .iter()
-        .map(|proc| {
-            Arc::new(Proc {
-                kind: proc.kind.clone(),
-                sub_procs: Arc::new(
-                    proc.sub_procs
-                        .iter()
-                        .map(|sp| {
-                            Arc::new(SubProc {
-                                uuid: sp.uuid,
-                                commands: sp.commands.clone(),
-                                call: match optimize_call(&sp.call) {
-                                    Some(call) => {
-                                        optimized = true;
-                                        call
-                                    },
-                                    None => sp.call.clone(),
-                                },
-                            })
-                        })
-                        .collect(),
-                ),
-            })
-        })
-        .collect();
+    let procs = procs.iter().map(|proc| {
+        let sub_procs = proc.sub_procs.iter().map(|sp| {
+            let call = match optimize_call(&sp.call) {
+                None => sp.call.clone(),
+                Some(call) => {
+                    optimized = true;
+                    call
+                },
+            };
+
+            Arc::new(SubProc { uuid: sp.uuid, commands: sp.commands.clone(), call })
+        });
+
+        Arc::new(Proc { kind: proc.kind.clone(), sub_procs: Arc::new(sub_procs.collect()) })
+    });
+
+    let procs = procs.collect();
 
     OptimizationReport { optimized, val: procs }
 }
@@ -522,6 +751,7 @@ fn optimization_inline_pure_redirect_labels(
                 let Value::Label(to_label) = value.as_ref() else { return None };
                 Some((redirect_label, *to_label))
             },
+            Call::Sleep { duration_s, to } => None,
         })
         .collect::<BTreeMap<_, _>>();
 
@@ -703,13 +933,6 @@ fn optimization_inline_pure_redirect_labels(
                                                         ),
                                                     }
                                                 },
-                                                Command::Wait { duration_s } => Command::Wait {
-                                                    duration_s: expr_replace_pure_redirect_labels(
-                                                        &mut optimized,
-                                                        &pure_redirect_label_to_to_label,
-                                                        duration_s,
-                                                    ),
-                                                },
                                             };
 
                                             Arc::new(command)
@@ -727,12 +950,81 @@ fn optimization_inline_pure_redirect_labels(
     OptimizationReport { optimized, val: procs }
 }
 
+fn optimization_inline_sub_procs(
+    procs: Vec<Arc<Proc<UMemLoc>>>,
+) -> OptimizationReport<Vec<Arc<Proc<UMemLoc>>>> {
+    let label_to_sp = procs
+        .iter()
+        .flat_map(|proc| proc.sub_procs.iter())
+        .map(|sp| (sp.uuid, sp))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut optimized = false;
+
+    let procs = procs
+        .iter()
+        .map(|proc| {
+            Arc::new(Proc {
+                kind: proc.kind.clone(),
+                sub_procs: Arc::new(
+                    proc.sub_procs
+                        .iter()
+                        .map(|sp| {
+                            if let Call::Jump(to_label) = sp.call.as_ref()
+                                && let Expr::Value(to_label) = to_label.as_ref()
+                                && let Value::Label(to_label) = to_label.as_ref()
+                                && let to_sp =
+                                    label_to_sp.get(to_label).expect("no sp with label found")
+                                && sp_always_jumps_to_itself(to_sp).not()
+                            {
+                                let commands = Arc::new(
+                                    sp.commands
+                                        .iter()
+                                        .chain(to_sp.commands.iter())
+                                        .cloned()
+                                        .collect(),
+                                );
+
+                                let call = to_sp.call.clone();
+
+                                optimized = true;
+
+                                return Arc::new(SubProc { uuid: sp.uuid, commands, call });
+                            }
+
+                            sp.clone()
+                        })
+                        .collect(),
+                ),
+            })
+        })
+        .collect();
+
+    OptimizationReport { optimized, val: procs }
+}
+
+fn sp_always_jumps_to_itself(sp: &SubProc<UMemLoc>) -> bool {
+    let always_jump_labels = match sp.call.as_ref() {
+        Call::Exit => Default::default(),
+        Call::Jump(to) => Vec::from([to]),
+        Call::Branch { .. } => Default::default(),
+        Call::Sleep { duration_s: _, to } => Vec::from([to]),
+    };
+
+    for label in always_jump_labels {
+        let Expr::Value(label) = label.as_ref() else { continue };
+        let Value::Label(label) = label.as_ref() else { continue };
+        if *label == sp.uuid {
+            return true;
+        }
+    }
+
+    false
+}
+
 fn optimization_remove_unused_sub_procs(
     procs: Vec<Arc<Proc<UMemLoc>>>,
 ) -> OptimizationReport<Vec<Arc<Proc<UMemLoc>>>> {
-    let mut all_labels = BTreeSet::new();
-    let mut used_labels = BTreeSet::new();
-
     // first main label is the start of the program...
     // ...always used, but never called by anything else, so we have to add it manually
     let main_proc = procs
@@ -743,19 +1035,35 @@ fn optimization_remove_unused_sub_procs(
     let first_main_sp =
         main_proc.sub_procs.first().expect("a sub proc for the main proc should exist");
 
+    let label_to_sp = procs
+        .iter()
+        .flat_map(|proc| proc.sub_procs.iter())
+        .map(|sp| (sp.uuid, sp))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut used_labels = BTreeSet::new();
     used_labels.insert(first_main_sp.uuid);
 
     // find all other used labels
-    for sp in procs.iter().flat_map(|proc| proc.sub_procs.iter()) {
-        all_labels.insert(sp.uuid);
+    call_graph_search_for_used_labels(first_main_sp, &mut used_labels, &label_to_sp);
 
+    fn call_graph_search_for_used_labels(
+        sp: &Arc<SubProc<UMemLoc>>,
+        used_labels: &mut BTreeSet<Uuid>,
+        label_to_sp: &BTreeMap<Uuid, &Arc<SubProc<UMemLoc>>>,
+    ) {
         let sp_used_labels = chain!(
             sp.commands.iter().flat_map(|command| command_find_used_labels(command)),
             call_find_used_labels(&sp.call)
         )
         .collect::<BTreeSet<_>>();
 
-        used_labels.extend(sp_used_labels);
+        for sp_label in sp_used_labels {
+            if used_labels.insert(sp_label) {
+                let sp = label_to_sp.get(&sp_label).expect("no sp found for label");
+                call_graph_search_for_used_labels(sp, used_labels, label_to_sp);
+            }
+        }
     }
 
     fn command_find_used_labels(command: &Command<UMemLoc>) -> BTreeSet<Uuid> {
@@ -770,7 +1078,6 @@ fn optimization_remove_unused_sub_procs(
             Command::WriteStdout { index, val } => {
                 chain!(expr_find_used_labels(index), expr_find_used_labels(val)).collect()
             },
-            Command::Wait { duration_s } => expr_find_used_labels(duration_s),
         }
     }
 
@@ -784,6 +1091,9 @@ fn optimization_remove_unused_sub_procs(
                 expr_find_used_labels(else_to)
             )
             .collect(),
+            Call::Sleep { duration_s, to } => {
+                chain!(expr_find_used_labels(duration_s), expr_find_used_labels(to)).collect()
+            },
         }
     }
 
@@ -820,15 +1130,13 @@ fn optimization_remove_unused_sub_procs(
     }
 
     // remove procs/sub procs that go unused
-    let unused_labels = all_labels.difference(&used_labels).copied().collect::<BTreeSet<_>>();
-
     let optimized_procs = procs
         .iter()
         .map(|proc| {
             let sub_procs = proc
                 .sub_procs
                 .iter()
-                .filter(|sp| unused_labels.contains(&sp.uuid).not())
+                .filter(|sp| used_labels.contains(&sp.uuid))
                 .cloned()
                 .collect();
 
@@ -848,100 +1156,326 @@ fn optimization_remove_unused_sub_procs(
     }
 }
 
+fn l_side_if_r_is(
+    args: &BinaryArgs<UMemLoc>,
+    predicate: impl Fn(&Arc<Expr<UMemLoc>>) -> bool,
+) -> Option<&Arc<Expr<UMemLoc>>> {
+    if predicate(&args.right) {
+        return Some(&args.left);
+    }
+
+    None
+}
+
+fn a_side_if_b_is(
+    args: &BinaryArgs<UMemLoc>,
+    predicate: impl Fn(&Arc<Expr<UMemLoc>>) -> bool,
+) -> Option<&Arc<Expr<UMemLoc>>> {
+    if predicate(&args.left) {
+        return Some(&args.right);
+    }
+
+    if predicate(&args.right) {
+        return Some(&args.left);
+    }
+
+    None
+}
+
+fn lr_sides_filter_map<T>(
+    args: &BinaryArgs<UMemLoc>,
+    filter_map: impl Fn(&Arc<Expr<UMemLoc>>) -> Option<T>,
+) -> Option<(T, T)> {
+    let left = filter_map(&args.left)?;
+    let right = filter_map(&args.right)?;
+    Some((left, right))
+}
+
+fn ab_sides_filter_map<A, B>(
+    args: &BinaryArgs<UMemLoc>,
+    filter_map_a: impl Fn(&Arc<Expr<UMemLoc>>) -> Option<A>,
+    filter_map_b: impl Fn(&Arc<Expr<UMemLoc>>) -> Option<B>,
+) -> Option<(A, B)> {
+    if let Some(a) = filter_map_a(&args.left)
+        && let Some(b) = filter_map_b(&args.right)
+    {
+        return Some((a, b));
+    }
+
+    if let Some(b) = filter_map_b(&args.left)
+        && let Some(a) = filter_map_a(&args.right)
+    {
+        return Some((a, b));
+    }
+
+    None
+}
+
+fn is_literal(expected: &str) -> impl Fn(&Arc<Expr<UMemLoc>>) -> bool {
+    move |expr| {
+        let Expr::Value(value) = expr.as_ref() else { return false };
+        let Value::Literal(lit) = value.as_ref() else { return false };
+        lit.as_ref() == expected
+    }
+}
+
+fn parse_filter_map<T: FromStr>(expr: &Arc<Expr<UMemLoc>>) -> Option<T> {
+    let Expr::Value(value) = expr.as_ref() else { return None };
+    let Value::Literal(lit) = value.as_ref() else { return None };
+    lit.parse::<T>().ok()
+}
+
+fn expr_filter_map(expr: &Arc<Expr<UMemLoc>>) -> Option<Arc<Expr<UMemLoc>>> {
+    Some(expr.clone())
+}
+
 fn optimization_eval_well_known_exprs(
     expr: Arc<Expr<UMemLoc>>,
 ) -> OptimizationReport<Arc<Expr<UMemLoc>>> {
     fn eval_well_known_expr(expr: &Expr<UMemLoc>) -> Option<Arc<Expr<UMemLoc>>> {
-        match expr {
-            Expr::Add(args) => {
-                let BinaryArgs { left, right } = args.as_ref();
+        fn make_str_literal(str: &str) -> Arc<Expr<UMemLoc>> {
+            Arc::new(Expr::Value(Arc::new(Value::Literal(str.into()))))
+        }
 
-                if let Expr::Value(left) = left.as_ref() {
-                    if let Value::Literal(left) = left.as_ref() {
-                        if left.as_ref() == "0" {
-                            return Some(right.clone());
-                        }
-                    }
+        #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
+        struct Int(f64);
+
+        #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
+        struct Float(f64);
+
+        impl FromStr for Int {
+            type Err = anyhow::Error;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                if s.contains('.') {
+                    bail!("Int literal cannot contain decimal");
                 }
 
-                if let Expr::Value(right) = right.as_ref() {
-                    if let Value::Literal(right) = right.as_ref() {
-                        if right.as_ref() == "0" {
-                            return Some(left.clone());
-                        }
-                    }
+                let num: f64 = s.parse()?;
+                if num.is_integer().not() {
+                    bail!("Int's f64 repr is not an integer")
+                }
+
+                Ok(Self(num))
+            }
+        }
+
+        impl FromStr for Float {
+            type Err = anyhow::Error;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Ok(Self(s.parse()?))
+            }
+        }
+
+        impl Int {
+            pub fn to_literal(self) -> Arc<Expr<UMemLoc>> {
+                make_str_literal(&format!("{}", self.0))
+            }
+        }
+
+        impl Float {
+            pub fn to_literal(self) -> Arc<Expr<UMemLoc>> {
+                make_str_literal(&format!("{:?}", self.0))
+            }
+        }
+
+        impl Add<Int> for Int {
+            type Output = Int;
+
+            fn add(self, rhs: Self) -> Self::Output {
+                Self(self.0 + rhs.0)
+            }
+        }
+
+        impl Add<Float> for Float {
+            type Output = Float;
+
+            fn add(self, rhs: Self) -> Self::Output {
+                Self(self.0 + rhs.0)
+            }
+        }
+
+        impl Sub<Int> for Int {
+            type Output = Int;
+
+            fn sub(self, rhs: Int) -> Self::Output {
+                Self(self.0 - rhs.0)
+            }
+        }
+
+        impl Sub<Float> for Float {
+            type Output = Float;
+
+            fn sub(self, rhs: Float) -> Self::Output {
+                Self(self.0 - rhs.0)
+            }
+        }
+
+        impl Mul<Int> for Int {
+            type Output = Int;
+
+            fn mul(self, rhs: Int) -> Self::Output {
+                Self(self.0 * rhs.0)
+            }
+        }
+
+        impl Mul<Float> for Float {
+            type Output = Float;
+
+            fn mul(self, rhs: Float) -> Self::Output {
+                Self(self.0 * rhs.0)
+            }
+        }
+
+        impl Div<Float> for Float {
+            type Output = Float;
+
+            fn div(self, rhs: Float) -> Self::Output {
+                Self(self.0 / rhs.0)
+            }
+        }
+
+        impl Neg for Int {
+            type Output = Int;
+
+            fn neg(self) -> Self::Output {
+                Self(-self.0)
+            }
+        }
+
+        impl Neg for Float {
+            type Output = Float;
+
+            fn neg(self) -> Self::Output {
+                Self(-self.0)
+            }
+        }
+
+        match expr {
+            Expr::Add(args) => {
+                if let Some(other) =
+                    a_side_if_b_is(args, |expr| is_literal("0")(expr) || is_literal("0.0")(expr))
+                {
+                    return Some(other.clone());
+                }
+
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Int>) {
+                    return Some((a + b).to_literal());
+                }
+
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                    return Some((a + b).to_literal());
+                }
+
+                let add_expr_filter_map = |expr: &Arc<Expr<UMemLoc>>| match expr.as_ref() {
+                    Expr::Add(args) => Some(args.clone()),
+                    _ => None,
+                };
+
+                // (other_expr + lit_a) + lit_b -> other_expr + (lit_a + lit_b) -> other_expr + lit_c
+                if let Some((add_args, lit_b)) =
+                    ab_sides_filter_map(args, add_expr_filter_map, parse_filter_map::<Int>)
+                    && let Some((other_expr, lit_a)) =
+                        ab_sides_filter_map(&add_args, expr_filter_map, parse_filter_map::<Int>)
+                {
+                    return Some(Arc::new(Expr::Add(Arc::new(BinaryArgs {
+                        left: other_expr.clone(),
+                        right: (lit_a + lit_b).to_literal(),
+                    }))));
+                }
+
+                if let Some((add_args, lit_b)) =
+                    ab_sides_filter_map(args, add_expr_filter_map, parse_filter_map::<Float>)
+                    && let Some((other_expr, lit_a)) =
+                        ab_sides_filter_map(&add_args, expr_filter_map, parse_filter_map::<Float>)
+                {
+                    return Some(Arc::new(Expr::Add(Arc::new(BinaryArgs {
+                        left: other_expr.clone(),
+                        right: (lit_a + lit_b).to_literal(),
+                    }))));
+                }
+
+                let sub_expr_filter_map = |expr: &Arc<Expr<UMemLoc>>| match expr.as_ref() {
+                    Expr::Sub(args) => Some(args.clone()),
+                    _ => None,
+                };
+
+                // (other_expr - lit_a) + lit_b -> other_expr + (-lit_a + lit_b) -> other_expr + lit_v
+                if let Some((sub_args, lit_b)) =
+                    ab_sides_filter_map(args, sub_expr_filter_map, parse_filter_map::<Int>)
+                    && let Some((other_expr, lit_a)) =
+                        ab_sides_filter_map(&sub_args, expr_filter_map, parse_filter_map::<Int>)
+                {
+                    return Some(Arc::new(Expr::Add(Arc::new(BinaryArgs {
+                        left: other_expr.clone(),
+                        right: (-lit_a + lit_b).to_literal(),
+                    }))));
+                }
+
+                if let Some((sub_args, lit_b)) =
+                    ab_sides_filter_map(args, sub_expr_filter_map, parse_filter_map::<Float>)
+                    && let Some((other_expr, lit_a)) =
+                        ab_sides_filter_map(&sub_args, expr_filter_map, parse_filter_map::<Float>)
+                {
+                    return Some(Arc::new(Expr::Add(Arc::new(BinaryArgs {
+                        left: other_expr.clone(),
+                        right: (-lit_a + lit_b).to_literal(),
+                    }))));
                 }
             },
             Expr::Sub(args) => {
-                let BinaryArgs { left, right } = args.as_ref();
+                if let Some(other) =
+                    l_side_if_r_is(args, |expr| is_literal("0")(expr) || is_literal("0.0")(expr))
+                {
+                    return Some(other.clone());
+                }
 
-                if let Expr::Value(right) = right.as_ref() {
-                    if let Value::Literal(right) = right.as_ref() {
-                        if right.as_ref() == "0" {
-                            return Some(left.clone());
-                        }
-                    }
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Int>) {
+                    return Some((a - b).to_literal());
+                }
+
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                    return Some((a - b).to_literal());
                 }
             },
             Expr::Mul(args) => {
-                let BinaryArgs { left, right } = args.as_ref();
-
-                if let Expr::Value(left) = left.as_ref() {
-                    if let Value::Literal(left) = left.as_ref() {
-                        if left.as_ref() == "0" {
-                            return Some(Arc::new(Expr::Value(Arc::new(Value::Literal(
-                                "0".into(),
-                            )))));
-                        }
-
-                        if left.as_ref() == "1" {
-                            return Some(right.clone());
-                        }
-                    }
+                if a_side_if_b_is(args, is_literal("0")).is_some() {
+                    return Some(Int(0.).to_literal());
                 }
 
-                if let Expr::Value(right) = right.as_ref() {
-                    if let Value::Literal(right) = right.as_ref() {
-                        if right.as_ref() == "0" {
-                            return Some(Arc::new(Expr::Value(Arc::new(Value::Literal(
-                                "0".into(),
-                            )))));
-                        }
+                if a_side_if_b_is(args, is_literal("0.0")).is_some() {
+                    return Some(Float(0.).to_literal());
+                }
 
-                        if right.as_ref() == "1" {
-                            return Some(left.clone());
-                        }
-                    }
+                if let Some(other) =
+                    a_side_if_b_is(args, |expr| is_literal("1")(expr) || is_literal("1.0")(expr))
+                {
+                    return Some(other.clone());
+                }
+
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Int>) {
+                    return Some((a * b).to_literal());
+                }
+
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                    return Some((a * b).to_literal());
                 }
             },
             Expr::Div(args) => {
-                let BinaryArgs { left, right } = args.as_ref();
+                if let Some(other) =
+                    l_side_if_r_is(args, |expr| is_literal("1")(expr) || is_literal("1.0")(expr))
+                {
+                    return Some(other.clone());
+                }
 
-                if let Expr::Value(right) = right.as_ref() {
-                    if let Value::Literal(right) = right.as_ref() {
-                        if right.as_ref() == "1" {
-                            return Some(left.clone());
-                        }
-                    }
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                    return Some((a / b).to_literal());
                 }
             },
             Expr::Join(args) => {
-                let BinaryArgs { left, right } = args.as_ref();
-
-                if let Expr::Value(left) = left.as_ref() {
-                    if let Value::Literal(left) = left.as_ref() {
-                        if left.as_ref() == "" {
-                            return Some(right.clone());
-                        }
-                    }
-                }
-
-                if let Expr::Value(right) = right.as_ref() {
-                    if let Value::Literal(right) = right.as_ref() {
-                        if right.as_ref() == "" {
-                            return Some(left.clone());
-                        }
-                    }
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<String>) {
+                    return Some(make_str_literal(&format!("{a}{b}")));
                 }
             },
             _ => {},
@@ -954,6 +1488,7 @@ fn optimization_eval_well_known_exprs(
     OptimizationReport { optimized: optimized.is_some(), val: optimized.unwrap_or(expr) }
 }
 
+// a "pure redirect" is a sub proc where its only command is a call to another sub proc
 fn find_pure_redirects<'a>(
     procs: impl Iterator<Item = &'a Arc<Proc<UMemLoc>>>,
 ) -> BTreeMap<Uuid, Arc<Call<UMemLoc>>> {
@@ -984,13 +1519,11 @@ fn find_trivial_temps(sp: &SubProc<UMemLoc>) -> BTreeMap<Arc<TempVar>, Arc<Expr<
     trivial_temp_to_expr
 }
 
-fn is_trivial_expr(_expr: &Expr<UMemLoc>) -> bool {
-    // match expr {
-    //     Expr::MemLoc(_) => true,
-    //     Expr::Value(_) => true,
-    //     _ => false,
-    // }
-    true
+fn is_trivial_expr(expr: &Expr<UMemLoc>) -> bool {
+    matches!(
+        expr,
+        Expr::MemLoc(_) | Expr::Value(_) | Expr::StdoutLen | Expr::Timer | Expr::InAnswer
+    )
 }
 
 fn expr_replace_trivial_temps(
@@ -1091,7 +1624,6 @@ fn find_unused_temps(sp: &SubProc<UMemLoc>) -> BTreeSet<Arc<TempVar>> {
                 used_temps.extend(expr_get_used_temps(index));
                 used_temps.extend(expr_get_used_temps(val));
             },
-            Command::Wait { duration_s } => used_temps.extend(expr_get_used_temps(duration_s)),
         }
     }
 
@@ -1103,6 +1635,10 @@ fn find_unused_temps(sp: &SubProc<UMemLoc>) -> BTreeSet<Arc<TempVar>> {
         },
         Call::Jump(to) => used_temps.extend(expr_get_used_temps(to)),
         Call::Exit => {},
+        Call::Sleep { duration_s, to } => {
+            used_temps.extend(expr_get_used_temps(duration_s));
+            used_temps.extend(expr_get_used_temps(to));
+        },
     }
 
     unused_temps.difference(&used_temps).cloned().collect()

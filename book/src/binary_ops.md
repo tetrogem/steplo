@@ -23,12 +23,24 @@ All the currently existing binary operators and the types they evaluate to:
 | num | * (multiply) | num | num |
 | num | / (divide) | num | num |
 | num | % (mod) | num | num |
-| any | == (equal to) | any | bool |
-| any | != (not equal to) | any | bool |
-| any | > (greater than) | any | bool |
-| any | < (less than) | any | bool |
-| any | >= (greater than or equal to) | any | bool |
-| any | <= (less than or equal to) | any | bool |
 | bool | && (and) | bool | bool |
 | bool | \|\| (or) | bool | bool |
-| val | ~ (join) | val | val |
+| str | ~ (join) | val | val |
+
+## Comparison Operators
+Comparison operators can be used between any two times that are comparable with eachother.
+- Strings are comparable with other strings
+- Numbers are comparable with other numbers
+- Booleans are comparable with other booleans
+- Enum variants are comparable with variants of the same enum
+
+Booleans are not able to be compared ordinally. (Greater than / Less than)
+
+| Operator | = Evaluated Type |
+| --- | --- |
+| == (equal to) | bool |
+| != (not equal to) | bool |
+| > (greater than) | bool |
+| < (less than) | bool |
+| >= (greater than or equal to) | bool |
+| <= (less than or equal to) | bool |

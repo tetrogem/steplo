@@ -2,7 +2,7 @@ main |val: val, any: any, val_ref: &val, any_ref: &any, num: num| {
     val = 10;
     any = "hello";
     any = val;
-    val = <val>any;
+    val = <<val>>any;
 
     val_ref = &val;
     any_ref = &any;
@@ -20,12 +20,12 @@ main |val: val, any: any, val_ref: &val, any_ref: &any, num: num| {
 
     num = 10;
     val = num;
-    num = <num>val;
+    num = <<num>>val;
 
     // casts are chainable
     any = any_ref;
-    val = <val><any>any_ref;
-    num = <num><any>any_ref;
+    val = <<val>><any>any_ref;
+    num = <<num>><any>any_ref;
 
     // casting to the same type is always ok
     any = <any>any;

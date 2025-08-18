@@ -21,19 +21,19 @@ pub struct SubProc<MemLoc> {
     pub call: Arc<Call<MemLoc>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Value {
     Literal(Arc<str>),
     Label(Uuid),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BinaryArgs<MemLoc> {
     pub left: Arc<Expr<MemLoc>>,
     pub right: Arc<Expr<MemLoc>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Expr<MemLoc> {
     MemLoc(Arc<MemLoc>),
     Value(Arc<Value>),
@@ -65,7 +65,6 @@ pub enum Command<MemLoc> {
     Out(Arc<Expr<MemLoc>>),
     ClearStdout,
     WriteStdout { index: Arc<Expr<MemLoc>>, val: Arc<Expr<MemLoc>> },
-    Wait { duration_s: Arc<Expr<MemLoc>> },
 }
 
 #[derive(Debug)]
@@ -73,9 +72,10 @@ pub enum Call<MemLoc> {
     Exit,
     Jump(Arc<Expr<MemLoc>>),
     Branch { cond: Arc<Expr<MemLoc>>, then_to: Arc<Expr<MemLoc>>, else_to: Arc<Expr<MemLoc>> },
+    Sleep { duration_s: Arc<Expr<MemLoc>>, to: Arc<Expr<MemLoc>> },
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum UMemLoc {
     StackPointer,
     Temp(Arc<TempVar>),

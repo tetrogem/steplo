@@ -44,9 +44,9 @@ func Vec_push(self: &Vec, val: any) |entry: &any| {
 }
 
 func Vec_pop(ret: &any, self: &Vec) |val: any| {
-    Vec_get(&val, self, <uint>((*self).len - 1));
+    Vec_get(&val, self, <<uint>>((*self).len - 1));
     *ret = val;
-    (*self).len = <uint>((*self).len - 1);
+    (*self).len = <<uint>>((*self).len - 1);
 }
 
 func Vec_insert(self: &Vec, val: any, index: uint)
@@ -60,7 +60,7 @@ func Vec_insert(self: &Vec, val: any, index: uint)
         Vec_get_mut(&next_entry, self, (i + 1));
         *next_entry = *entry;
 
-        i = <uint>(i - 1);
+        i = <<uint>>(i - 1);
     }
 
     Vec_get_mut(&entry, self, index);
@@ -72,7 +72,7 @@ func Vec_remove(ret: &any, self: &Vec, index: uint)
 {
     Vec_get(ret, self, index);
     i = index;
-    (*self).len = <uint>((*self).len - 1);
+    (*self).len = <<uint>>((*self).len - 1);
 
     while (i < (*self).len) {
         Vec_get_mut(&entry, self, i);
@@ -115,7 +115,7 @@ func Vec_sort(self: &Vec) |i: uint, j: uint, a_r: &val, b_r: &val, a: val, b: va
             a = *a_r;
             b = *b_r;
 
-            if (b < a) {
+            if (<<str>>b < <<str>>a) {
                 swap(a_r, b_r);
             }
 

@@ -36,7 +36,13 @@ pub struct IdentDeclaration {
 #[derive(Debug)]
 pub struct Place {
     pub head: Ref<PlaceHead>,
-    pub offset: Option<Ref<Expr>>,
+    pub offset: Option<Ref<Offset>>,
+}
+
+#[derive(Debug)]
+pub enum Offset {
+    Static(Ref<u32>),
+    Expr(Ref<Expr>),
 }
 
 #[derive(Debug)]
@@ -126,7 +132,7 @@ pub enum Expr {
 
 #[derive(Debug)]
 pub enum Literal {
-    Val(Arc<str>),
+    Str(Arc<str>),
     Num(f64),
     Int(f64),
     Uint(f64),
@@ -182,7 +188,7 @@ pub enum BinaryParenExprOp {
 
 #[derive(Debug)]
 pub enum NativeOperation {
-    Out { place: Ref<Place> },
+    Out { val: Ref<Expr> },
     In { dest_place: Ref<Place> },
     Random { dest_place: Ref<Place>, min: Ref<Expr>, max: Ref<Expr> },
     StdoutClear,

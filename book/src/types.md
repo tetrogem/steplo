@@ -4,14 +4,15 @@
 
 | Name | Size (Cells) | Extends | Description |
 | --- | --- | --- | --- |
-| val | 1 | | The base primitive type of Steplo, equivalent to strings in other languages |
+| val | 1 | | The base primitive type of Steplo |
+| str | 1 | val | A string value, representing text  |
 | num | 1 | val | 64-bit floating-point numbers (equivalent to TypeScript's `number` type or Rust's `f64` type)  |
 | int | 1 | num | A 64-bit floating-point signed integer |
 | uint | 1 | int | A 64-bit floating-point unsigned integer |
 | bool | 1 | val | A boolean value, either true or false |
 
 ```
-main |string: val, float: num, integer: int, index: usize, maybe: bool| {
+main |string: str, float: num, integer: int, index: usize, maybe: bool| {
     string = "hello world!";
     float = 12.34;
     integer = -7;
@@ -19,6 +20,37 @@ main |string: val, float: num, integer: int, index: usize, maybe: bool| {
     maybe = true;
 }
 ```
+
+## Enum Types
+
+Functionally, enums work similar to primitive types, except they are user-defined. Each enum is given a set of variants that are applicable to its type. For example, an enum for the state of a video player may be represented as:
+```
+enum PlayerState { Playing | Paused | Stopped }
+```
+
+You can assign to variables of an enum type with variant literals, which consist of the enum name, a # (tag symbol), and then the name of the variant:
+
+```
+main |state: PlayerState| {
+    state = PlayerState#Playing;
+    state = PlayerState#Paused;
+    state = PlayerState#Stopped;
+}
+```
+
+In some cases where the type can be inferred by the compiler, the enum name can be omitted from the variant literal:
+
+```
+main |state: PlayerState| {
+    // state is a PlayerState
+    // so each variant literal below must also be a PlayerState
+    state = #Playing;
+    state = #Paused;
+    state = #Stopped;
+}
+```
+
+Enums also have an inherent order, to allow for use with the greater than (`>`) and less than (`<`) operators. The order of the variants will be determined by the order they were declared on the enum declaration. So in the previous `PlayerState` example, `#Playing < #Paused < #Stopped` would be true. All enums are 1 cell in size, as they are internally represented by a `uint`.
 
 ## Reference Types
 
@@ -56,7 +88,7 @@ main |long_arr: [int; 999], short_arr: [int; 3]| {
 Struct types are denoted with braces surrounding key/value pairs: `{ <field>: <type> }`, where `<field>` is the name of a struct field, and `<type>` is the type of that field. Unlike arrays, fields in a struct can be of different types. The order and names of struct fields matter as well; If these mismatch between two types, they are not assignable to eachother.
 
 ```
-main |coords: { x: num, y: num }, user: { id: uint, name: val }| {
+main |coords: { x: num, y: num }, user: { id: uint, name: str }| {
     coords = { x: 10, y: -5.5 };
     user = { id: 1234, name: "Steplo" };
 }
@@ -80,16 +112,16 @@ main |anything: any, integer: int| {
 Retyping complex compound types (e.g., arrays, structs) is tedious and error-prone. Instead of retyping an entire type definition each time it is used, a type alias can be declared, allowing for a shorter name to be used in-place of a more complex type:
 ```
 type Link = {
-    name: val,
-    redirect: val,
+    name: str,
+    redirect: str,
 };
 
 type Message = {
     created_time: uint,
-    sender_name: val,
+    sender_name: str,
     likes: uint,
     content: {
-        body: val,
+        body: str,
         links: [Link; 2],
     },
 };

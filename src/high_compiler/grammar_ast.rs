@@ -11,6 +11,7 @@ pub enum TopItem {
     Main(Ref<Main>),
     Func(Ref<Func>),
     TypeAlias(Ref<TypeAlias>),
+    Enum(Ref<EnumItem>),
 }
 
 #[derive(Debug)]
@@ -29,6 +30,12 @@ pub struct Func {
 pub struct TypeAlias {
     pub name: Ref<Name>,
     pub ty: Ref<Type>,
+}
+
+#[derive(Debug)]
+pub struct EnumItem {
+    pub name: Ref<Name>,
+    pub variants: Ref<PipeList<Name>>,
 }
 
 #[derive(Debug)]
@@ -140,7 +147,13 @@ pub struct Proc {
 }
 
 #[derive(Debug)]
-pub struct Body {
+pub enum Body {
+    Single(Ref<BodyItem>),
+    Multi(Ref<MultiItemBody>),
+}
+
+#[derive(Debug)]
+pub struct MultiItemBody {
     pub items: Ref<List<BodyItem>>,
 }
 
@@ -149,6 +162,7 @@ pub enum BodyItem {
     Statement(Ref<StatementItem>),
     If(Ref<IfItem>),
     While(Ref<WhileItem>),
+    Match(Ref<MatchItem>),
 }
 
 #[derive(Debug)]
@@ -177,6 +191,18 @@ pub struct ElseIfItem {
 #[derive(Debug)]
 pub struct WhileItem {
     pub condition: Ref<Expr>,
+    pub body: Ref<Body>,
+}
+
+#[derive(Debug)]
+pub struct MatchItem {
+    pub expr: Ref<Expr>,
+    pub cases: Ref<List<MatchCase>>,
+}
+
+#[derive(Debug)]
+pub struct MatchCase {
+    pub variant: Ref<VariantLiteral>,
     pub body: Ref<Body>,
 }
 
@@ -276,10 +302,17 @@ pub struct TrueLiteral;
 pub struct FalseLiteral;
 
 #[derive(Debug)]
+pub struct VariantLiteral {
+    pub enum_name: Ref<Maybe<Name>>,
+    pub variant_name: Ref<Name>,
+}
+
+#[derive(Debug)]
 pub enum Literal {
     Str(Ref<StrLiteral>),
     Num(Ref<NumLiteral>),
     Bool(Ref<BoolLiteral>),
+    Variant(Ref<VariantLiteral>),
 }
 
 #[derive(Debug)]
@@ -436,7 +469,7 @@ pub struct CommaListLink<T> {
 
 #[derive(Debug)]
 pub enum SemiList<T> {
-    // <item>,
+    // <item>;
     Link(Ref<SemiListLink<T>>),
     // <item>
     Tail(Ref<T>),
@@ -464,6 +497,23 @@ pub enum List<T> {
 pub struct ListLink<T> {
     pub item: Ref<T>,
     pub next: Ref<List<T>>,
+}
+
+#[derive(Debug)]
+pub enum PipeList<T> {
+    // <item> |
+    Link(Ref<PipeListLink<T>>),
+    // <item>
+    Tail(Ref<T>),
+    //
+    #[expect(unused)]
+    Empty(Ref<Empty>),
+}
+
+#[derive(Debug)]
+pub struct PipeListLink<T> {
+    pub item: Ref<T>,
+    pub next: Ref<PipeList<T>>,
 }
 
 pub fn parse(mut tokens: TokenFeed) -> Result<Srced<Program>, CompileErrorSet> {

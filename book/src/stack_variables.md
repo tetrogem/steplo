@@ -5,17 +5,17 @@ Next, let's learn how to create variables on the stack. Stack variables are able
 Let's start by declaring a variable on our main procedure:
 
 ```
-main |hello: val| {
+main |hello: str| {
 
 }
 ```
 
-All stack variables are declared in the two pipes `| |` at the start of a procedure. The also must have a type! In this case, we've created a variable `hello` with the type `val`. `val` is the supertype of all other primitive types in Steplo.
+All stack variables are declared in the two pipes `| |` at the start of a procedure. They also must have a type! In this case, we've created a variable `hello` with the type `str`, which is the primitive string type.
 
 Now, let's assign a value to our variable:
 
 ```
-main |hello: val| {
+main |hello: str| {
     hello = "Hello world!";
 }
 ```
@@ -23,7 +23,7 @@ main |hello: val| {
 We can then use this value in-place of the literal we printed in the previous chapter, passing it to `out` as a parameter:
 
 ```
-main |hello: val| {
+main |hello: str| {
     hello = "Hello world!";
     out(hello);
 }
@@ -36,7 +36,7 @@ This program should have the same output as the previous "Hello World!" program!
 You can also declare multiple variables in a single procedure:
 
 ```
-main |hello: val, world: val| {
+main |hello: str, world: str| {
     hello = "Hello";
     world = "World!";
     out(hello);

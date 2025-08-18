@@ -157,7 +157,7 @@ impl ScratchLiteral for &str {
 impl ScratchLiteral for hast::Literal {
     fn to_expr(&self) -> Arc<opt::Expr<opt::UMemLoc>> {
         match self {
-            Self::Val(str) => str.as_ref().to_expr(),
+            Self::Str(str) => str.as_ref().to_expr(),
             Self::Int(num) | Self::Uint(num) => Int(*num).to_expr(),
             Self::Num(num) => Float(*num).to_expr(),
             Self::Bool(bool) => bool.to_expr(),

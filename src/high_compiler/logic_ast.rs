@@ -21,12 +21,19 @@ pub enum ExeItem {
 #[derive(Debug)]
 pub enum TypeItem {
     Alias(Ref<TypeAlias>),
+    Enum(Ref<EnumItem>),
 }
 
 #[derive(Debug)]
 pub struct TypeAlias {
     pub name: Ref<Name>,
     pub ty: Ref<TypeHint>,
+}
+
+#[derive(Debug)]
+pub struct EnumItem {
+    pub name: Ref<Name>,
+    pub variants: Ref<Vec<Ref<Name>>>,
 }
 
 #[derive(Debug)]
@@ -53,7 +60,7 @@ pub enum TypeHint {
     Ref(Ref<TypeHint>),
     Array { ty: Ref<TypeHint>, len: u32 },
     Struct(Ref<Vec<Ref<FieldTypeHint>>>),
-    Alias(Ref<Name>),
+    Nominal(Ref<Name>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -63,6 +70,7 @@ pub enum Type {
     Ref(Arc<Type>),
     Array { ty: Arc<Type>, len: u32 },
     Struct(Arc<Vec<Arc<FieldType>>>),
+    Enum { name: Arc<str> },
 }
 
 impl Type {
@@ -73,6 +81,7 @@ impl Type {
             Self::Ref(_) => 1,
             Self::Array { ty, len } => ty.size() * len,
             Self::Struct(fields) => fields.iter().map(|field| field.ty.size()).sum(),
+            Self::Enum { .. } => 1,
         }
     }
 
@@ -119,9 +128,10 @@ impl Type {
         match self {
             Self::Any => Vec::from([CellType::Any]),
             Self::Primitive(x) => Vec::from([CellType::Primitive(*x)]),
-            Self::Ref(_) => Vec::from([CellType::Primitive(PrimitiveType::Uint)]),
+            Self::Ref(_) => Self::Primitive(PrimitiveType::Uint).cells_repr(),
             Self::Array { ty, len } => (0..*len).flat_map(|_| ty.cells_repr()).collect(),
             Self::Struct(fields) => fields.iter().flat_map(|field| field.ty.cells_repr()).collect(),
+            Self::Enum { .. } => Self::Primitive(PrimitiveType::Uint).cells_repr(),
         }
     }
 
@@ -132,6 +142,18 @@ impl Type {
             Self::Ref(_) => true,
             Self::Array { ty, .. } => ty.contains_ref(),
             Self::Struct(fields) => fields.iter().any(|field| field.ty.contains_ref()),
+            Self::Enum { .. } => false,
+        }
+    }
+
+    pub fn contains_enum(&self) -> bool {
+        match self {
+            Self::Any => false,
+            Self::Primitive(_) => false,
+            Self::Ref(ty) => ty.contains_enum(),
+            Self::Array { ty, .. } => ty.contains_enum(),
+            Self::Struct(fields) => fields.iter().any(|field| field.ty.contains_enum()),
+            Self::Enum { .. } => true,
         }
     }
 
@@ -144,19 +166,18 @@ impl Type {
 
         // cannot cast safely to refs, as they can write to memory with any original type
         // breaking the original invariant of that memory location
-        // but, we can cast to types that *don't* contain refs, but have the same
+
+        // cannot cast safely to enums, because the source value could be outside of the range
+        // of the variants of the target type
+
+        // but, we can cast to types that *don't* contain these types, but have the same
         // in-memory representation
-        if other.contains_ref().not()
+        other.contains_ref().not()
+            && other.contains_enum().not()
             && self.cells_repr().into_iter().zip_longest(other.cells_repr()).all(|cells| {
                 let EitherOrBoth::Both(self_cell, other_cell) = cells else { return false };
                 Type::from(self_cell).is_subtype_of(&Type::from(other_cell))
             })
-        {
-            return true;
-        }
-
-        // otherwise, casts can be used to perform inverses of type coercion
-        other.is_subtype_of(self)
     }
 
     // transmute: may break invariant of type casting to AND the value casting from
@@ -183,6 +204,7 @@ impl From<CellType> for Type {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PrimitiveType {
     Val,
+    Str,
     Num,
     Int,
     Uint,
@@ -193,6 +215,7 @@ impl PrimitiveType {
     pub fn supertype(&self) -> Option<PrimitiveType> {
         Some(match self {
             Self::Val => return None,
+            Self::Str => Self::Val,
             Self::Num => Self::Val,
             Self::Int => Self::Num,
             Self::Uint => Self::Int,
@@ -271,6 +294,7 @@ pub enum BodyItem {
     Statement(Ref<Statement>),
     If(Ref<IfItem>),
     While(Ref<WhileItem>),
+    Match(Ref<MatchItem>),
 }
 
 #[derive(Debug)]
@@ -288,6 +312,18 @@ pub struct ElseItem {
 #[derive(Debug)]
 pub struct WhileItem {
     pub condition: Ref<Expr>,
+    pub body: Ref<Body>,
+}
+
+#[derive(Debug)]
+pub struct MatchItem {
+    pub expr: Ref<Expr>,
+    pub cases: Ref<Vec<Ref<MatchCase>>>,
+}
+
+#[derive(Debug)]
+pub struct MatchCase {
+    pub variant: Ref<VariantLiteral>,
     pub body: Ref<Body>,
 }
 
@@ -335,11 +371,18 @@ pub enum Expr {
 
 #[derive(Debug)]
 pub enum Literal {
-    Val(Arc<str>),
+    Str(Arc<str>),
     Num(f64),
     Int(f64),
     Uint(f64),
     Bool(bool),
+    Variant(Ref<VariantLiteral>),
+}
+
+#[derive(Debug)]
+pub struct VariantLiteral {
+    pub enum_name: Option<Ref<Name>>,
+    pub variant_name: Ref<Name>,
 }
 
 #[derive(Debug)]
@@ -391,7 +434,7 @@ pub enum BinaryParenExprOp {
 
 #[derive(Debug)]
 pub enum NativeOperation {
-    Out { place: Ref<Place> },
+    Out { val: Ref<Expr> },
     In { dest_place: Ref<Place> },
     Random { dest_place: Ref<Place>, min: Ref<Expr>, max: Ref<Expr> },
     StdoutClear,
