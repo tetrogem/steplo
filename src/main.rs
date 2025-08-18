@@ -43,7 +43,7 @@ struct Args {
     /// Disable optimizations
     #[arg(long)]
     no_opt: bool,
-    // Enables experimental optimizations
+    /// Enables experimental optimizations
     #[arg(long = "X-opt")]
     x_opt: bool,
     /// Output intermediate optimization artifacts

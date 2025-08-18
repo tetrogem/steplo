@@ -460,7 +460,6 @@ fn optimization_inline_assignments(
         match expr {
             Expr::MemLoc(mem_loc) => match loc_to_val.get(&Loc::Temp { loc: mem_loc.clone() }) {
                 Some(val) => {
-                    println!("{:?} => {:?}", mem_loc, val);
                     *optimized = true;
                     val.clone()
                 },

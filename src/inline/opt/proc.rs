@@ -305,7 +305,7 @@ fn expr_find_written_and_read_local_vars(expr: &Expr) -> WrittenAndReadLocalVars
             written: Default::default(),
             read: args_find_read_local_vars(args),
         },
-        Expr::InAnswer => todo!(),
+        Expr::InAnswer => Default::default(),
         Expr::Join(args) => WrittenAndReadLocalVars {
             written: Default::default(),
             read: args_find_read_local_vars(args),
