@@ -1,4 +1,9 @@
-main |a: val, b: val, c: val, d: val| {
+main {
+    let a: val = undefined;
+    let b: val = undefined;
+    let c: val = undefined;
+    let d: val = undefined;
+
     c = "This";
     a = "Hello";
     d = "works!";

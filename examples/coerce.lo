@@ -1,28 +1,23 @@
-main || {
+main {
     structs();
 }
 
-func structs() |foo: { a: val, b: val }, bar: { a: num, b: num }, qux: { a: val, b: num }| {
-    bar = { a: 10, b: 20 };
-    foo = bar;
-    qux = bar;
+func structs() {
+    let bar: { a: num, b: num } = { a: 10, b: 20 };
+    let foo: { a: val, b: val } = bar;
+    let qux: { a: val, b: num } = bar;
     foo = qux;
 }
 
-func arrays() |foo: [val; 2], bar: [num; 2]| {
-    bar = [10, 20];
-    foo = bar;
+func arrays() {
+    let bar: [num; 2] = [10, 20];
+    let foo: [val; 2] = bar;
 }
 
-func struct_refs() |
-    foo: { a: val, b: val },
-    foo_ref: &{ a: val, b: val },
-    bar: { a: num, b: num },
-    bar_ref: &{ a: num, b: num },
-| {
-    bar = { a: 10, b: 20 };
-    foo = bar;
-    bar_ref = &bar;
-    foo_ref = &foo;
+func struct_refs() {
+    let bar: { a: num, b: num } = { a: 10, b: 20 };
+    let foo: { a: val, b: val } = bar;
+    let bar_ref: &{ a: num, b: num } = &bar;
+    let foo_ref: &{ a: val, b: val } = &foo;
     // foo_ref = bar_ref; // does not compile
 }

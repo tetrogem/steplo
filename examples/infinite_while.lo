@@ -1,4 +1,4 @@
-main || {
+main {
     while true {
         out("Hello!");
     }

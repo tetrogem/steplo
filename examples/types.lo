@@ -1,19 +1,19 @@
-main |a: str, b: &str, c: &&str, val: val, num: num, int: int, uint: uint, bool: bool| {
-    a = "Hello!";
-    b = &a;
-    c = &b;
+main {
+    let a: str = "Hello!";
+    let b: &str = &a;
+    let c: &&str = &b;
     in(b);
 
-    val = "Hello world!";
+    let val: val = "Hello world!";
     val = 0;
-    num = 10.5;
+    let num: num = 10.5;
     num = -4.7;
     num = 0;
-    int = -32;
+    let int: int = -32;
     int = 0;
-    uint = 88;
+    let uint: uint = 88;
     uint = 0;
-    bool = true;
+    let bool: bool = true;
     bool = false;
 
     uint = (uint + uint);

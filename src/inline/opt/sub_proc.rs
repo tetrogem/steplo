@@ -3,8 +3,14 @@ use std::{collections::BTreeMap, ops::Not, sync::Arc};
 use crate::inline::{
     ast::{ArgAssignment, BinaryArgs, Call, Command, Expr, Loc, SubProc, TempVar},
     opt::{
-        MaybeOptimized, OptimizationFn, call::optimize_call, command::optimize_command,
+        MaybeOptimized, OptimizationFn,
+        call::optimize_call,
+        command::optimize_command,
         track_optimize, tracked_exhaust_optimize,
+        util::{
+            find_addr_expr_used_local_vars::expr_find_addr_expr_used_vars,
+            is_definitely_not_runtime_equal::expr_is_definitely_not_runtime_equal,
+        },
     },
 };
 
@@ -451,11 +457,22 @@ fn optimization_inline_constant_trivial_derefs(sp: &Arc<SubProc>) -> MaybeOptimi
                 Command::SetLoc { loc, val } => {
                     let val = expr!(val);
 
-                    if let Loc::Deref(addr) = loc.as_ref()
-                        && is_trivial_expr(&val)
-                        && is_constant_expr(&val)
-                    {
-                        deref_addr_to_constant_trivial_expr.insert(addr.clone(), val.clone());
+                    // remove addrs which could be modified after this point due to deref assignment
+                    let addrs_used_as_values = expr_find_addr_expr_used_vars(&val);
+                    for addr in addrs_used_as_values {
+                        let addr = Expr::StackAddr(Arc::new(addr));
+                        deref_addr_to_constant_trivial_expr
+                            .retain(|key, _| expr_is_definitely_not_runtime_equal(key, &addr));
+                    }
+
+                    if let Loc::Deref(addr) = loc.as_ref() {
+                        if is_trivial_expr(&val) && is_constant_expr(&val) {
+                            // mark addr as constant trivial expr
+                            deref_addr_to_constant_trivial_expr.insert(addr.clone(), val.clone());
+                        } else {
+                            // remove addr if it was previously added but is no longer constant trivial
+                            deref_addr_to_constant_trivial_expr.remove(addr);
+                        }
                     }
 
                     Command::SetLoc { loc: loc.clone(), val }

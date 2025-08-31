@@ -1,9 +1,12 @@
-main |i: uint, iters: uint, result: val| {
+main {
     out("Enter how many iterations to perform:");
+
+    let iters: uint = 0;
     in(<<&str>>&iters);
 
-    i = 1;
+    let i: uint = 1;
     while (i <= iters) {
+        let result: val = "";
         fizzbuzz(&result, i);
         out(result);
         i = (i + 1);
@@ -12,7 +15,7 @@ main |i: uint, iters: uint, result: val| {
     out("Done!");
 }
 
-func fizzbuzz(return: &val, num: uint) ||
+func fizzbuzz(return: &val, num: uint)
     if ((num % 15) == 0) *return = "FizzBuzz";
     else if ((num % 3) == 0) *return = "Fizz";
     else if ((num % 5) == 0) *return = "Buzz";

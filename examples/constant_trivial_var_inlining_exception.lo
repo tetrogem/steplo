@@ -1,0 +1,5 @@
+main {
+    let line: str = "";
+    stdout_read(&line, 10);
+    out((line ~ "x"));
+}

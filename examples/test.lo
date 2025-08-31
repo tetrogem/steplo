@@ -1,9 +1,10 @@
-main || {
+main {
     test();
 }
 
-func test() |sum: num, i: uint| {
-    i = 10;
+func test() {
+    let sum: num = 0;
+    let i: uint = 10;
     while (i < 0) {
         // out("i < 0");
     }

@@ -18,7 +18,7 @@ pub struct Main {
 #[derive(Debug)]
 pub struct Func {
     pub name: Ref<Name>,
-    pub params: Ref<Vec<Ref<IdentDeclaration>>>,
+    pub params: Ref<Vec<Ref<IdentDef>>>,
     pub proc: Ref<Proc>,
 }
 
@@ -28,7 +28,7 @@ pub struct Name {
 }
 
 #[derive(Debug)]
-pub struct IdentDeclaration {
+pub struct IdentDef {
     pub name: Ref<Name>,
     pub size: u32,
 }
@@ -63,7 +63,7 @@ pub struct Deref {
 
 #[derive(Debug)]
 pub struct Proc {
-    pub idents: Ref<Vec<Ref<IdentDeclaration>>>,
+    pub idents: Arc<Vec<Ref<IdentDef>>>,
     pub body: Ref<Body>,
 }
 
@@ -113,7 +113,7 @@ pub struct FunctionCall {
 #[derive(Debug)]
 pub struct Assign {
     pub place: Ref<Place>,
-    pub expr: Ref<Vec<Ref<AssignExpr>>>,
+    pub exprs: Ref<Vec<Ref<AssignExpr>>>,
 }
 
 #[derive(Debug)]

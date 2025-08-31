@@ -4,6 +4,7 @@ mod expr;
 mod proc;
 mod procs;
 mod sub_proc;
+mod util;
 
 use std::{ops::Not, sync::Arc};
 

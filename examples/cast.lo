@@ -1,11 +1,11 @@
-main |val: val, any: any, val_ref: &val, any_ref: &any, num: num| {
-    val = 10;
-    any = "hello";
+main {
+    let val: val = 10;
+    let any: any = "hello";
     any = val;
     val = <<val>>any;
 
-    val_ref = &val;
-    any_ref = &any;
+    let val_ref: &val = &val;
+    let any_ref: &any = &any;
     // must transmute, breaks invariant of reference type (&val may no longer be a &val)
     any_ref = <<&any>>val_ref;
     val_ref = <<&val>>any_ref;
@@ -18,7 +18,7 @@ main |val: val, any: any, val_ref: &val, any_ref: &any, num: num| {
     val_ref = <<&val>>any;
     any_ref = <<&any>>any;
 
-    num = 10;
+    let num: num = 10;
     val = num;
     num = <<num>>val;
 

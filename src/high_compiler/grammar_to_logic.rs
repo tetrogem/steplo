@@ -189,11 +189,19 @@ impl From<&g::Ref<g::Name>> for l::Name {
     }
 }
 
-impl TryFrom<&g::Ref<g::IdentDeclaration>> for l::IdentDeclaration {
+impl TryFrom<&g::Ref<g::IdentDef>> for l::IdentDef {
     type Error = CompileErrorSet;
 
-    fn try_from(value: &g::Ref<g::IdentDeclaration>) -> Result<Self, Self::Error> {
+    fn try_from(value: &g::Ref<g::IdentDef>) -> Result<Self, Self::Error> {
         Ok(Self { name: convert(&value.val.name), ty: try_convert(&value.val.ty)? })
+    }
+}
+
+impl TryFrom<&g::Ref<g::IdentInit>> for l::IdentInit {
+    type Error = CompileErrorSet;
+
+    fn try_from(value: &g::Ref<g::IdentInit>) -> Result<Self, Self::Error> {
+        Ok(Self { def: try_convert(&value.val.def)?, expr: try_convert(&value.val.expr)? })
     }
 }
 
@@ -216,7 +224,7 @@ impl TryFrom<&g::Ref<g::Type>> for l::TypeHint {
                 Self::Array { ty: try_convert(&array.val.ty)?, len }
             },
             g::Type::Struct(struct_ty) => {
-                let fields: l::Ref<Vec<l::Ref<l::IdentDeclaration>>> =
+                let fields: l::Ref<Vec<l::Ref<l::IdentDef>>> =
                     try_convert_list(&struct_ty.val.fields)?;
 
                 let fields = fields
@@ -262,10 +270,7 @@ impl TryFrom<&g::Ref<g::Proc>> for l::Proc {
     type Error = CompileErrorSet;
 
     fn try_from(value: &g::Ref<g::Proc>) -> Result<Self, Self::Error> {
-        Ok(Self {
-            idents: try_convert_list(&value.val.idents)?,
-            body: try_convert(&value.val.body)?,
-        })
+        Ok(Self { body: try_convert(&value.val.body)? })
     }
 }
 
@@ -310,6 +315,7 @@ impl TryFrom<&g::Ref<g::Statement>> for l::Statement {
 
     fn try_from(value: &g::Ref<g::Statement>) -> Result<Self, Self::Error> {
         Ok(match &value.val {
+            g::Statement::IdentInit(x) => Self::IdentInit(try_convert(x)?),
             g::Statement::Assign(x) => Self::Assign(try_convert(x)?),
             g::Statement::Call(x) => Self::Call(try_convert(x)?),
         })
@@ -474,6 +480,7 @@ impl TryFrom<&g::Ref<g::AssignExpr>> for l::AssignExpr {
                     spread_expr,
                 }
             },
+            g::AssignExpr::Undefined(_) => l::AssignExpr::Undefined,
         })
     }
 }

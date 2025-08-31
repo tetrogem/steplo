@@ -1,5 +1,8 @@
-main |rect1: Rect, rect2: Rect| {
+main {
+    let rect1: Rect = undefined;
     Rect_new(&rect1, 4, 4);
+
+    let rect2: Rect = undefined;
     Rect_new(&rect2, 5, 8);
 
     Rect_print_info(&rect1, "Rect 1");
@@ -13,26 +16,27 @@ type Rect = {
     height: num,
 };
 
-func Rect_new(return: &Rect, width: num, height: num) || {
+func Rect_new(return: &Rect, width: num, height: num) {
     *return = { width: width, height: height };
 }
 
-func Rect_area(return: &num, self: &Rect) || {
+func Rect_area(return: &num, self: &Rect) {
     *return = ((*self).width * (*self).height);
 }
 
-func Rect_perimeter(return: &num, self: &Rect) || {
+func Rect_perimeter(return: &num, self: &Rect) {
     *return = (((*self).width + (*self).height) * 2);
 }
 
-func Rect_print_info(self: &Rect, name: val) |str: val, temp: num| {
-    str = name;
+func Rect_print_info(self: &Rect, name: str) {
+    let str: str = name;
     str = (str ~ " dimensions: ");
     str = (str ~ (*self).width);
     str = (str ~ " x ");
     str = (str ~ (*self).height);
     out(str);
 
+    let temp: num = 0;
     Rect_perimeter(&temp, self);
     str = name;
     str = (str ~ " perimeter: ");

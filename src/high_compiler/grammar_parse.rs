@@ -5,13 +5,13 @@ use crate::high_compiler::grammar_ast::{
     BinaryParenExpr, BinaryParenExprOp, Body, BodyItem, BoolLiteral, CastExpr, CommaList,
     CommaListLink, Comment, Decimal, Deref, Digits, DivOp, ElseBodyItem, ElseIfItem, ElseItem,
     Empty, EnumItem, EqOp, Expr, FalseLiteral, Field, Func, FunctionCall, GtOp, GteOp, Ident,
-    IdentDeclaration, IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, MatchCase,
+    IdentDef, IdentInit, IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, MatchCase,
     MatchItem, Maybe, ModOp, MulOp, MultiItemBody, Name, Negative, NeqOp, NotOp, NumLiteral,
     Offset, OrOp, ParenExpr, ParensNest, ParensWrapped, PipeList, PipeListLink, Place, PlaceHead,
     PlaceIndex, PlaceIndexLink, Proc, Program, RefExpr, RefType, SemiList, SemiListLink,
     SpreadAssignExpr, Statement, StatementItem, StrLiteral, StructAssign, StructAssignField,
     StructType, SubOp, TopItem, TransmuteExpr, TrueLiteral, Type, TypeAlias, UnaryParenExpr,
-    UnaryParenExprOp, VariantLiteral, WhileItem,
+    UnaryParenExprOp, Undefined, VariantLiteral, WhileItem,
 };
 
 use super::{
@@ -252,7 +252,7 @@ impl AstParse for Name {
     }
 }
 
-impl AstParse for IdentDeclaration {
+impl AstParse for IdentDef {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_struct! {
             parse tokens;
@@ -260,6 +260,19 @@ impl AstParse for IdentDeclaration {
             [match _ = Token::Colon => (); as [TokenKind::Colon]];
             [struct ty];
             [return Self { name: Arc::new(name), ty: Arc::new(ty) }];
+        }
+    }
+}
+
+impl AstParse for IdentInit {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Let => (); as [TokenKind::Let]];
+            [struct def];
+            [match _ = Token::Eq => (); as [TokenKind::Eq]];
+            [struct expr];
+            [return Self { def: Arc::new(def), expr: Arc::new(expr) }];
         }
     }
 }
@@ -443,11 +456,8 @@ impl AstParse for Proc {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_struct! {
             parse tokens;
-            [match _ = Token::Pipe => (); as [TokenKind::Pipe]];
-            [struct idents];
-            [match _ = Token::Pipe => (); as [TokenKind::Pipe]];
             [struct body];
-            [return Self { idents: Arc::new(idents), body: Arc::new(body) }];
+            [return Self { body: Arc::new(body) }];
         }
     }
 }
@@ -710,6 +720,7 @@ impl AstParse for Statement {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_enum! {
             parse tokens => x {
+                Self::IdentInit(Arc::new(x)),
                 Self::Assign(Arc::new(x)),
                 Self::Call(Arc::new(x)),
             } else {
@@ -881,6 +892,7 @@ impl AstParse for AssignExpr {
                 Self::Struct(Arc::new(x)),
                 Self::Array(Arc::new(x)),
                 Self::Expr(Arc::new(x)),
+                Self::Undefined(Arc::new(x)),
             } else {
                 "Expected assign expression"
             }
@@ -963,6 +975,16 @@ impl AstParse for Expr {
             } else {
                 "Expected expression"
             }
+        }
+    }
+}
+
+impl AstParse for Undefined {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Undefined => (); as [TokenKind::Undefined]];
+            [return Self];
         }
     }
 }

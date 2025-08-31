@@ -1,6 +1,6 @@
-main |a: num, b: num| {
-    a = 100;
-    b = 987;
+main {
+    let a: num = 100;
+    let b: num = 987;
 
     out(("A: " ~ a));
     out(("B: " ~ b));
@@ -11,8 +11,8 @@ main |a: num, b: num| {
     out(("B: " ~ b));
 }
 
-func swap(a: &num, b: &num) |temp: num| {
-    temp = *a;
+func swap(a: &num, b: &num) {
+    let temp: num = *a;
     *a = *b;
     *b = temp;
 }

@@ -1,7 +1,9 @@
-main |null: str, line: str, len: uint| {
+main {
     out("1");
     out("2");
     out("3");
+
+    let null: str = "";
     in(&null);
 
     stdout_clear();
@@ -9,11 +11,13 @@ main |null: str, line: str, len: uint| {
     out("5");
     out("6");
 
+    let line: str = "";
     stdout_read(&line, 2);
     line = (line ~ "Hello!");
     stdout_write(line, 2);
     stdout_write(line, 10);
 
+    let len: uint = 0;
     stdout_len(&len);
     out(("stdout line count: " ~ len));
 }

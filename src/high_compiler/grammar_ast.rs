@@ -22,7 +22,7 @@ pub struct Main {
 #[derive(Debug)]
 pub struct Func {
     pub name: Ref<Name>,
-    pub params: Ref<CommaList<IdentDeclaration>>,
+    pub params: Ref<CommaList<IdentDef>>,
     pub proc: Ref<Proc>,
 }
 
@@ -69,13 +69,19 @@ pub struct ArrayType {
 
 #[derive(Debug)]
 pub struct StructType {
-    pub fields: Ref<CommaList<IdentDeclaration>>,
+    pub fields: Ref<CommaList<IdentDef>>,
 }
 
 #[derive(Debug)]
-pub struct IdentDeclaration {
+pub struct IdentDef {
     pub name: Ref<Name>,
     pub ty: Ref<Type>,
+}
+
+#[derive(Debug)]
+pub struct IdentInit {
+    pub def: Ref<IdentDef>,
+    pub expr: Ref<AssignExpr>,
 }
 
 #[derive(Debug)]
@@ -142,7 +148,6 @@ pub struct Deref {
 
 #[derive(Debug)]
 pub struct Proc {
-    pub idents: Ref<CommaList<IdentDeclaration>>,
     pub body: Ref<Body>,
 }
 
@@ -213,6 +218,7 @@ pub struct StatementItem {
 
 #[derive(Debug)]
 pub enum Statement {
+    IdentInit(Ref<IdentInit>),
     Assign(Ref<Assign>),
     Call(Ref<FunctionCall>),
 }
@@ -234,6 +240,7 @@ pub enum AssignExpr {
     Expr(Ref<Expr>),
     Array(Ref<ArrayAssign>),
     Struct(Ref<StructAssign>),
+    Undefined(Ref<Undefined>),
 }
 
 #[derive(Debug)]
@@ -245,6 +252,9 @@ pub enum Expr {
     Cast(Ref<CastExpr<Expr>>),
     Transmute(Ref<TransmuteExpr<Expr>>),
 }
+
+#[derive(Debug)]
+pub struct Undefined;
 
 #[derive(Debug)]
 pub struct CastExpr<T> {

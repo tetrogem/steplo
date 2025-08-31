@@ -50,7 +50,7 @@
       "patterns": [
         {
           "name": "keyword.steplo",
-          "match": "\\b(main|func|ref|deref|if|else|while|slice|type|enum|match)\\b"
+          "match": "\\b(main|func|if|else|while|slice|type|enum|match|let|undefined)\\b"
         }
       ]
     },
@@ -201,7 +201,7 @@
           "begin": "(:)\\s*",
           "beginCaptures": { "1": { "name": "keyword.operator.steplo" } },
           "patterns": [{ "include": "#types" }],
-          "end": "(?=\\)|,|;|\\{|$|\\n|\\|)"
+          "end": "(?=\\)|,|;|\\{|$|\\n|\\||=)"
         }
       ]
     },
@@ -247,18 +247,14 @@
       ]
     },
     "stackVars": {
-      "begin": "(\\|)",
+      "begin": "(let)",
       "beginCaptures": {
         "1": { "name": "keyword.operator.steplo" }
       },
-      "patterns": [
-        { "include": "#variables" },
-        { "include": "#typeHints" },
-        { "name": "punctuation.steplo", "match": "," }
-      ],
-      "end": "(\\|)",
+      "patterns": [{ "include": "#variables" }, { "include": "#typeHints" }],
+      "end": "(=)",
       "endCaptures": {
-        "1": { "name": "keyword.operator.steplo" }
+        "1": { "name": "punctuation.steplo" }
       }
     }
   },

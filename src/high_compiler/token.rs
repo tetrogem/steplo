@@ -44,6 +44,8 @@ pub enum Token {
     Type,
     Hashtag,
     Match,
+    Let,
+    Undefined,
 }
 
 fn consume_char(
@@ -120,6 +122,8 @@ fn consume_word(
         "enum" => Token::Enum,
         "type" => Token::Type,
         "match" => Token::Match,
+        "let" => Token::Let,
+        "undefined" => Token::Undefined,
         _ => {
             if word.is_empty() {
                 bail!("Word is empty");

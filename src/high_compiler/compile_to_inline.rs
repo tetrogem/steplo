@@ -80,7 +80,7 @@ mod loc_manager {
             let mut local_name_to_info = BTreeMap::new();
             let mut ordered_local_names = Vec::new();
 
-            for decl in &proc.idents.val {
+            for decl in proc.idents.iter() {
                 local_name_to_info
                     .insert(decl.val.name.val.str.clone(), o::VarInfo::new(decl.val.size));
 
@@ -243,7 +243,7 @@ fn compile_statement(
                 Arc::new(compile_place_to_addr_expr(&x.val.place.val, proc_kind, loc_m)?);
 
             x.val
-                .expr
+                .exprs
                 .val
                 .iter()
                 .map(|ae| {

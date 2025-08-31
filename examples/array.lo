@@ -1,7 +1,8 @@
-main |foo: val, bar: [val; 5], ints: [int; 6]| {
-    foo = "Variable";
+main {
+    let foo: val = "Variable";
     out(foo);
 
+    let bar: [val; 5] = [0...];
     bar[0] = 10;
     out(bar[0]);
 
@@ -12,7 +13,6 @@ main |foo: val, bar: [val; 5], ints: [int; 6]| {
     out(bar[3]);
     out(bar[4]);
 
-    ints = [1, 2, 3, 4, 5, 6];
-
+    let ints: [int; 6] = [1, 2, 3, 4, 5, 6];
     ints = [10, 20, 30, 0...];
 }

@@ -171,7 +171,7 @@ impl VagueTypeDisplay {
 }
 
 impl VagueType {
-    pub fn to_display(&self) -> VagueTypeDisplay {
+    fn to_display(&self) -> VagueTypeDisplay {
         match self {
             Self::Any => VagueTypeDisplay::Ticked("any".into()),
             Self::Unknown => VagueTypeDisplay::Ticked("_".into()),
@@ -435,6 +435,8 @@ impl CollapsedCompileError {
                     TokenKind::Type => TokenString::Keyword("type"),
                     TokenKind::Hashtag => TokenString::Punctuation("#"),
                     TokenKind::Match => TokenString::Keyword("match"),
+                    TokenKind::Let => TokenString::Keyword("let"),
+                    TokenKind::Undefined => TokenString::Keyword("undefined"),
                 }
             }
 

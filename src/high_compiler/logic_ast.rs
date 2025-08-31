@@ -44,7 +44,7 @@ pub struct Main {
 #[derive(Debug)]
 pub struct Func {
     pub name: Ref<Name>,
-    pub params: Ref<Vec<Ref<IdentDeclaration>>>,
+    pub params: Ref<Vec<Ref<IdentDef>>>,
     pub proc: Ref<Proc>,
 }
 
@@ -245,9 +245,15 @@ pub struct FieldTypeHint {
 }
 
 #[derive(Debug)]
-pub struct IdentDeclaration {
+pub struct IdentDef {
     pub name: Ref<Name>,
     pub ty: Ref<TypeHint>,
+}
+
+#[derive(Debug)]
+pub struct IdentInit {
+    pub def: Ref<IdentDef>,
+    pub expr: Ref<AssignExpr>,
 }
 
 #[derive(Debug)]
@@ -280,7 +286,6 @@ pub struct Deref {
 
 #[derive(Debug)]
 pub struct Proc {
-    pub idents: Ref<Vec<Ref<IdentDeclaration>>>,
     pub body: Ref<Body>,
 }
 
@@ -329,6 +334,7 @@ pub struct MatchCase {
 
 #[derive(Debug)]
 pub enum Statement {
+    IdentInit(Ref<IdentInit>),
     Assign(Ref<Assign>),
     Call(Ref<FunctionCall>),
     Native(Ref<NativeOperation>), // not compiled to by source code, internal/built-ins only
@@ -351,6 +357,7 @@ pub enum AssignExpr {
     Expr(Ref<Expr>),
     Array { single_exprs: Ref<Vec<Ref<AssignExpr>>>, spread_expr: Option<Ref<AssignExpr>> },
     Struct(Ref<Vec<Ref<StructAssignField>>>),
+    Undefined,
 }
 
 #[derive(Debug)]

@@ -1,0 +1,20 @@
+main {
+    let foo: num = 10;
+    let bar: str = "Hello world!";
+    let baz: bool = false;
+    let qux: num = undefined;
+
+    out(bar);
+    out(foo);
+
+    if true {
+        let bar: str = "Other string";
+        out(bar);
+
+        let foo: bool = true;
+        out(foo);
+    }
+
+    out(bar);
+    out(foo);
+}

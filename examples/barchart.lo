@@ -1,10 +1,11 @@
-main |input: str, line: str, loop: bool| {
+main {
     print_blank_chart();
     out("Type a number between 1-9. Type 'quit' to quit.");
     out(""); // error line
 
-    loop = true;
+    let loop: bool = true;
     while loop {
+        let input: str = "";
         in(&input);
 
         if (input == "quit") {
@@ -14,14 +15,15 @@ main |input: str, line: str, loop: bool| {
             stdout_write("Error: input is outside of range", 10);
         } else {
             stdout_write("", 10);
+            let line: str = "";
             stdout_read(&line, <<uint>>(<<uint>>input - 1));
             stdout_write((line ~ "x"), <<uint>>(<<uint>>input - 1));
         }
     }
 }
 
-func print_blank_chart() |i: uint| {
-    i = 1;
+func print_blank_chart() {
+    let i: uint = 1;
     while (i <= 9) {
         out("");
         i = (i + 1);

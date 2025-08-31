@@ -13,8 +13,8 @@ type Message = {
     },
 };
 
-main |msg: Message| {
-    msg = {
+main {
+    let msg: Message = {
         created_time: 123456789,
         sender_name: "Steplo",
         likes: 4,
@@ -32,10 +32,10 @@ main |msg: Message| {
     print_links(&msg.content.links);
 }
 
-func print_links(links: &[Link; 2]) |i: uint, link: &Link| {
-    i = 0;
+func print_links(links: &[Link; 2]) {
+    let i: uint = 0;
     while (i < 2) {
-        link = &(*links)[i];
+        let link: &Link = &(*links)[i];
         out(((("Visit '" ~ (*link).name) ~ "': ") ~ (*link).redirect));
 
         i = (i + 1);

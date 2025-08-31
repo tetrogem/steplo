@@ -1,5 +1,5 @@
-main |arr: [num; 11], new_len: uint| {
-    arr = [1, 1, 2, 3, 3, 4, 5, 6, 6, 6, 7];
+main{
+    let arr: [num; 11] = [1, 1, 2, 3, 3, 4, 5, 6, 6, 6, 7];
     out("With duplicates:");
     print_arr(&arr, 11);
 
@@ -7,16 +7,17 @@ main |arr: [num; 11], new_len: uint| {
     // delete_index(&arr, 5);
     // print_arr(&arr, 10);
 
+    let new_len: uint = 0;
     delete_duplicates(&new_len, &arr);
 
     out("Without duplicates:");
     print_arr(&arr, new_len);
 }
 
-func delete_duplicates(ret_new_len: &uint, arr: &[num; 11]) |last: num, i: uint, new_len: uint| {
-    i = 0;
-    new_len = 11;
-    last = 0;
+func delete_duplicates(ret_new_len: &uint, arr: &[num; 11]) {
+    let i: uint = 0;
+    let new_len: uint = 11;
+    let last: num = 0;
     while (i < new_len) {
         // print_arr(arr, new_len);
         // out((i ~ ":"));
@@ -36,8 +37,8 @@ func delete_duplicates(ret_new_len: &uint, arr: &[num; 11]) |last: num, i: uint,
     *ret_new_len = new_len;
 }
 
-func delete_index(arr: &[num; 11], index: uint) |i: uint| {
-    i = 0;
+func delete_index(arr: &[num; 11], index: uint) {
+    let i: uint = 0;
     while (i < 11) {
         if (i > index) {
             (*arr)[(i - 1)] = (*arr)[i];
@@ -47,9 +48,9 @@ func delete_index(arr: &[num; 11], index: uint) |i: uint| {
     }
 }
 
-func print_arr(arr: &[num; 11], len: uint) |i: uint, str: val| {
-    str = "[";
-    i = 0;
+func print_arr(arr: &[num; 11], len: uint) {
+    let str: str = "[";
+    let i: uint = 0;
     while (i < len) {
         str = (str ~ (*arr)[i]);
         if (i != (len - 1)) {

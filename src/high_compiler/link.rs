@@ -8,14 +8,14 @@ use super::{srced::Srced, type_resolved_ast as ast};
 #[derive(Debug, Clone)]
 pub struct Proc {
     pub kind: ProcKind,
-    pub idents: ast::Ref<Vec<ast::Ref<ast::IdentDeclaration>>>,
+    pub idents: Arc<Vec<ast::Ref<ast::IdentDef>>>,
     pub sub_procs: ast::Ref<Vec<ast::Ref<SubProc>>>,
 }
 
 #[derive(Debug, Clone)]
 pub enum ProcKind {
     Main,
-    Func { name: ast::Ref<ast::Name>, params: ast::Ref<Vec<ast::Ref<ast::IdentDeclaration>>> },
+    Func { name: ast::Ref<ast::Name>, params: ast::Ref<Vec<ast::Ref<ast::IdentDef>>> },
 }
 
 #[derive(Debug, Clone)]
@@ -101,10 +101,7 @@ pub fn link(ast: &ast::Ref<ast::Program>) -> Vec<ast::Ref<Proc>> {
             }),
         };
 
-        procs.push(Arc::new(Srced {
-            range: proc.idents.range.merge(proc.sub_procs.range),
-            val: proc,
-        }));
+        procs.push(Arc::new(Srced { range: proc.sub_procs.range, val: proc }));
     }
 
     procs

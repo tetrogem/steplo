@@ -1,4 +1,4 @@
-main || {
+main {
     while true {
         out("Hello!");
         wait_s(1);
