@@ -57,8 +57,6 @@ impl TypeAliasManager {
         for item in program.val.items.val.iter() {
             let l::TopItem::Type(item) = &item.val else { continue };
 
-            println!("type alias: {item:?}");
-
             match &item.val {
                 l::TypeItem::Alias(x) => {
                     alias_to_type_hint.insert(x.val.name.val.str.clone(), x.val.ty.clone());
@@ -368,8 +366,6 @@ mod ident_manager {
                     Ident::Internal { name: name.val.str.clone(), uuid: *uuid }
                 },
             };
-
-            println!("{def:?}");
 
             let ident_info = Arc::new(IdentInfo { def, unique_name });
 
@@ -1512,7 +1508,6 @@ fn eval_deref(
     type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
     let addr_type = eval_expr(&item.val.addr, None, ident_m, type_alias_m)?;
-    println!("DEREF ADDR TY: {addr_type:?}");
     let l::Type::Ref(deref_type) = addr_type.as_ref() else {
         return Err(CompileErrorSet::new_error(
             item.range,
@@ -1561,7 +1556,6 @@ fn infer_enum_name(
         None => match expected_type.map(AsRef::as_ref) {
             Some(l::Type::Enum { name }) => name,
             _ => {
-                println!("ERR: [infer_enum_name] {variant_literal:?}");
                 return Err(CompileErrorSet::new_error(
                     variant_literal.range,
                     CompileError::Type(TypeError::CannotInfer),
@@ -1573,6 +1567,7 @@ fn infer_enum_name(
     Ok(enum_name.clone())
 }
 
+#[derive(Debug)]
 struct StmtDependent<T> {
     stmt_deps: Vec<t::Ref<t::Statement>>,
     value: T,
@@ -1687,7 +1682,6 @@ fn typecheck_expr(
         ),
         l::Expr::Array { single_exprs, spread_expr } => {
             let Some(expected_type) = expected_type else {
-                println!("ERR: [typecheck_array] {item:?}");
                 return Err(CompileErrorSet::new_error(
                     item.range,
                     CompileError::Type(TypeError::CannotInfer),
@@ -1751,7 +1745,6 @@ fn typecheck_expr(
         },
         l::Expr::Struct(assign_fields) => {
             let Some(expected_type) = expected_type else {
-                println!("ERR: [typecheck_struct] {item:?}");
                 return Err(CompileErrorSet::new_error(
                     item.range,
                     CompileError::Type(TypeError::CannotInfer),
@@ -1877,7 +1870,7 @@ fn eval_expr(
         l::Expr::Statement(_) => Ok(UNIT_TYPE.clone()),
         l::Expr::If(if_item) => Ok(expected_type.cloned().unwrap_or_else(|| UNIT_TYPE.clone())), // TODO
         l::Expr::While(srced) => Ok(UNIT_TYPE.clone()), // TODO
-        l::Expr::Match(srced) => Ok(UNIT_TYPE.clone()), // TODO
+        l::Expr::Match(srced) => Ok(expected_type.cloned().unwrap_or_else(|| UNIT_TYPE.clone())), // TODO
         l::Expr::Block(block) => 'block: {
             let trail = &block.val.items.val;
             if trail.trailing {
@@ -1890,7 +1883,6 @@ fn eval_expr(
             }
         },
         l::Expr::Array { single_exprs, spread_expr } => {
-            println!("ERR: [eval_array] {item:?}");
             let Some(expected_type) = expected_type else {
                 return Err(CompileErrorSet::new_error(
                     item.range,
@@ -1940,7 +1932,6 @@ fn eval_expr(
         },
         l::Expr::Struct(assign_fields) => {
             let Some(expected_type) = expected_type else {
-                println!("ERR: [eval_struct] {item:?}");
                 return Err(CompileErrorSet::new_error(
                     item.range,
                     CompileError::Type(TypeError::CannotInfer),
@@ -2002,7 +1993,6 @@ fn eval_expr(
         },
         l::Expr::Undefined => {
             let Some(expected_type) = expected_type else {
-                println!("ERR: [eval_undefined] {item:?}");
                 return Err(CompileErrorSet::new_error(
                     item.range,
                     CompileError::Type(TypeError::CannotInfer),

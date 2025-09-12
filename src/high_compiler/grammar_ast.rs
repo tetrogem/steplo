@@ -81,7 +81,7 @@ pub struct IdentDef {
 #[derive(Debug)]
 pub struct IdentInit {
     pub def: Ref<IdentDef>,
-    pub expr: Ref<Expr>,
+    pub expr: Ref<Priority<Statement, Expr>>,
 }
 
 #[derive(Debug)]
@@ -143,12 +143,12 @@ pub struct Ident {
 
 #[derive(Debug)]
 pub struct Deref {
-    pub addr: Ref<Expr>,
+    pub addr: Ref<Priority<Expr, ParensNest<Priority<Statement, Expr>>>>,
 }
 
 #[derive(Debug)]
 pub struct Proc {
-    pub body: Ref<Expr>,
+    pub body: Ref<Priority<Statement, Expr>>,
 }
 
 #[derive(Debug)]
@@ -158,7 +158,7 @@ pub struct Block {
 
 #[derive(Debug)]
 pub enum ExprOrSemi {
-    Expr(Ref<ShapedExpr>),
+    Expr(Ref<Priority<Statement, Expr>>),
     Semi(Ref<Semi>),
 }
 
@@ -207,11 +207,16 @@ pub struct MatchCase {
 }
 
 #[derive(Debug)]
-pub enum ShapedExpr {
+pub enum Statement {
     IdentInit(Ref<IdentInit>),
     Assign(Ref<Assign>),
     Call(Ref<FunctionCall>),
-    NonShaped(Ref<Expr>),
+}
+
+#[derive(Debug)]
+pub enum Priority<First, Second> {
+    First(Ref<First>),
+    Second(Ref<Second>),
 }
 
 #[derive(Debug)]
@@ -223,7 +228,7 @@ pub struct FunctionCall {
 #[derive(Debug)]
 pub struct Assign {
     pub place: Ref<Place>,
-    pub expr: Ref<ParensNest<Expr>>,
+    pub expr: Ref<ParensNest<Priority<Statement, Expr>>>,
 }
 
 #[derive(Debug)]
@@ -241,7 +246,6 @@ pub enum Expr {
     Array(Ref<ArrayAssign>),
     Struct(Ref<StructAssign>),
     Undefined(Ref<Undefined>),
-    Shaped(Ref<ShapedExpr>),
 }
 
 #[derive(Debug)]

@@ -1,5 +1,5 @@
 use std::{
-    ops::{Add, Div, Mul, Neg, Not, Sub},
+    ops::{Add, Div, Mul, Neg, Not, Rem, Sub},
     str::FromStr,
     sync::Arc,
 };
@@ -224,6 +224,14 @@ fn maybe_const_eval_expr(expr: &Arc<Expr>) -> Option<Arc<Expr>> {
         }
     }
 
+    impl Rem<Float> for Float {
+        type Output = Float;
+
+        fn rem(self, rhs: Float) -> Self::Output {
+            Self(self.0 % rhs.0)
+        }
+    }
+
     impl Neg for Int {
         type Output = Int;
 
@@ -296,12 +304,28 @@ fn maybe_const_eval_expr(expr: &Arc<Expr>) -> Option<Arc<Expr>> {
             {
                 return Some(a.clone());
             }
+
+            if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Int>) {
+                return Some((a + b).to_literal());
+            }
+
+            if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                return Some((a + b).to_literal());
+            }
         },
         Expr::Sub(args) => {
             if let Some(a) =
                 l_side_if_r_is(args, |expr| is_literal("0")(expr) || is_literal("0.0")(expr))
             {
                 return Some(a.clone());
+            }
+
+            if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Int>) {
+                return Some((a - b).to_literal());
+            }
+
+            if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                return Some((a - b).to_literal());
             }
         },
         Expr::Mul(args) => {
@@ -317,6 +341,30 @@ fn maybe_const_eval_expr(expr: &Arc<Expr>) -> Option<Arc<Expr>> {
                 a_side_if_b_is(args, |expr| is_literal("1")(expr) || is_literal("1.0")(expr))
             {
                 return Some(a.clone());
+            }
+
+            if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Int>) {
+                return Some((a * b).to_literal());
+            }
+
+            if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                return Some((a * b).to_literal());
+            }
+        },
+        Expr::Div(args) => {
+            if let Some(other) =
+                l_side_if_r_is(args, |expr| is_literal("1")(expr) || is_literal("1.0")(expr))
+            {
+                return Some(other.clone());
+            }
+
+            if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                return Some((a / b).to_literal());
+            }
+        },
+        Expr::Mod(args) => {
+            if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                return Some((a % b).to_literal());
             }
         },
         Expr::Eq(args) => {

@@ -207,7 +207,15 @@ impl TryFrom<&g::Ref<g::IdentInit>> for l::IdentInit {
     type Error = CompileErrorSet;
 
     fn try_from(value: &g::Ref<g::IdentInit>) -> Result<Self, Self::Error> {
-        Ok(Self { def: try_convert(&value.val.def)?, expr: try_convert(&value.val.expr)? })
+        Ok(Self {
+            def: try_convert(&value.val.def)?,
+            expr: {
+                match &value.val.expr.val {
+                    g::Priority::First(expr) => try_convert(expr),
+                    g::Priority::Second(expr) => try_convert(expr),
+                }?
+            },
+        })
     }
 }
 
@@ -278,7 +286,12 @@ impl TryFrom<&g::Ref<g::Proc>> for l::Proc {
     type Error = CompileErrorSet;
 
     fn try_from(value: &g::Ref<g::Proc>) -> Result<Self, Self::Error> {
-        Ok(Self { body: try_convert(&value.val.body)? })
+        Ok(Self {
+            body: match &value.val.body.val {
+                g::Priority::First(expr) => try_convert(expr),
+                g::Priority::Second(expr) => try_convert(expr),
+            }?,
+        })
     }
 }
 
@@ -294,7 +307,12 @@ impl TryFrom<&g::Ref<g::Block>> for l::Block {
             match &g_item.val {
                 g::ExprOrSemi::Semi(_) => prev_was_semi = true,
                 g::ExprOrSemi::Expr(expr) => {
-                    l_items.push(try_convert(&expr)?);
+                    let expr = match &expr.val {
+                        g::Priority::First(expr) => try_convert(expr),
+                        g::Priority::Second(expr) => try_convert(expr),
+                    }?;
+
+                    l_items.push(expr);
                     prev_was_semi = false;
                 },
             }
@@ -312,24 +330,23 @@ impl TryFrom<&g::Ref<g::Block>> for l::Block {
     }
 }
 
-impl TryFrom<&g::Ref<g::ShapedExpr>> for l::Expr {
+impl TryFrom<&g::Ref<g::Statement>> for l::Expr {
     type Error = CompileErrorSet;
 
-    fn try_from(value: &g::Ref<g::ShapedExpr>) -> Result<Self, Self::Error> {
+    fn try_from(value: &g::Ref<g::Statement>) -> Result<Self, Self::Error> {
         Ok(match &value.val {
-            g::ShapedExpr::IdentInit(x) => Self::Statement(Arc::new(Srced {
+            g::Statement::IdentInit(x) => Self::Statement(Arc::new(Srced {
                 range: value.range,
                 val: l::Statement::IdentInit(try_convert(x)?),
             })),
-            g::ShapedExpr::Assign(x) => Self::Statement(Arc::new(Srced {
+            g::Statement::Assign(x) => Self::Statement(Arc::new(Srced {
                 range: value.range,
                 val: l::Statement::Assign(try_convert(x)?),
             })),
-            g::ShapedExpr::Call(x) => Self::Statement(Arc::new(Srced {
+            g::Statement::Call(x) => Self::Statement(Arc::new(Srced {
                 range: value.range,
                 val: l::Statement::Call(try_convert(x)?),
             })),
-            g::ShapedExpr::NonShaped(x) => x.try_into()?,
         })
     }
 }
@@ -391,7 +408,13 @@ impl TryFrom<&g::Ref<g::Assign>> for l::Assign {
     fn try_from(value: &g::Ref<g::Assign>) -> Result<Self, Self::Error> {
         Ok(Self {
             place: try_convert(&value.val.place)?,
-            expr: try_convert(unnest(&value.val.expr))?,
+            expr: {
+                let expr = unnest(&value.val.expr);
+                match &expr.val {
+                    g::Priority::First(expr) => try_convert(expr),
+                    g::Priority::Second(expr) => try_convert(expr),
+                }?
+            },
         })
     }
 }
@@ -412,7 +435,6 @@ impl TryFrom<&g::Ref<g::Expr>> for l::Expr {
 
     fn try_from(value: &g::Ref<g::Expr>) -> Result<Self, Self::Error> {
         Ok(match &value.val {
-            g::Expr::Shaped(x) => x.try_into()?,
             g::Expr::Literal(x) => Self::Literal(try_convert(x)?),
             g::Expr::Place(x) => Self::Place(try_convert(x)?),
             g::Expr::Ref(x) => Self::Ref(try_convert(unnest(&x.val.place))?),
@@ -661,7 +683,15 @@ impl TryFrom<&g::Ref<g::Deref>> for l::Deref {
     type Error = CompileErrorSet;
 
     fn try_from(value: &g::Ref<g::Deref>) -> Result<Self, Self::Error> {
-        Ok(Self { addr: try_convert(&value.val.addr)? })
+        Ok(Self {
+            addr: match &value.val.addr.val {
+                g::Priority::First(expr) => try_convert(expr),
+                g::Priority::Second(expr) => match &unnest(expr).val {
+                    g::Priority::First(expr) => try_convert(expr),
+                    g::Priority::Second(expr) => try_convert(expr),
+                },
+            }?,
+        })
     }
 }
 

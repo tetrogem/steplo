@@ -5,7 +5,7 @@ use uuid::Uuid;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     mem,
-    ops::{Add, Div, Mul, Neg, Not, Sub},
+    ops::{Add, Div, Mul, Neg, Not, Rem, Sub},
     str::FromStr,
     sync::Arc,
 };
@@ -1237,6 +1237,44 @@ fn optimization_eval_well_known_exprs(
             Arc::new(Expr::Value(Arc::new(Value::Literal(str.into()))))
         }
 
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+        struct Bool(bool);
+
+        impl Bool {
+            pub fn to_literal(self) -> Arc<Expr<UMemLoc>> {
+                let lit = if self.0 { "true" } else { "false" };
+                make_str_literal(lit)
+            }
+
+            pub fn and(self, rhs: Self) -> Self {
+                Self(self.0 && rhs.0)
+            }
+
+            pub fn or(self, rhs: Self) -> Self {
+                Self(self.0 || rhs.0)
+            }
+        }
+
+        impl FromStr for Bool {
+            type Err = anyhow::Error;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Ok(match s {
+                    "true" => Self(true),
+                    "false" => Self(false),
+                    _ => bail!("str is not \"true\" or \"false\""),
+                })
+            }
+        }
+
+        impl Not for Bool {
+            type Output = Bool;
+
+            fn not(self) -> Self::Output {
+                Self(self.0.not())
+            }
+        }
+
         #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
         struct Int(f64);
 
@@ -1333,6 +1371,14 @@ fn optimization_eval_well_known_exprs(
 
             fn div(self, rhs: Float) -> Self::Output {
                 Self(self.0 / rhs.0)
+            }
+        }
+
+        impl Rem<Float> for Float {
+            type Output = Float;
+
+            fn rem(self, rhs: Float) -> Self::Output {
+                Self(self.0 % rhs.0)
             }
         }
 
@@ -1473,9 +1519,49 @@ fn optimization_eval_well_known_exprs(
                     return Some((a / b).to_literal());
                 }
             },
+            Expr::Mod(args) => {
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                    return Some((a % b).to_literal());
+                }
+            },
             Expr::Join(args) => {
                 if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<String>) {
                     return Some(make_str_literal(&format!("{a}{b}")));
+                }
+            },
+            Expr::Eq(args) => {
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Bool>) {
+                    return Some(Bool(a == b).to_literal());
+                }
+
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Int>) {
+                    return Some(Bool(a == b).to_literal());
+                }
+
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                    return Some(Bool(a == b).to_literal());
+                }
+
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<String>) {
+                    return Some(Bool(a == b).to_literal());
+                }
+            },
+            Expr::Lt(args) => {
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Int>) {
+                    return Some(Bool(a < b).to_literal());
+                }
+
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                    return Some(Bool(a < b).to_literal());
+                }
+            },
+            Expr::Gt(args) => {
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Int>) {
+                    return Some(Bool(a > b).to_literal());
+                }
+
+                if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
+                    return Some(Bool(a > b).to_literal());
                 }
             },
             _ => {},

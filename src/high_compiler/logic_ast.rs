@@ -136,7 +136,7 @@ impl TypeHint {
                 PrimitiveType::Uint => uinteger_type_hint(range),
                 PrimitiveType::Bool => bool_type_hint(range),
             },
-            Type::Enum { name } => nominal_type_hint(range, &name),
+            Type::Enum { name } => nominal_type_hint(range, name),
             Type::Ref(ty) => {
                 TypeHint::Ref(Arc::new(Srced { range, val: TypeHint::from_type(ty, range) }))
             },
@@ -151,7 +151,10 @@ impl TypeHint {
                     .map(|field| {
                         let field = FieldTypeHint {
                             name: Arc::new(Srced { range, val: Name { str: field.name.clone() } }),
-                            ty: Arc::new(Srced { range, val: TypeHint::from_type(ty, range) }),
+                            ty: Arc::new(Srced {
+                                range,
+                                val: TypeHint::from_type(&field.ty, range),
+                            }),
                         };
 
                         Arc::new(Srced { range, val: field })

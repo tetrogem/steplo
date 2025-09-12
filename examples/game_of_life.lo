@@ -37,12 +37,7 @@ func print_cells(cells: &[[bool; 18]; 9]) {
         let row: str = "";
 
         while (x < 18) {
-            if (*cells)[y][x] {
-                row = (row ~ "██");
-            } else {
-                row = (row ~ "░░");
-            }
-
+            row = (row ~ if (*cells)[y][x] { "██" } else { "░░" });
             x = (x + 1);
         }
 

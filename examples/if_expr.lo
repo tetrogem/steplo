@@ -11,42 +11,34 @@ enum Sign { Pos | Neg }
 enum Parity { Even | Odd }
 type NumCheck = { sign: Sign, parity: Parity };
 
-// func test_num(num: num) {
-//     let kind: str = if ((num % 2) == 0) {
-//         if (num > 0) {
-//             "pos_even"
-//         } else {
-//             "neg_even"
-//         }
-//     } else {
-//         if (num > 0) {
-//             "pos_odd"
-//         } else {
-//             "neg_odd"
-//         }
-//     };
-
-//     out(kind);
-// }
-
 func check_num(ret: &NumCheck, num: num) {
-    if ((num % 2) == 0) {
-        if (num >= 0) {
-            *ret = { sign: #Pos, parity: #Even };
-        } else {
-            *ret = { sign: #Neg, parity: #Even };
-        }
+    *ret = if ((num % 2) == 0) {
+        if (num >= 0) { sign: #Pos, parity: #Even }
+        else { sign: #Neg, parity: #Even }
     } else {
-        if (num >= 0) {
-            *ret = { sign: #Pos, parity: #Odd };
-        } else {
-            *ret = { sign: #Neg, parity: #Odd };
-        }
-    }
+        if (num >= 0) { sign: #Pos, parity: #Odd }
+        else { sign: #Neg, parity: #Odd }
+    };
 }
 
 func test_num(num: num) {
     let check: NumCheck = undefined;
     check_num(&check, num);
-    out(((<<uint>>check.sign ~ " & ") ~ <<uint>>check.parity));
+
+    let sign_str: str = "";
+    Sign_to_str(&sign_str, check.sign);
+    let parity_str: str = "";
+    Parity_to_str(&parity_str, check.parity);
+
+    out((num ~ (": " ~ ((sign_str ~ " & ") ~ parity_str))));
+}
+
+func Sign_to_str(ret: &str, self: Sign) *ret = match self {
+    #Pos -> "Pos"
+    #Neg -> "Neg"
+}
+
+func Parity_to_str(ret: &str, self: Parity) *ret = match self {
+    #Even -> "Even"
+    #Odd -> "Odd"
 }

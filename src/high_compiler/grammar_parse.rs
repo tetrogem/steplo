@@ -8,10 +8,10 @@ use crate::high_compiler::grammar_ast::{
     IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, MatchCase, MatchItem, Maybe, ModOp,
     MulOp, Name, Negative, NeqOp, NominalType, NotOp, NumLiteral, Offset, OrOp, ParenExpr,
     ParensNest, ParensWrapped, PipeList, PipeListLink, Place, PlaceHead, PlaceIndex,
-    PlaceIndexLink, Proc, Program, RefExpr, RefType, Semi, SemiList, SemiListLink, ShapedExpr,
-    SpreadAssignExpr, StrLiteral, StructAssign, StructAssignField, StructType, SubOp, TopItem,
-    TransmuteExpr, TrueLiteral, Type, TypeAlias, UnaryParenExpr, UnaryParenExprOp, Undefined,
-    VariantLiteral, WhileItem,
+    PlaceIndexLink, Priority, Proc, Program, RefExpr, RefType, Semi, SemiList, SemiListLink,
+    SpreadAssignExpr, Statement, StrLiteral, StructAssign, StructAssignField, StructType, SubOp,
+    TopItem, TransmuteExpr, TrueLiteral, Type, TypeAlias, UnaryParenExpr, UnaryParenExprOp,
+    Undefined, VariantLiteral, WhileItem,
 };
 
 use super::{
@@ -586,6 +586,23 @@ impl<T: AstParse> AstParse for PipeListLink<T> {
     }
 }
 
+impl<First, Second> AstParse for Priority<First, Second>
+where
+    First: AstParse,
+    Second: AstParse,
+{
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
+            parse tokens => x {
+                Self::First(Arc::new(x)),
+                Self::Second(Arc::new(x)),
+            } else {
+                "Expected priority"
+            }
+        }
+    }
+}
+
 impl AstParse for ExprOrSemi {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_enum! {
@@ -700,14 +717,13 @@ impl AstParse for MatchCase {
     }
 }
 
-impl AstParse for ShapedExpr {
+impl AstParse for Statement {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_enum! {
             parse tokens => x {
                 Self::IdentInit(Arc::new(x)),
                 Self::Assign(Arc::new(x)),
                 Self::Call(Arc::new(x)),
-                Self::NonShaped(Arc::new(x)),
             } else {
                 "Expected statement"
             }
