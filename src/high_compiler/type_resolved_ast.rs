@@ -69,14 +69,16 @@ pub struct Proc {
 
 #[derive(Debug)]
 pub struct Body {
-    pub items: Ref<Vec<Ref<BodyItem>>>,
+    pub items: Ref<Vec<Ref<Statement>>>,
 }
 
 #[derive(Debug)]
-pub enum BodyItem {
-    Statement(Ref<Statement>),
+pub enum Statement {
+    Assign(Ref<Assign>),
+    Call(Ref<FunctionCall>),
     If(Ref<IfItem>),
     While(Ref<WhileItem>),
+    Native(Ref<NativeOperation>), // not compiled to by source code, internal/built-ins only
 }
 
 #[derive(Debug)]
@@ -95,13 +97,6 @@ pub struct ElseItem {
 pub struct WhileItem {
     pub condition: Ref<Expr>,
     pub body: Ref<Body>,
-}
-
-#[derive(Debug)]
-pub enum Statement {
-    Assign(Ref<Assign>),
-    Call(Ref<FunctionCall>),
-    Native(Ref<NativeOperation>), // not compiled to by source code, internal/built-ins only
 }
 
 #[derive(Debug)]

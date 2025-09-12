@@ -45,14 +45,14 @@ pub struct Name {
 
 #[derive(Debug)]
 pub enum Type {
-    Base(Ref<BaseType>),
+    Nominal(Ref<NominalType>),
     Ref(Ref<RefType>),
     Array(Ref<ArrayType>),
     Struct(Ref<StructType>),
 }
 
 #[derive(Debug)]
-pub struct BaseType {
+pub struct NominalType {
     pub name: Ref<Name>,
 }
 
@@ -81,7 +81,7 @@ pub struct IdentDef {
 #[derive(Debug)]
 pub struct IdentInit {
     pub def: Ref<IdentDef>,
-    pub expr: Ref<AssignExpr>,
+    pub expr: Ref<Expr>,
 }
 
 #[derive(Debug)]
@@ -148,32 +148,27 @@ pub struct Deref {
 
 #[derive(Debug)]
 pub struct Proc {
-    pub body: Ref<Body>,
+    pub body: Ref<Expr>,
 }
 
 #[derive(Debug)]
-pub enum Body {
-    Single(Ref<BodyItem>),
-    Multi(Ref<MultiItemBody>),
+pub struct Block {
+    pub items: Ref<List<ExprOrSemi>>,
 }
 
 #[derive(Debug)]
-pub struct MultiItemBody {
-    pub items: Ref<List<BodyItem>>,
+pub enum ExprOrSemi {
+    Expr(Ref<ShapedExpr>),
+    Semi(Ref<Semi>),
 }
 
 #[derive(Debug)]
-pub enum BodyItem {
-    Statement(Ref<StatementItem>),
-    If(Ref<IfItem>),
-    While(Ref<WhileItem>),
-    Match(Ref<MatchItem>),
-}
+pub struct Semi;
 
 #[derive(Debug)]
 pub struct IfItem {
     pub condition: Ref<Expr>,
-    pub then_body: Ref<Body>,
+    pub then_body: Ref<Expr>,
     pub else_item: Ref<Maybe<ElseItem>>,
 }
 
@@ -185,7 +180,7 @@ pub enum ElseItem {
 
 #[derive(Debug)]
 pub struct ElseBodyItem {
-    pub body: Ref<Body>,
+    pub body: Ref<Expr>,
 }
 
 #[derive(Debug)]
@@ -196,7 +191,7 @@ pub struct ElseIfItem {
 #[derive(Debug)]
 pub struct WhileItem {
     pub condition: Ref<Expr>,
-    pub body: Ref<Body>,
+    pub body: Ref<Expr>,
 }
 
 #[derive(Debug)]
@@ -208,39 +203,27 @@ pub struct MatchItem {
 #[derive(Debug)]
 pub struct MatchCase {
     pub variant: Ref<VariantLiteral>,
-    pub body: Ref<Body>,
+    pub body: Ref<Expr>,
 }
 
 #[derive(Debug)]
-pub struct StatementItem {
-    pub statement: Ref<Statement>,
-}
-
-#[derive(Debug)]
-pub enum Statement {
+pub enum ShapedExpr {
     IdentInit(Ref<IdentInit>),
     Assign(Ref<Assign>),
     Call(Ref<FunctionCall>),
+    NonShaped(Ref<Expr>),
 }
 
 #[derive(Debug)]
 pub struct FunctionCall {
     pub func_name: Ref<Name>,
-    pub param_exprs: Ref<CommaList<AssignExpr>>,
+    pub param_exprs: Ref<CommaList<Expr>>,
 }
 
 #[derive(Debug)]
 pub struct Assign {
     pub place: Ref<Place>,
-    pub expr: Ref<ParensNest<AssignExpr>>,
-}
-
-#[derive(Debug)]
-pub enum AssignExpr {
-    Expr(Ref<Expr>),
-    Array(Ref<ArrayAssign>),
-    Struct(Ref<StructAssign>),
-    Undefined(Ref<Undefined>),
+    pub expr: Ref<ParensNest<Expr>>,
 }
 
 #[derive(Debug)]
@@ -251,6 +234,14 @@ pub enum Expr {
     Paren(Ref<ParenExpr>),
     Cast(Ref<CastExpr<Expr>>),
     Transmute(Ref<TransmuteExpr<Expr>>),
+    If(Ref<IfItem>),
+    While(Ref<WhileItem>),
+    Match(Ref<MatchItem>),
+    Block(Ref<Block>),
+    Array(Ref<ArrayAssign>),
+    Struct(Ref<StructAssign>),
+    Undefined(Ref<Undefined>),
+    Shaped(Ref<ShapedExpr>),
 }
 
 #[derive(Debug)]
@@ -332,13 +323,13 @@ pub struct ArrayAssign {
 
 #[derive(Debug)]
 pub enum ArrayAssignExpr {
-    Single(Ref<AssignExpr>),
+    Single(Ref<Expr>),
     Spread(Ref<SpreadAssignExpr>),
 }
 
 #[derive(Debug)]
 pub struct SpreadAssignExpr {
-    pub expr: Ref<AssignExpr>,
+    pub expr: Ref<Expr>,
 }
 
 #[derive(Debug)]
@@ -349,7 +340,7 @@ pub struct StructAssign {
 #[derive(Debug)]
 pub struct StructAssignField {
     pub name: Ref<Name>,
-    pub assign: Ref<AssignExpr>,
+    pub assign: Ref<Expr>,
 }
 
 #[derive(Debug)]

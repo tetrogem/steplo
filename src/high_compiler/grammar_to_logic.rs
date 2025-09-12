@@ -193,7 +193,13 @@ impl TryFrom<&g::Ref<g::IdentDef>> for l::IdentDef {
     type Error = CompileErrorSet;
 
     fn try_from(value: &g::Ref<g::IdentDef>) -> Result<Self, Self::Error> {
-        Ok(Self { name: convert(&value.val.name), ty: try_convert(&value.val.ty)? })
+        Ok(Self {
+            ident: Arc::new(Srced {
+                range: value.val.name.range,
+                val: l::Ident::User { name: convert(&value.val.name) },
+            }),
+            ty: try_convert(&value.val.ty)?,
+        })
     }
 }
 
@@ -210,14 +216,14 @@ impl TryFrom<&g::Ref<g::Type>> for l::TypeHint {
 
     fn try_from(value: &g::Ref<g::Type>) -> Result<Self, Self::Error> {
         Ok(match &value.val {
-            g::Type::Base(base) => base.into(),
+            g::Type::Nominal(base) => base.into(),
             g::Type::Ref(ref_ty) => Self::Ref(try_convert(&ref_ty.val.ty)?),
             g::Type::Array(array) => {
                 let len = &array.val.len;
                 let Ok(len) = parse_num_literal(&array.val.len) else {
                     return Err(CompileErrorSet::new_error(
                         len.range,
-                        CompileError::Convert(LogicError::InvalidArrayTypeLen),
+                        CompileError::Logic(LogicError::InvalidArrayTypeLen),
                     ));
                 };
 
@@ -231,15 +237,26 @@ impl TryFrom<&g::Ref<g::Type>> for l::TypeHint {
                     .val
                     .iter()
                     .map(|field| {
-                        Arc::new(Srced {
+                        let ident = &field.val.ident;
+                        let field_name = match &ident.val {
+                            l::Ident::User { name } => name,
+                            l::Ident::Internal { .. } => {
+                                return Err(CompileErrorSet::new_error(
+                                    ident.range,
+                                    CompileError::Logic(LogicError::FoundInternalIdent),
+                                ));
+                            },
+                        };
+
+                        Ok(Arc::new(Srced {
                             range: field.range,
                             val: l::FieldTypeHint {
-                                name: field.val.name.clone(),
+                                name: field_name.clone(),
                                 ty: field.val.ty.clone(),
                             },
-                        })
+                        }))
                     })
-                    .collect_vec();
+                    .collect::<Result<Vec<_>, _>>()?;
 
                 Self::Struct(Arc::new(Srced {
                     range: fields.iter().fold(Default::default(), |acc, x| acc.merge(x.range)),
@@ -250,19 +267,10 @@ impl TryFrom<&g::Ref<g::Type>> for l::TypeHint {
     }
 }
 
-impl From<&g::Ref<g::BaseType>> for l::TypeHint {
-    fn from(value: &g::Ref<g::BaseType>) -> Self {
+impl From<&g::Ref<g::NominalType>> for l::TypeHint {
+    fn from(value: &g::Ref<g::NominalType>) -> Self {
         let name = &value.val.name;
-        match name.val.str.as_ref() {
-            "any" => Self::Any,
-            "val" => Self::Primitive(l::PrimitiveType::Val),
-            "str" => Self::Primitive(l::PrimitiveType::Str),
-            "num" => Self::Primitive(l::PrimitiveType::Num),
-            "int" => Self::Primitive(l::PrimitiveType::Int),
-            "uint" => Self::Primitive(l::PrimitiveType::Uint),
-            "bool" => Self::Primitive(l::PrimitiveType::Bool),
-            _ => Self::Nominal(convert(name)),
-        }
+        Self::Nominal(convert(name))
     }
 }
 
@@ -274,50 +282,54 @@ impl TryFrom<&g::Ref<g::Proc>> for l::Proc {
     }
 }
 
-impl TryFrom<&g::Ref<g::Body>> for l::Body {
+impl TryFrom<&g::Ref<g::Block>> for l::Block {
     type Error = CompileErrorSet;
 
-    fn try_from(value: &g::Ref<g::Body>) -> Result<Self, Self::Error> {
-        Ok(Self {
-            items: match &value.val {
-                g::Body::Single(item) => {
-                    Arc::new(Srced { range: item.range, val: Vec::from([try_convert(item)?]) })
+    fn try_from(value: &g::Ref<g::Block>) -> Result<Self, Self::Error> {
+        let mut prev_was_semi = false;
+        let mut l_items = Vec::new();
+
+        let g_items = VecDeque::from_list(&value.val.items);
+        for g_item in g_items.into_iter() {
+            match &g_item.val {
+                g::ExprOrSemi::Semi(_) => prev_was_semi = true,
+                g::ExprOrSemi::Expr(expr) => {
+                    l_items.push(try_convert(&expr)?);
+                    prev_was_semi = false;
                 },
-                g::Body::Multi(body) => try_convert_list(&body.val.items)?,
-            },
+            }
+        }
+
+        Ok(l::Block {
+            items: Arc::new(Srced {
+                range: value.range,
+                val: l::Trail {
+                    trailing: prev_was_semi,
+                    items: Arc::new(Srced { range: value.range, val: l_items }),
+                },
+            }),
         })
     }
 }
 
-impl TryFrom<&g::Ref<g::BodyItem>> for l::BodyItem {
+impl TryFrom<&g::Ref<g::ShapedExpr>> for l::Expr {
     type Error = CompileErrorSet;
 
-    fn try_from(value: &g::Ref<g::BodyItem>) -> Result<Self, Self::Error> {
+    fn try_from(value: &g::Ref<g::ShapedExpr>) -> Result<Self, Self::Error> {
         Ok(match &value.val {
-            g::BodyItem::Statement(x) => Self::Statement(try_convert(x)?),
-            g::BodyItem::If(x) => Self::If(try_convert(x)?),
-            g::BodyItem::While(x) => Self::While(try_convert(x)?),
-            g::BodyItem::Match(x) => Self::Match(try_convert(x)?),
-        })
-    }
-}
-
-impl TryFrom<&g::Ref<g::StatementItem>> for l::Statement {
-    type Error = CompileErrorSet;
-
-    fn try_from(value: &g::Ref<g::StatementItem>) -> Result<Self, Self::Error> {
-        (&value.val.statement).try_into()
-    }
-}
-
-impl TryFrom<&g::Ref<g::Statement>> for l::Statement {
-    type Error = CompileErrorSet;
-
-    fn try_from(value: &g::Ref<g::Statement>) -> Result<Self, Self::Error> {
-        Ok(match &value.val {
-            g::Statement::IdentInit(x) => Self::IdentInit(try_convert(x)?),
-            g::Statement::Assign(x) => Self::Assign(try_convert(x)?),
-            g::Statement::Call(x) => Self::Call(try_convert(x)?),
+            g::ShapedExpr::IdentInit(x) => Self::Statement(Arc::new(Srced {
+                range: value.range,
+                val: l::Statement::IdentInit(try_convert(x)?),
+            })),
+            g::ShapedExpr::Assign(x) => Self::Statement(Arc::new(Srced {
+                range: value.range,
+                val: l::Statement::Assign(try_convert(x)?),
+            })),
+            g::ShapedExpr::Call(x) => Self::Statement(Arc::new(Srced {
+                range: value.range,
+                val: l::Statement::Call(try_convert(x)?),
+            })),
+            g::ShapedExpr::NonShaped(x) => x.try_into()?,
         })
     }
 }
@@ -400,6 +412,7 @@ impl TryFrom<&g::Ref<g::Expr>> for l::Expr {
 
     fn try_from(value: &g::Ref<g::Expr>) -> Result<Self, Self::Error> {
         Ok(match &value.val {
+            g::Expr::Shaped(x) => x.try_into()?,
             g::Expr::Literal(x) => Self::Literal(try_convert(x)?),
             g::Expr::Place(x) => Self::Place(try_convert(x)?),
             g::Expr::Ref(x) => Self::Ref(try_convert(unnest(&x.val.place))?),
@@ -411,51 +424,22 @@ impl TryFrom<&g::Ref<g::Expr>> for l::Expr {
                 ty: try_convert(&x.val.ty)?,
                 expr: try_convert(unnest(&x.val.item))?,
             },
-        })
-    }
-}
-
-impl TryFrom<&g::Ref<g::ElseItem>> for l::ElseItem {
-    type Error = CompileErrorSet;
-
-    fn try_from(value: &g::Ref<g::ElseItem>) -> Result<Self, Self::Error> {
-        Ok(match &value.val {
-            g::ElseItem::Body(x) => l::ElseItem { body: try_convert(&x.val.body)? },
-            g::ElseItem::If(x) => l::ElseItem {
-                body: Arc::new(Srced {
-                    range: x.range,
-                    val: l::Body {
-                        items: Arc::new(Srced {
-                            range: x.val.if_item.range,
-                            val: Vec::from([Arc::new(Srced {
-                                range: x.val.if_item.range,
-                                val: l::BodyItem::If(try_convert(&x.val.if_item)?),
-                            })]),
-                        }),
-                    },
-                }),
-            },
-        })
-    }
-}
-
-impl TryFrom<&g::Ref<g::AssignExpr>> for l::AssignExpr {
-    type Error = CompileErrorSet;
-
-    fn try_from(value: &g::Ref<g::AssignExpr>) -> Result<Self, Self::Error> {
-        Ok(match &value.val {
-            g::AssignExpr::Expr(expr) => Self::Expr(try_convert(expr)?),
-            g::AssignExpr::Struct(st) => Self::Struct(try_convert_list(&st.val.fields)?),
-            g::AssignExpr::Array(array) => {
+            g::Expr::If(x) => Self::If(try_convert(x)?),
+            g::Expr::While(x) => Self::While(try_convert(x)?),
+            g::Expr::Match(x) => Self::Match(try_convert(x)?),
+            g::Expr::Block(x) => Self::Block(try_convert(x)?),
+            g::Expr::Struct(st) => Self::Struct(try_convert_list(&st.val.fields)?),
+            g::Expr::Undefined(_) => Self::Undefined,
+            g::Expr::Array(array) => {
                 let assign_exprs = VecDeque::from_list(&array.val.elements);
 
                 let mut singles = Vec::new();
-                let mut spread: Option<g::Ref<g::AssignExpr>> = None;
+                let mut spread: Option<g::Ref<g::Expr>> = None;
                 for assign_expr in assign_exprs {
                     if spread.is_some() {
                         return Err(CompileErrorSet::new_error(
                             assign_expr.range,
-                            CompileError::Convert(LogicError::ElementAfterSpread),
+                            CompileError::Logic(LogicError::ElementAfterSpread),
                         ));
                     }
 
@@ -480,7 +464,39 @@ impl TryFrom<&g::Ref<g::AssignExpr>> for l::AssignExpr {
                     spread_expr,
                 }
             },
-            g::AssignExpr::Undefined(_) => l::AssignExpr::Undefined,
+        })
+    }
+}
+
+impl TryFrom<&g::Ref<g::ElseItem>> for l::ElseItem {
+    type Error = CompileErrorSet;
+
+    fn try_from(value: &g::Ref<g::ElseItem>) -> Result<Self, Self::Error> {
+        Ok(match &value.val {
+            g::ElseItem::Body(x) => l::ElseItem { body: try_convert(&x.val.body)? },
+            g::ElseItem::If(x) => l::ElseItem {
+                body: Arc::new(Srced {
+                    range: x.range,
+                    val: l::Expr::Block(Arc::new(Srced {
+                        range: x.range,
+                        val: l::Block {
+                            items: Arc::new(Srced {
+                                range: x.val.if_item.range,
+                                val: l::Trail {
+                                    trailing: false,
+                                    items: Arc::new(Srced {
+                                        range: x.val.if_item.range,
+                                        val: Vec::from([Arc::new(Srced {
+                                            range: x.val.if_item.range,
+                                            val: l::Expr::If(try_convert(&x.val.if_item)?),
+                                        })]),
+                                    }),
+                                },
+                            }),
+                        },
+                    })),
+                }),
+            },
         })
     }
 }
@@ -557,7 +573,7 @@ fn parse_num_literal<T: FromStr>(lit: &g::Ref<g::NumLiteral>) -> Result<T, Compi
         Ok(t) => Ok(t),
         Err(_) => Err(CompileErrorSet::new_error(
             lit.range,
-            CompileError::Convert(LogicError::InvalidNumLiteral),
+            CompileError::Logic(LogicError::InvalidNumLiteral),
         )),
     }
 }
@@ -637,7 +653,7 @@ impl TryFrom<&g::Ref<g::BinaryParenExpr>> for l::BinaryParenExpr {
 
 impl From<&g::Ref<g::Ident>> for l::Ident {
     fn from(value: &g::Ref<g::Ident>) -> Self {
-        Self { name: convert(&value.val.name) }
+        Self::User { name: convert(&value.val.name) }
     }
 }
 

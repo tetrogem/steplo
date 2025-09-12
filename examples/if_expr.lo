@@ -1,0 +1,52 @@
+main {
+    test_num(2);
+    test_num(1);
+    test_num(4);
+    test_num(-6);
+    test_num(-5);
+    test_num(0);
+}
+
+enum Sign { Pos | Neg }
+enum Parity { Even | Odd }
+type NumCheck = { sign: Sign, parity: Parity };
+
+// func test_num(num: num) {
+//     let kind: str = if ((num % 2) == 0) {
+//         if (num > 0) {
+//             "pos_even"
+//         } else {
+//             "neg_even"
+//         }
+//     } else {
+//         if (num > 0) {
+//             "pos_odd"
+//         } else {
+//             "neg_odd"
+//         }
+//     };
+
+//     out(kind);
+// }
+
+func check_num(ret: &NumCheck, num: num) {
+    if ((num % 2) == 0) {
+        if (num >= 0) {
+            *ret = { sign: #Pos, parity: #Even };
+        } else {
+            *ret = { sign: #Neg, parity: #Even };
+        }
+    } else {
+        if (num >= 0) {
+            *ret = { sign: #Pos, parity: #Odd };
+        } else {
+            *ret = { sign: #Neg, parity: #Odd };
+        }
+    }
+}
+
+func test_num(num: num) {
+    let check: NumCheck = undefined;
+    check_num(&check, num);
+    out(((<<uint>>check.sign ~ " & ") ~ <<uint>>check.parity));
+}

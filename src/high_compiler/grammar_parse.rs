@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
 use crate::high_compiler::grammar_ast::{
-    AddOp, AndOp, ArrayAssign, ArrayAssignExpr, ArrayType, Assign, AssignExpr, BaseType,
-    BinaryParenExpr, BinaryParenExprOp, Body, BodyItem, BoolLiteral, CastExpr, CommaList,
-    CommaListLink, Comment, Decimal, Deref, Digits, DivOp, ElseBodyItem, ElseIfItem, ElseItem,
-    Empty, EnumItem, EqOp, Expr, FalseLiteral, Field, Func, FunctionCall, GtOp, GteOp, Ident,
-    IdentDef, IdentInit, IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, MatchCase,
-    MatchItem, Maybe, ModOp, MulOp, MultiItemBody, Name, Negative, NeqOp, NotOp, NumLiteral,
-    Offset, OrOp, ParenExpr, ParensNest, ParensWrapped, PipeList, PipeListLink, Place, PlaceHead,
-    PlaceIndex, PlaceIndexLink, Proc, Program, RefExpr, RefType, SemiList, SemiListLink,
-    SpreadAssignExpr, Statement, StatementItem, StrLiteral, StructAssign, StructAssignField,
-    StructType, SubOp, TopItem, TransmuteExpr, TrueLiteral, Type, TypeAlias, UnaryParenExpr,
-    UnaryParenExprOp, Undefined, VariantLiteral, WhileItem,
+    AddOp, AndOp, ArrayAssign, ArrayAssignExpr, ArrayType, Assign, BinaryParenExpr,
+    BinaryParenExprOp, Block, BoolLiteral, CastExpr, CommaList, CommaListLink, Comment, Decimal,
+    Deref, Digits, DivOp, ElseBodyItem, ElseIfItem, ElseItem, Empty, EnumItem, EqOp, Expr,
+    ExprOrSemi, FalseLiteral, Field, Func, FunctionCall, GtOp, GteOp, Ident, IdentDef, IdentInit,
+    IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, MatchCase, MatchItem, Maybe, ModOp,
+    MulOp, Name, Negative, NeqOp, NominalType, NotOp, NumLiteral, Offset, OrOp, ParenExpr,
+    ParensNest, ParensWrapped, PipeList, PipeListLink, Place, PlaceHead, PlaceIndex,
+    PlaceIndexLink, Proc, Program, RefExpr, RefType, Semi, SemiList, SemiListLink, ShapedExpr,
+    SpreadAssignExpr, StrLiteral, StructAssign, StructAssignField, StructType, SubOp, TopItem,
+    TransmuteExpr, TrueLiteral, Type, TypeAlias, UnaryParenExpr, UnaryParenExprOp, Undefined,
+    VariantLiteral, WhileItem,
 };
 
 use super::{
@@ -281,7 +281,7 @@ impl AstParse for Type {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_enum! {
             parse tokens => x {
-                Self::Base(Arc::new(x)),
+                Self::Nominal(Arc::new(x)),
                 Self::Ref(Arc::new(x)),
                 Self::Array(Arc::new(x)),
                 Self::Struct(Arc::new(x)),
@@ -292,7 +292,7 @@ impl AstParse for Type {
     }
 }
 
-impl AstParse for BaseType {
+impl AstParse for NominalType {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_struct! {
             parse tokens;
@@ -462,20 +462,7 @@ impl AstParse for Proc {
     }
 }
 
-impl AstParse for Body {
-    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
-        parse_enum! {
-            parse tokens => x {
-                Self::Single(Arc::new(x)),
-                Self::Multi(Arc::new(x)),
-            } else {
-                "Expected body"
-            }
-        }
-    }
-}
-
-impl AstParse for MultiItemBody {
+impl AstParse for Block {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_struct! {
             parse tokens;
@@ -599,17 +586,25 @@ impl<T: AstParse> AstParse for PipeListLink<T> {
     }
 }
 
-impl AstParse for BodyItem {
+impl AstParse for ExprOrSemi {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_enum! {
             parse tokens => x {
-                Self::Statement(Arc::new(x)),
-                Self::If(Arc::new(x)),
-                Self::While(Arc::new(x)),
-                Self::Match(Arc::new(x)),
+                Self::Expr(Arc::new(x)),
+                Self::Semi(Arc::new(x)),
             } else {
-                "Expected body item"
+                "Expected expr or semi"
             }
+        }
+    }
+}
+
+impl AstParse for Semi {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Semi => (); as [TokenKind::Semi]];
+            [return Self]
         }
     }
 }
@@ -705,24 +700,14 @@ impl AstParse for MatchCase {
     }
 }
 
-impl AstParse for StatementItem {
-    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
-        parse_struct! {
-            parse tokens;
-            [struct statement];
-            [match _ = Token::Semi => (); as [TokenKind::Semi]];
-            [return Self { statement: Arc::new(statement) }];
-        }
-    }
-}
-
-impl AstParse for Statement {
+impl AstParse for ShapedExpr {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_enum! {
             parse tokens => x {
                 Self::IdentInit(Arc::new(x)),
                 Self::Assign(Arc::new(x)),
                 Self::Call(Arc::new(x)),
+                Self::NonShaped(Arc::new(x)),
             } else {
                 "Expected statement"
             }
@@ -885,21 +870,6 @@ impl AstParse for Deref {
     }
 }
 
-impl AstParse for AssignExpr {
-    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
-        parse_enum! {
-            parse tokens => x {
-                Self::Struct(Arc::new(x)),
-                Self::Array(Arc::new(x)),
-                Self::Expr(Arc::new(x)),
-                Self::Undefined(Arc::new(x)),
-            } else {
-                "Expected assign expression"
-            }
-        }
-    }
-}
-
 impl AstParse for ArrayAssign {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_struct! {
@@ -972,6 +942,14 @@ impl AstParse for Expr {
                 Self::Ref(Arc::new(x)),
                 Self::Literal(Arc::new(x)),
                 Self::Place(Arc::new(x)),
+                Self::If(Arc::new(x)),
+                Self::While(Arc::new(x)),
+                Self::Match(Arc::new(x)),
+                Self::Block(Arc::new(x)),
+                Self::Struct(Arc::new(x)),
+                Self::Array(Arc::new(x)),
+                Self::Undefined(Arc::new(x)),
+                // Self::Shaped(Arc::new(x)),
             } else {
                 "Expected expression"
             }

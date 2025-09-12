@@ -18,7 +18,7 @@ pub struct CompileErrorSet {
 #[derive(Debug)]
 pub(crate) enum CompileError {
     Grammar(GrammarError),
-    Convert(LogicError),
+    Logic(LogicError),
     Type(TypeError),
 }
 
@@ -34,12 +34,13 @@ pub(crate) enum LogicError {
     InvalidArrayTypeLen,
     InvalidNumLiteral,
     ElementAfterSpread,
+    FoundInternalIdent,
 }
 
 #[derive(Debug)]
 pub(crate) enum TypeError {
     Mismatch {
-        expected: Arc<VagueType>,
+        expected_any_of: Arc<Vec<Arc<VagueType>>>,
         found: Arc<VagueType>,
     },
     InvalidCast {
@@ -247,11 +248,12 @@ enum CollapsedLogicError {
     InvalidArrayTypeLen,
     InvalidNumLiteral,
     ElementAfterSpread,
+    FoundInternalIdent,
 }
 
 enum CollapsedTypeError {
     Mismatch {
-        expected: Arc<VagueType>,
+        expected_any_of: Arc<Vec<Arc<VagueType>>>,
         found: Arc<VagueType>,
     },
     InvalidCast {
@@ -377,8 +379,8 @@ impl CollapsedCompileError {
             (CollapsedCompileError::Grammar(ast), CompileError::Grammar(other_ast)) => {
                 ast.try_collapse(other_ast).map_err(CompileError::Grammar)
             },
-            (CollapsedCompileError::Logic(convert), CompileError::Convert(other_convert)) => {
-                convert.try_collapse(other_convert).map_err(CompileError::Convert)
+            (CollapsedCompileError::Logic(convert), CompileError::Logic(other_convert)) => {
+                convert.try_collapse(other_convert).map_err(CompileError::Logic)
             },
             (CollapsedCompileError::Type(ty), CompileError::Type(other_ty)) => {
                 ty.try_collapse(other_ty).map_err(CompileError::Type)
@@ -522,12 +524,18 @@ impl CollapsedCompileError {
                 CollapsedLogicError::ElementAfterSpread => {
                     "Additional array elements cannot come after spread element".into()
                 },
+                CollapsedLogicError::FoundInternalIdent => {
+                    "Internal idents should not be defineable in user code".into()
+                },
             },
             Self::Type(ty) => match ty {
-                CollapsedTypeError::Mismatch { expected, found } => {
+                CollapsedTypeError::Mismatch { expected_any_of, found } => {
                     format!(
                         "Expected {}; Found {}",
-                        expected.to_display().display(),
+                        expected_any_of
+                            .iter()
+                            .map(|expected| expected.to_display().display())
+                            .join(", "),
                         found.to_display().display()
                     )
                 },
@@ -657,14 +665,15 @@ impl From<CompileError> for CollapsedCompileError {
                     }
                 },
             }),
-            CompileError::Convert(convert) => Self::Logic(match convert {
+            CompileError::Logic(convert) => Self::Logic(match convert {
                 LogicError::InvalidArrayTypeLen => CollapsedLogicError::InvalidArrayTypeLen,
                 LogicError::InvalidNumLiteral => CollapsedLogicError::InvalidNumLiteral,
                 LogicError::ElementAfterSpread => CollapsedLogicError::ElementAfterSpread,
+                LogicError::FoundInternalIdent => CollapsedLogicError::FoundInternalIdent,
             }),
             CompileError::Type(ty) => Self::Type(match ty {
-                TypeError::Mismatch { expected, found } => {
-                    CollapsedTypeError::Mismatch { expected, found }
+                TypeError::Mismatch { expected_any_of, found } => {
+                    CollapsedTypeError::Mismatch { expected_any_of, found }
                 },
                 TypeError::InvalidCast { from, to } => CollapsedTypeError::InvalidCast { from, to },
                 TypeError::InvalidTransmute { from, to } => {

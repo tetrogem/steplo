@@ -6,9 +6,13 @@ use std::{
 };
 
 use itertools::{Itertools, chain};
+use uuid::Uuid;
 
 use crate::high_compiler::{
-    logic_ast::TypeHint,
+    logic_ast::{
+        BOOL_TYPE, INTEGER_TYPE, NUM_TYPE, STR_TYPE, Type, TypeHint, UINTEGER_TYPE, UNIT_TYPE,
+        VAL_TYPE, unit_type_hint,
+    },
     srced::{SrcRange, Srced},
     typecheck::ident_manager::IdentManager,
 };
@@ -17,26 +21,6 @@ use super::{
     compile_error::{CompileError, CompileErrorSet, TypeError, VagueType},
     logic_ast as l, type_resolved_ast as t,
 };
-
-static ANY_TYPE: LazyLock<Arc<l::Type>> = LazyLock::new(|| Arc::new(l::Type::Any));
-
-static VAL_TYPE: LazyLock<Arc<l::Type>> =
-    LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Val)));
-
-static STR_TYPE: LazyLock<Arc<l::Type>> =
-    LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Str)));
-
-static NUM_TYPE: LazyLock<Arc<l::Type>> =
-    LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Num)));
-
-static INT_TYPE: LazyLock<Arc<l::Type>> =
-    LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Int)));
-
-static UINT_TYPE: LazyLock<Arc<l::Type>> =
-    LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Uint)));
-
-static BOOL_TYPE: LazyLock<Arc<l::Type>> =
-    LazyLock::new(|| Arc::new(l::Type::Primitive(l::PrimitiveType::Bool)));
 
 type IdentToTypeHint = HashMap<Arc<str>, l::Ref<l::TypeHint>>;
 type FuncToParams = HashMap<Arc<str>, l::Ref<Vec<l::Ref<l::IdentDef>>>>;
@@ -54,6 +38,12 @@ fn try_tr<L, T, Error, F: FnOnce(&l::Ref<L>) -> Result<T, Error>>(
     Ok(Arc::new(Srced { val: t, range: l_ref.range }))
 }
 
+fn sift_stmt_deps<T>(stmt_deps: &mut Vec<t::Ref<t::Statement>>, dependent: StmtDependent<T>) -> T {
+    let StmtDependent { stmt_deps: these_deps, value } = dependent;
+    stmt_deps.extend(these_deps);
+    value
+}
+
 struct TypeAliasManager {
     enum_to_variants: HashMap<Arc<str>, Arc<Vec<Arc<str>>>>,
     alias_to_type_hint: HashMap<Arc<str>, l::Ref<TypeHint>>,
@@ -66,6 +56,8 @@ impl TypeAliasManager {
 
         for item in program.val.items.val.iter() {
             let l::TopItem::Type(item) = &item.val else { continue };
+
+            println!("type alias: {item:?}");
 
             match &item.val {
                 l::TypeItem::Alias(x) => {
@@ -85,25 +77,32 @@ impl TypeAliasManager {
 
     pub fn resolve(&self, hint: &l::Ref<l::TypeHint>) -> Result<l::Type, CompileErrorSet> {
         Ok(match &hint.val {
-            l::TypeHint::Nominal(name) => {
-                if self.enum_to_variants.get(&name.val.str).is_some() {
-                    l::Type::Enum { name: name.val.str.clone() }
-                } else {
-                    match self.alias_to_type_hint.get(&name.val.str) {
-                        Some(hint) => self.resolve(hint)?,
-                        None => {
-                            return Err(CompileErrorSet::new_error(
-                                name.range,
-                                CompileError::Type(TypeError::UnknownAlias {
-                                    name: name.val.str.clone(),
-                                }),
-                            ));
-                        },
+            l::TypeHint::Nominal(name) => match name.val.str.as_ref() {
+                Type::ANY_NAME => l::Type::Any,
+                Type::VAL_NAME => l::Type::Primitive(l::PrimitiveType::Val),
+                Type::STR_NAME => l::Type::Primitive(l::PrimitiveType::Str),
+                Type::NUM_NAME => l::Type::Primitive(l::PrimitiveType::Num),
+                Type::INTEGER_NAME => l::Type::Primitive(l::PrimitiveType::Int),
+                Type::UINTEGER_NAME => l::Type::Primitive(l::PrimitiveType::Uint),
+                Type::BOOL_NAME => l::Type::Primitive(l::PrimitiveType::Bool),
+                _ => {
+                    if self.enum_to_variants.contains_key(&name.val.str) {
+                        l::Type::Enum { name: name.val.str.clone() }
+                    } else {
+                        match self.alias_to_type_hint.get(&name.val.str) {
+                            Some(hint) => self.resolve(hint)?,
+                            None => {
+                                return Err(CompileErrorSet::new_error(
+                                    name.range,
+                                    CompileError::Type(TypeError::UnknownAlias {
+                                        name: name.val.str.clone(),
+                                    }),
+                                ));
+                            },
+                        }
                     }
-                }
+                },
             },
-            l::TypeHint::Any => l::Type::Any,
-            l::TypeHint::Primitive(p) => l::Type::Primitive(*p),
             l::TypeHint::Ref(hint) => l::Type::Ref(Arc::new(self.resolve(hint)?)),
             l::TypeHint::Array { ty, len } => {
                 l::Type::Array { ty: Arc::new(self.resolve(ty)?), len: *len }
@@ -316,10 +315,10 @@ fn typecheck_ident_def(
     ident_m: &IdentManager,
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::IdentDef, CompileErrorSet> {
-    let info = ident_m.get(&item.val.name)?;
+    let info = ident_m.get(&item.val.ident.val)?;
 
     Ok(t::IdentDef {
-        name: tr(&item.val.name, |_| t::Name { str: info.unique_name.clone() }),
+        name: tr(item.val.ident.val.name(), |_| t::Name { str: info.unique_name.clone() }),
         size: type_alias_m.resolve(&item.val.ty)?.size(),
     })
 }
@@ -332,13 +331,20 @@ mod ident_manager {
     use std::{collections::HashMap, mem, sync::Arc};
 
     use itertools::chain;
+    use uuid::Uuid;
 
     pub struct IdentInfo {
         pub def: l::Ref<l::IdentDef>,
         pub unique_name: Arc<str>,
     }
 
-    type IdentToInfo = HashMap<Arc<str>, Arc<IdentInfo>>;
+    #[derive(PartialEq, Eq, Hash)]
+    enum Ident {
+        User { name: Arc<str> },
+        Internal { name: Arc<str>, uuid: Uuid },
+    }
+
+    type IdentToInfo = HashMap<Arc<Ident>, Arc<IdentInfo>>;
 
     #[derive(Default)]
     struct IdentLayer {
@@ -356,15 +362,23 @@ mod ident_manager {
 
     impl IdentLayer {
         pub fn reg(&mut self, def: l::Ref<l::IdentDef>, unique_name: Arc<str>) -> Arc<IdentInfo> {
-            let ident_name = def.val.name.val.str.clone();
+            let m_ident = match &def.val.ident.val {
+                l::Ident::User { name } => Ident::User { name: name.val.str.clone() },
+                l::Ident::Internal { name, uuid } => {
+                    Ident::Internal { name: name.val.str.clone(), uuid: *uuid }
+                },
+            };
+
+            println!("{def:?}");
+
             let ident_info = Arc::new(IdentInfo { def, unique_name });
 
-            self.curr_ident_to_info_scope.insert(ident_name, ident_info.clone());
+            self.curr_ident_to_info_scope.insert(Arc::new(m_ident), ident_info.clone());
             self.infos.push(ident_info.clone());
             ident_info
         }
 
-        pub fn get(&self, name: &str) -> Option<&Arc<IdentInfo>> {
+        pub fn get(&self, name: &Ident) -> Option<&Arc<IdentInfo>> {
             let scopes =
                 chain!(self.prev_ident_to_info_scopes.iter(), [&self.curr_ident_to_info_scope]);
 
@@ -400,7 +414,7 @@ mod ident_manager {
         }
 
         pub fn reg(&mut self, def: l::Ref<l::IdentDef>) -> Arc<IdentInfo> {
-            let ident_name = def.val.name.val.str.clone();
+            let ident_name = def.val.ident.val.name().val.str.clone();
             let name_count = self
                 .layers()
                 .map(|layer| layer.name_to_count.get(&ident_name).copied().unwrap_or_default())
@@ -414,18 +428,23 @@ mod ident_manager {
             self.curr_layer.reg(def, unique_name.into())
         }
 
-        pub fn get(&self, name: &l::Ref<l::Name>) -> Result<&Arc<IdentInfo>, CompileErrorSet> {
-            let name_str = &name.val.str;
+        pub fn get(&self, ident: &l::Ident) -> Result<&Arc<IdentInfo>, CompileErrorSet> {
+            let m_ident = match ident {
+                l::Ident::User { name } => Ident::User { name: name.val.str.clone() },
+                l::Ident::Internal { name, uuid } => {
+                    Ident::Internal { name: name.val.str.clone(), uuid: *uuid }
+                },
+            };
 
             for layer in self.layers().rev() {
-                if let Some(info) = layer.get(name_str) {
+                if let Some(info) = layer.get(&m_ident) {
                     return Ok(info);
                 }
             }
 
             Err(CompileErrorSet::new_error(
-                name.range,
-                CompileError::Type(TypeError::IdentNotFound { name: name_str.clone() }),
+                ident.name().range,
+                CompileError::Type(TypeError::IdentNotFound { name: ident.name().val.str.clone() }),
             ))
         }
 
@@ -450,8 +469,16 @@ fn typecheck_proc(
     //     idents.map(|i| (i.val.name.val.str.clone(), i.val.ty.clone())).collect::<IdentToTypeHint>();
 
     ident_m.layer(|ident_m| {
-        let body =
-            try_tr(&item.val.body, |x| typecheck_body(x, ident_m, func_to_params, type_alias_m))?;
+        let mut stmt_deps = Vec::new();
+
+        let _body_expr = try_tr(&item.val.body, |x| {
+            Ok(sift_stmt_deps(
+                &mut stmt_deps,
+                typecheck_expr(x, None, ident_m, func_to_params, type_alias_m)?,
+            ))
+        })?;
+
+        let body = tr(&item.val.body, |x| t::Body { items: tr(x, |_| stmt_deps) });
 
         Ok(t::Proc {
             body,
@@ -462,7 +489,7 @@ fn typecheck_proc(
                     .map(|info| {
                         try_tr(&info.def, |x| {
                             Ok(t::IdentDef {
-                                name: tr(&x.val.name, |_| t::Name {
+                                name: tr(x.val.ident.val.name(), |_| t::Name {
                                     str: info.unique_name.clone(),
                                 }),
                                 size: type_alias_m.resolve(&x.val.ty)?.size(),
@@ -475,233 +502,32 @@ fn typecheck_proc(
     })
 }
 
-fn typecheck_body(
-    item: &l::Ref<l::Body>,
+fn typecheck_block(
+    item: &l::Ref<l::Block>,
+    expected_type: Option<&Arc<l::Type>>,
     ident_m: &mut IdentManager,
     func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
-) -> Result<t::Body, CompileErrorSet> {
+) -> Result<StmtDependent<Vec<t::Ref<t::AssignExpr>>>, CompileErrorSet> {
     ident_m.scope(|ident_m| {
-        Ok(t::Body {
-            items: try_tr(&item.val.items, |x| {
-                x.val
-                    .iter()
-                    .map(|x| {
-                        let item = try_tr(x, |x| {
-                            let body_item =
-                                typecheck_body_item(x, ident_m, func_to_params, type_alias_m)?;
+        let mut final_expr = None;
+        let mut stmt_deps = Vec::new();
 
-                            Ok(body_item.map(|bi| tr(x, |_| bi)))
-                        })?;
+        let trail = &item.val.items;
 
-                        Ok(item.val.as_ref().map(|val| val.clone()))
-                    })
-                    .filter_map(|x| x.transpose())
-                    .collect::<Result<Vec<_>, _>>()
-            })?,
-        })
-    })
-}
+        for l_items in trail.val.items.val.iter() {
+            let expr =
+                typecheck_expr(l_items, expected_type, ident_m, func_to_params, type_alias_m)?;
 
-fn typecheck_body_item(
-    item: &l::Ref<l::BodyItem>,
-    ident_m: &mut IdentManager,
-    func_to_params: &FuncToParams,
-    type_alias_m: &TypeAliasManager,
-) -> Result<Option<t::BodyItem>, CompileErrorSet> {
-    Ok(match &item.val {
-        l::BodyItem::Statement(x) => Some(t::BodyItem::Statement(try_tr(x, |x| {
-            typecheck_statement(x, ident_m, func_to_params, type_alias_m)
-        })?)),
-        l::BodyItem::If(x) => Some(t::BodyItem::If(try_tr(x, |x| {
-            typecheck_if(x, ident_m, func_to_params, type_alias_m)
-        })?)),
-        l::BodyItem::While(x) => Some(t::BodyItem::While(try_tr(x, |x| {
-            typecheck_while(x, ident_m, func_to_params, type_alias_m)
-        })?)),
-        l::BodyItem::Match(match_item) => {
-            let expr_ty = eval_expr(&match_item.val.expr, None, ident_m, type_alias_m)?;
-            let l::Type::Enum { name: enum_name } = expr_ty.as_ref() else {
-                return Err(CompileErrorSet::new_error(
-                    match_item.val.expr.range,
-                    CompileError::Type(TypeError::Mismatch {
-                        expected: Arc::new(VagueType::Enum { name: None }),
-                        found: vague(&expr_ty),
-                    }),
-                ));
-            };
+            stmt_deps.extend(expr.stmt_deps);
+            final_expr = Some(expr.value);
+        }
 
-            let all_variants = type_alias_m
-                .all_variants(&EnumName::Str(enum_name.clone()), match_item.val.expr.range)?;
+        if trail.val.trailing {
+            final_expr = None;
+        }
 
-            let mut unmatched_variants = all_variants.iter().collect::<HashSet<_>>();
-
-            struct CaseBranch {
-                condition: t::Ref<t::Expr>,
-                body: t::Ref<t::Body>,
-            }
-
-            let mut branches = Vec::new();
-
-            for case in match_item.val.cases.val.iter() {
-                let variant = &case.val.variant;
-
-                if let Some(lit_enum_name) = &variant.val.enum_name
-                    && &lit_enum_name.val.str != enum_name
-                {
-                    return Err(CompileErrorSet::new_error(
-                        variant.range,
-                        CompileError::Type(TypeError::Mismatch {
-                            expected: Arc::new(VagueType::Enum { name: Some(enum_name.clone()) }),
-                            found: Arc::new(VagueType::Enum {
-                                name: Some(lit_enum_name.val.str.clone()),
-                            }),
-                        }),
-                    ));
-                }
-
-                if unmatched_variants.remove(&variant.val.variant_name.val.str).not() {
-                    return Err(CompileErrorSet::new_error(
-                        variant.range,
-                        CompileError::Type(TypeError::UnmatchableCase),
-                    ));
-                }
-
-                let case_condition = try_tr(variant, |v| {
-                    Ok(t::Expr::Paren(try_tr(v, |v| {
-                        Ok(t::ParenExpr::Binary(try_tr(v, |v| {
-                            Ok(t::BinaryParenExpr {
-                                left: try_tr(&match_item.val.expr, |expr| {
-                                    typecheck_expr(expr, None, ident_m, type_alias_m)
-                                })?,
-                                op: tr(v, |_| t::BinaryParenExprOp::Eq),
-                                right: try_tr(v, |v| {
-                                    Ok(t::Expr::Literal(try_tr(v, |v| {
-                                        typecheck_variant_literal(
-                                            &match &v.val.enum_name {
-                                                Some(name) => EnumName::Name(name.clone()),
-                                                None => EnumName::Str(enum_name.clone()),
-                                            },
-                                            &v.val.variant_name,
-                                            v.range,
-                                            type_alias_m,
-                                        )
-                                    })?))
-                                })?,
-                            })
-                        })?))
-                    })?))
-                })?;
-
-                let case_body = try_tr(&case.val.body, |x| {
-                    typecheck_body(x, ident_m, func_to_params, type_alias_m)
-                })?;
-
-                branches.push(Arc::new(Srced {
-                    range: case.range,
-                    val: CaseBranch { condition: case_condition, body: case_body },
-                }));
-            }
-
-            // TODO: make this do a binary search instead to save on the number of checks?
-            let mut if_item: Option<t::Ref<t::IfItem>> = None;
-
-            for branch in branches.into_iter().rev() {
-                if_item = Some(try_tr(&branch, |branch| {
-                    Ok(t::IfItem {
-                        condition: branch.val.condition.clone(),
-                        then_body: branch.val.body.clone(),
-                        else_item: match if_item {
-                            None => None,
-                            Some(if_item) => Some(tr(&if_item, |x| t::ElseItem {
-                                body: tr(x, |x| t::Body {
-                                    items: tr(x, |x| {
-                                        Vec::from([tr(x, |x| t::BodyItem::If(x.clone()))])
-                                    }),
-                                }),
-                            })),
-                        },
-                    })
-                })?);
-            }
-
-            if unmatched_variants.is_empty().not() {
-                let unmatched_variants = all_variants
-                    .iter()
-                    .filter(|v| unmatched_variants.contains(v))
-                    .cloned()
-                    .collect_vec();
-
-                return Err(CompileErrorSet::new_error(
-                    match_item.range,
-                    CompileError::Type(TypeError::NonExhaustiveMatch {
-                        unmatched_cases: Arc::new(unmatched_variants),
-                    }),
-                ));
-            }
-
-            if_item.map(t::BodyItem::If)
-        },
-    })
-}
-
-fn typecheck_if(
-    item: &l::Ref<l::IfItem>,
-    ident_m: &mut IdentManager,
-    func_to_params: &FuncToParams,
-    type_alias_m: &TypeAliasManager,
-) -> Result<t::IfItem, CompileErrorSet> {
-    let condition_type = eval_expr(&item.val.condition, None, ident_m, type_alias_m)?;
-    if condition_type.is_subtype_of(&BOOL_TYPE).not() {
-        return Err(CompileErrorSet::new_error(
-            item.val.condition.range,
-            CompileError::Type(TypeError::Mismatch {
-                expected: vague(&BOOL_TYPE),
-                found: vague(&condition_type),
-            }),
-        ));
-    };
-
-    Ok(t::IfItem {
-        condition: try_tr(&item.val.condition, |x| typecheck_expr(x, None, ident_m, type_alias_m))?,
-        then_body: try_tr(&item.val.then_body, |x| {
-            typecheck_body(x, ident_m, func_to_params, type_alias_m)
-        })?,
-        else_item: match &item.val.else_item {
-            None => None,
-            Some(x) => Some(try_tr(x, |x| {
-                Ok(t::ElseItem {
-                    body: try_tr(&x.val.body, |x| {
-                        typecheck_body(x, ident_m, func_to_params, type_alias_m)
-                    })?,
-                })
-            })?),
-        },
-    })
-}
-
-fn typecheck_while(
-    item: &l::Ref<l::WhileItem>,
-    ident_m: &mut IdentManager,
-    func_to_params: &FuncToParams,
-    type_alias_m: &TypeAliasManager,
-) -> Result<t::WhileItem, CompileErrorSet> {
-    let condition_type = eval_expr(&item.val.condition, None, ident_m, type_alias_m)?;
-    if condition_type.is_subtype_of(&BOOL_TYPE).not() {
-        return Err(CompileErrorSet::new_error(
-            item.val.condition.range,
-            CompileError::Type(TypeError::Mismatch {
-                expected: vague(&BOOL_TYPE),
-                found: vague(&condition_type),
-            }),
-        ));
-    }
-
-    typecheck_body(&item.val.body, ident_m, func_to_params, type_alias_m)?;
-
-    Ok(t::WhileItem {
-        condition: try_tr(&item.val.condition, |x| typecheck_expr(x, None, ident_m, type_alias_m))?,
-        body: try_tr(&item.val.body, |x| typecheck_body(x, ident_m, func_to_params, type_alias_m))?,
+        Ok(StmtDependent { stmt_deps, value: final_expr.unwrap_or_default() })
     })
 }
 
@@ -710,36 +536,454 @@ fn typecheck_statement(
     ident_m: &mut IdentManager,
     func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
-) -> Result<t::Statement, CompileErrorSet> {
-    Ok(match &item.val {
+) -> Result<StmtDependent<Vec<t::Ref<t::AssignExpr>>>, CompileErrorSet> {
+    let mut stmt_deps = Vec::new();
+
+    let body_items = match &item.val {
         l::Statement::IdentInit(x) => {
-            t::Statement::Assign(try_tr(x, |x| typecheck_ident_init(x, ident_m, type_alias_m))?)
+            let stmt = t::Statement::Assign(try_tr(x, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_ident_init(x, ident_m, func_to_params, type_alias_m)?,
+                ))
+            })?);
+
+            Vec::from([tr(x, |_| stmt)])
         },
         l::Statement::Assign(x) => {
-            t::Statement::Assign(try_tr(x, |x| typecheck_assign(x, ident_m, type_alias_m))?)
+            let stmt = t::Statement::Assign(try_tr(x, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_assign(x, ident_m, func_to_params, type_alias_m)?,
+                ))
+            })?);
+
+            Vec::from([tr(x, |_| stmt)])
         },
-        l::Statement::Call(x) => t::Statement::Call(try_tr(x, |x| {
-            typecheck_call(x, ident_m, func_to_params, type_alias_m)
-        })?),
+        l::Statement::Call(x) => {
+            let stmt = t::Statement::Call(try_tr(x, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_call(x, ident_m, func_to_params, type_alias_m)?,
+                ))
+            })?);
+
+            Vec::from([tr(x, |_| stmt)])
+        },
         l::Statement::Native(x) => {
-            t::Statement::Native(try_tr(x, |x| typecheck_native_op(x, ident_m, type_alias_m))?)
+            let stmt = t::Statement::Native(try_tr(x, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_native_op(x, ident_m, func_to_params, type_alias_m)?,
+                ))
+            })?);
+
+            Vec::from([tr(x, |_| stmt)])
         },
-    })
+    };
+
+    let stmt_deps = chain!(stmt_deps.into_iter(), body_items).collect();
+
+    Ok(StmtDependent { stmt_deps, value: Default::default() })
+}
+
+fn typecheck_if(
+    item: &l::Ref<l::IfItem>,
+    expected_type: Option<&Arc<l::Type>>,
+    ident_m: &mut IdentManager,
+    func_to_params: &FuncToParams,
+    type_alias_m: &TypeAliasManager,
+) -> Result<StmtDependent<Vec<t::Ref<t::AssignExpr>>>, CompileErrorSet> {
+    let condition_type = eval_expr(&item.val.condition, None, ident_m, type_alias_m)?;
+    if condition_type.is_subtype_of(&BOOL_TYPE).not() {
+        return Err(CompileErrorSet::new_error(
+            item.val.condition.range,
+            CompileError::Type(TypeError::Mismatch {
+                expected_any_of: Arc::new(Vec::from([vague(&BOOL_TYPE)])),
+                found: vague(&condition_type),
+            }),
+        ));
+    };
+
+    let mut stmt_deps = Vec::new();
+
+    let expr_ident = tr(item, |x| l::Ident::Internal {
+        name: tr(x, |_| l::Name { str: "if".into() }),
+        uuid: Uuid::new_v4(),
+    });
+
+    let expr_ident_info = ident_m.reg(tr(item, |x| l::IdentDef {
+        ident: expr_ident.clone(),
+        ty: tr(x, |x| compute_expr_ty_hint(expected_type, x.range)),
+    }));
+
+    let if_item = t::IfItem {
+        condition: {
+            let exprs = try_tr(&item.val.condition, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_expr(x, None, ident_m, func_to_params, type_alias_m)?,
+                ))
+            })?;
+
+            typecheck_to_t_expr(exprs)?
+        },
+        then_body: {
+            let body = typecheck_expr(
+                &item.val.then_body,
+                expected_type,
+                ident_m,
+                func_to_params,
+                type_alias_m,
+            )?;
+
+            let ident_assignment = tr(&item.val.then_body, |x| {
+                t::Statement::Assign(tr(x, |x| t::Assign {
+                    place: tr(x, |x| t::Place {
+                        offset: None,
+                        head: tr(x, |x| {
+                            t::PlaceHead::Ident(tr(x, |x| t::Ident {
+                                name: tr(x, |_| t::Name {
+                                    str: expr_ident_info.unique_name.clone(),
+                                }),
+                            }))
+                        }),
+                    }),
+                    exprs: tr(x, |_| body.value),
+                }))
+            });
+
+            tr(&item.val.then_body, |x| t::Body {
+                items: tr(x, |_| chain!(body.stmt_deps, [ident_assignment]).collect()),
+            })
+        },
+        else_item: match &item.val.else_item {
+            None => None,
+            Some(x) => Some(try_tr(x, |x| {
+                Ok(t::ElseItem {
+                    body: {
+                        let body = typecheck_expr(
+                            &x.val.body,
+                            expected_type,
+                            ident_m,
+                            func_to_params,
+                            type_alias_m,
+                        )?;
+
+                        let ident_assignment = tr(&item.val.then_body, |x| {
+                            t::Statement::Assign(tr(x, |x| t::Assign {
+                                place: tr(x, |x| t::Place {
+                                    offset: None,
+                                    head: tr(x, |x| {
+                                        t::PlaceHead::Ident(tr(x, |x| t::Ident {
+                                            name: tr(x, |_| t::Name {
+                                                str: expr_ident_info.unique_name.clone(),
+                                            }),
+                                        }))
+                                    }),
+                                }),
+                                exprs: tr(x, |_| body.value),
+                            }))
+                        });
+
+                        tr(&item.val.then_body, |x| t::Body {
+                            items: tr(x, |_| chain!(body.stmt_deps, [ident_assignment]).collect()),
+                        })
+                    },
+                })
+            })?),
+        },
+    };
+
+    let if_ident_expr = tr(&expr_ident, |x| {
+        l::Expr::Place(tr(x, |x| l::Place {
+            head: tr(x, |x| l::PlaceHead::Ident(x.clone())),
+            index_chain: tr(x, |_| Default::default()),
+        }))
+    });
+
+    let mut if_ident_expr_stmt_deps = Vec::new();
+    let if_assign_exprs = sift_stmt_deps(
+        &mut if_ident_expr_stmt_deps,
+        typecheck_expr(&if_ident_expr, expected_type, ident_m, func_to_params, type_alias_m)?,
+    );
+
+    let if_item = tr(item, |x| t::Statement::If(tr(x, |_| if_item)));
+    let stmt_deps = chain!(stmt_deps, [if_item], if_ident_expr_stmt_deps).collect();
+
+    Ok(StmtDependent { stmt_deps, value: if_assign_exprs })
+}
+
+fn typecheck_while(
+    item: &l::Ref<l::WhileItem>,
+    expected_type: Option<&Arc<l::Type>>,
+    ident_m: &mut IdentManager,
+    func_to_params: &FuncToParams,
+    type_alias_m: &TypeAliasManager,
+) -> Result<StmtDependent<Vec<t::Ref<t::AssignExpr>>>, CompileErrorSet> {
+    let condition_type = eval_expr(&item.val.condition, None, ident_m, type_alias_m)?;
+    if condition_type.is_subtype_of(&BOOL_TYPE).not() {
+        return Err(CompileErrorSet::new_error(
+            item.val.condition.range,
+            CompileError::Type(TypeError::Mismatch {
+                expected_any_of: Arc::new(Vec::from([vague(&BOOL_TYPE)])),
+                found: vague(&condition_type),
+            }),
+        ));
+    }
+
+    let mut stmt_deps = Vec::new();
+
+    let while_item = t::WhileItem {
+        condition: {
+            let exprs = try_tr(&item.val.condition, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_expr(x, None, ident_m, func_to_params, type_alias_m)?,
+                ))
+            })?;
+
+            typecheck_to_t_expr(exprs)?
+        },
+        body: {
+            let exprs = typecheck_expr(
+                &item.val.body,
+                expected_type,
+                ident_m,
+                func_to_params,
+                type_alias_m,
+            )?;
+
+            tr(&item.val.body, |x| t::Body { items: tr(x, |_| exprs.stmt_deps) })
+        },
+    };
+
+    let while_item = tr(item, |x| t::Statement::While(tr(x, |_| while_item)));
+    let stmt_deps = chain!(stmt_deps, [while_item]).collect();
+
+    Ok(StmtDependent { stmt_deps, value: Default::default() })
+}
+
+fn typecheck_match(
+    item: &l::Ref<l::MatchItem>,
+    expected_type: Option<&Arc<l::Type>>,
+    ident_m: &mut IdentManager,
+    func_to_params: &FuncToParams,
+    type_alias_m: &TypeAliasManager,
+) -> Result<StmtDependent<Vec<t::Ref<t::AssignExpr>>>, CompileErrorSet> {
+    let mut stmt_deps = Vec::new();
+
+    let expr_ident = tr(item, |x| l::Ident::Internal {
+        name: tr(x, |_| l::Name { str: "match".into() }),
+        uuid: Uuid::new_v4(),
+    });
+
+    let expr_ident_info = ident_m.reg(tr(item, |x| l::IdentDef {
+        ident: expr_ident.clone(),
+        ty: tr(x, |x| compute_expr_ty_hint(expected_type, x.range)),
+    }));
+
+    let expr_ty = eval_expr(&item.val.expr, None, ident_m, type_alias_m)?;
+    let l::Type::Enum { name: enum_name } = expr_ty.as_ref() else {
+        return Err(CompileErrorSet::new_error(
+            item.val.expr.range,
+            CompileError::Type(TypeError::Mismatch {
+                expected_any_of: Arc::new(Vec::from([Arc::new(VagueType::Enum { name: None })])),
+                found: vague(&expr_ty),
+            }),
+        ));
+    };
+
+    let all_variants =
+        type_alias_m.all_variants(&EnumName::Str(enum_name.clone()), item.val.expr.range)?;
+
+    let mut unmatched_variants = all_variants.iter().collect::<HashSet<_>>();
+
+    struct CaseBranch {
+        condition: t::Ref<t::Expr>,
+        body: t::Ref<t::Body>,
+    }
+
+    let mut branches = Vec::new();
+
+    for case in item.val.cases.val.iter() {
+        let variant = &case.val.variant;
+
+        if let Some(lit_enum_name) = &variant.val.enum_name
+            && &lit_enum_name.val.str != enum_name
+        {
+            return Err(CompileErrorSet::new_error(
+                variant.range,
+                CompileError::Type(TypeError::Mismatch {
+                    expected_any_of: Arc::new(Vec::from([Arc::new(VagueType::Enum {
+                        name: Some(enum_name.clone()),
+                    })])),
+                    found: Arc::new(VagueType::Enum { name: Some(lit_enum_name.val.str.clone()) }),
+                }),
+            ));
+        }
+
+        if unmatched_variants.remove(&variant.val.variant_name.val.str).not() {
+            return Err(CompileErrorSet::new_error(
+                variant.range,
+                CompileError::Type(TypeError::UnmatchableCase),
+            ));
+        }
+
+        let case_condition = try_tr(variant, |v| {
+            Ok(t::Expr::Paren(try_tr(v, |v| {
+                Ok(t::ParenExpr::Binary(try_tr(v, |v| {
+                    Ok(t::BinaryParenExpr {
+                        left: {
+                            let exprs = try_tr(&item.val.expr, |expr| {
+                                let exprs = sift_stmt_deps(
+                                    &mut stmt_deps,
+                                    typecheck_expr(
+                                        expr,
+                                        None,
+                                        ident_m,
+                                        func_to_params,
+                                        type_alias_m,
+                                    )?,
+                                );
+
+                                Ok(exprs)
+                            })?;
+
+                            typecheck_to_t_expr(exprs)?
+                        },
+                        op: tr(v, |_| t::BinaryParenExprOp::Eq),
+                        right: try_tr(v, |v| {
+                            Ok(t::Expr::Literal(try_tr(v, |v| {
+                                typecheck_variant_literal(
+                                    &match &v.val.enum_name {
+                                        Some(name) => EnumName::Name(name.clone()),
+                                        None => EnumName::Str(enum_name.clone()),
+                                    },
+                                    &v.val.variant_name,
+                                    v.range,
+                                    type_alias_m,
+                                )
+                            })?))
+                        })?,
+                    })
+                })?))
+            })?))
+        })?;
+
+        let mut case_body_stmt_deps = Vec::new();
+        let case_body_exprs = try_tr(&case.val.body, |x| {
+            Ok(sift_stmt_deps(
+                &mut case_body_stmt_deps,
+                typecheck_expr(x, expected_type, ident_m, func_to_params, type_alias_m)?,
+            ))
+        })?;
+
+        let case_body = tr(&case.val.body, |x| t::Body {
+            items: tr(x, |x| {
+                let expr_assignment = tr(x, |x| {
+                    t::Statement::Assign(tr(x, |x| t::Assign {
+                        place: tr(x, |x| t::Place {
+                            head: tr(x, |x| {
+                                t::PlaceHead::Ident(tr(x, |x| t::Ident {
+                                    name: tr(x, |_| t::Name {
+                                        str: expr_ident_info.unique_name.clone(),
+                                    }),
+                                }))
+                            }),
+                            offset: None,
+                        }),
+                        exprs: case_body_exprs,
+                    }))
+                });
+
+                // let expr_assignment = l::Assign {
+                //     place: tr(x, |x| l::Place {
+                //         head: tr(x, |x| l::PlaceHead::Ident(expr_ident.clone())),
+                //         index_chain: tr(x, |_| Default::default()),
+                //     }),
+                //     expr:
+                // };
+
+                chain!(case_body_stmt_deps, [expr_assignment]).collect()
+            }),
+        });
+
+        branches.push(Arc::new(Srced {
+            range: case.range,
+            val: CaseBranch { condition: case_condition, body: case_body },
+        }));
+    }
+
+    // TODO: make this do a binary search instead to save on the number of checks?
+    let mut if_item: Option<t::Ref<t::IfItem>> = None;
+
+    for branch in branches.into_iter().rev() {
+        if_item = Some(try_tr(&branch, |branch| {
+            Ok(t::IfItem {
+                condition: branch.val.condition.clone(),
+                then_body: branch.val.body.clone(),
+                else_item: match if_item {
+                    None => None,
+                    Some(if_item) => Some(tr(&if_item, |x| t::ElseItem {
+                        body: tr(x, |x| t::Body {
+                            items: tr(x, |x| Vec::from([tr(x, |x| t::Statement::If(x.clone()))])),
+                        }),
+                    })),
+                },
+            })
+        })?);
+    }
+
+    if unmatched_variants.is_empty().not() {
+        let unmatched_variants =
+            all_variants.iter().filter(|v| unmatched_variants.contains(v)).cloned().collect_vec();
+
+        return Err(CompileErrorSet::new_error(
+            item.range,
+            CompileError::Type(TypeError::NonExhaustiveMatch {
+                unmatched_cases: Arc::new(unmatched_variants),
+            }),
+        ));
+    }
+
+    let match_expr = tr(&expr_ident, |x| {
+        l::Expr::Place(tr(x, |x| l::Place {
+            head: tr(x, |x| l::PlaceHead::Ident(x.clone())),
+            index_chain: tr(x, |_| Default::default()),
+        }))
+    });
+
+    let mut match_expr_stmt_deps = Vec::new();
+    let match_assign_exprs = sift_stmt_deps(
+        &mut match_expr_stmt_deps,
+        typecheck_expr(&match_expr, expected_type, ident_m, func_to_params, type_alias_m)?,
+    );
+
+    let stmt_deps = chain!(
+        stmt_deps,
+        if_item.map(|i| tr(&i, |i| t::Statement::If(i.clone()))),
+        match_expr_stmt_deps
+    )
+    .collect();
+
+    Ok(StmtDependent { stmt_deps, value: match_assign_exprs })
 }
 
 fn typecheck_ident_init(
     item: &l::Ref<l::IdentInit>,
     ident_m: &mut IdentManager,
+    func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
-) -> Result<t::Assign, CompileErrorSet> {
+) -> Result<StmtDependent<t::Assign>, CompileErrorSet> {
     let ident_ty = Arc::new(type_alias_m.resolve(&item.val.def.val.ty)?);
-    let expr_ty = eval_assign_expr(&item.val.expr, &ident_ty, ident_m, type_alias_m)?;
+    let expr_ty = eval_expr(&item.val.expr, Some(&ident_ty), ident_m, type_alias_m)?;
 
     if expr_ty.is_subtype_of(&ident_ty).not() {
         return Err(CompileErrorSet::new_error(
             item.range,
             CompileError::Type(TypeError::Mismatch {
-                expected: vague(&ident_ty),
+                expected_any_of: Arc::new(Vec::from([vague(&ident_ty)])),
                 found: vague(&expr_ty),
             }),
         ));
@@ -747,89 +991,201 @@ fn typecheck_ident_init(
 
     let info = ident_m.reg(item.val.def.clone());
 
-    Ok(t::Assign {
+    let mut stmt_deps = Vec::new();
+
+    let assign = t::Assign {
         place: tr(&item.val.def, |x| t::Place {
             head: tr(x, |x| {
-                t::PlaceHead::Ident(tr(&x.val.name, |x| t::Ident {
+                t::PlaceHead::Ident(tr(x.val.ident.val.name(), |x| t::Ident {
                     name: tr(x, |_| t::Name { str: info.unique_name.clone() }),
                 }))
             }),
             offset: None,
         }),
         exprs: try_tr(&item.val.expr, |x| {
-            Ok(typecheck_assign_expr(x, &ident_ty, ident_m, type_alias_m)?
-                .into_iter()
-                .map(|expr| tr(x, |_| expr))
-                .collect())
+            Ok(sift_stmt_deps(
+                &mut stmt_deps,
+                typecheck_expr(x, Some(&ident_ty), ident_m, func_to_params, type_alias_m)?,
+            )
+            .into_iter()
+            .collect())
         })?,
-    })
+    };
+
+    Ok(StmtDependent { stmt_deps, value: assign })
 }
 
 fn typecheck_native_op(
     item: &l::Ref<l::NativeOperation>,
     ident_m: &mut IdentManager,
+    func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
-) -> Result<t::NativeOperation, CompileErrorSet> {
-    Ok(match &item.val {
+) -> Result<StmtDependent<t::NativeOperation>, CompileErrorSet> {
+    let mut stmt_deps = Vec::new();
+
+    let native_op = match &item.val {
         l::NativeOperation::Out { val } => t::NativeOperation::Out {
-            val: try_tr(val, |x| typecheck_expr(x, None, ident_m, type_alias_m))?,
+            val: {
+                let exprs = try_tr(val, |x| {
+                    Ok(sift_stmt_deps(
+                        &mut stmt_deps,
+                        typecheck_expr(x, None, ident_m, func_to_params, type_alias_m)?,
+                    ))
+                })?;
+
+                typecheck_to_t_expr(exprs)?
+            },
         },
         l::NativeOperation::In { dest_place } => t::NativeOperation::In {
-            dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_m, type_alias_m))?,
+            dest_place: try_tr(dest_place, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_place(x, ident_m, func_to_params, type_alias_m)?,
+                ))
+            })?,
         },
         l::NativeOperation::Random { dest_place, min, max } => t::NativeOperation::Random {
-            dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_m, type_alias_m))?,
-            min: try_tr(min, |x| typecheck_expr(x, None, ident_m, type_alias_m))?,
-            max: try_tr(max, |x| typecheck_expr(x, None, ident_m, type_alias_m))?,
+            dest_place: try_tr(dest_place, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_place(x, ident_m, func_to_params, type_alias_m)?,
+                ))
+            })?,
+            min: {
+                let exprs = try_tr(min, |x| {
+                    Ok(sift_stmt_deps(
+                        &mut stmt_deps,
+                        typecheck_expr(x, None, ident_m, func_to_params, type_alias_m)?,
+                    ))
+                })?;
+
+                typecheck_to_t_expr(exprs)?
+            },
+            max: {
+                let exprs = try_tr(max, |x| {
+                    Ok(sift_stmt_deps(
+                        &mut stmt_deps,
+                        typecheck_expr(x, None, ident_m, func_to_params, type_alias_m)?,
+                    ))
+                })?;
+
+                typecheck_to_t_expr(exprs)?
+            },
         },
         l::NativeOperation::StdoutClear => t::NativeOperation::StdoutClear,
         l::NativeOperation::StdoutRead { dest_place, index } => t::NativeOperation::StdoutRead {
-            dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_m, type_alias_m))?,
-            index: try_tr(index, |x| typecheck_expr(x, None, ident_m, type_alias_m))?,
+            dest_place: try_tr(dest_place, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_place(x, ident_m, func_to_params, type_alias_m)?,
+                ))
+            })?,
+            index: {
+                let exprs = try_tr(index, |x| {
+                    Ok(sift_stmt_deps(
+                        &mut stmt_deps,
+                        typecheck_expr(x, None, ident_m, func_to_params, type_alias_m)?,
+                    ))
+                })?;
+
+                typecheck_to_t_expr(exprs)?
+            },
         },
         l::NativeOperation::StdoutWrite { val, index } => t::NativeOperation::StdoutWrite {
-            val: try_tr(val, |x| typecheck_expr(x, None, ident_m, type_alias_m))?,
-            index: try_tr(index, |x| typecheck_expr(x, None, ident_m, type_alias_m))?,
+            val: {
+                let exprs = try_tr(val, |x| {
+                    Ok(sift_stmt_deps(
+                        &mut stmt_deps,
+                        typecheck_expr(x, None, ident_m, func_to_params, type_alias_m)?,
+                    ))
+                })?;
+
+                typecheck_to_t_expr(exprs)?
+            },
+            index: {
+                let exprs = try_tr(index, |x| {
+                    Ok(sift_stmt_deps(
+                        &mut stmt_deps,
+                        typecheck_expr(x, None, ident_m, func_to_params, type_alias_m)?,
+                    ))
+                })?;
+
+                typecheck_to_t_expr(exprs)?
+            },
         },
         l::NativeOperation::StdoutLen { dest_place } => t::NativeOperation::StdoutLen {
-            dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_m, type_alias_m))?,
+            dest_place: try_tr(dest_place, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_place(x, ident_m, func_to_params, type_alias_m)?,
+                ))
+            })?,
         },
         l::NativeOperation::Wait { duration_s } => t::NativeOperation::Wait {
-            duration_s: try_tr(duration_s, |x| typecheck_expr(x, None, ident_m, type_alias_m))?,
+            duration_s: {
+                let exprs = try_tr(duration_s, |x| {
+                    Ok(sift_stmt_deps(
+                        &mut stmt_deps,
+                        typecheck_expr(x, None, ident_m, func_to_params, type_alias_m)?,
+                    ))
+                })?;
+
+                typecheck_to_t_expr(exprs)?
+            },
         },
         l::NativeOperation::TimerGet { dest_place } => t::NativeOperation::TimerGet {
-            dest_place: try_tr(dest_place, |x| typecheck_place(x, ident_m, type_alias_m))?,
+            dest_place: try_tr(dest_place, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_place(x, ident_m, func_to_params, type_alias_m)?,
+                ))
+            })?,
         },
-    })
+    };
+
+    Ok(StmtDependent { stmt_deps, value: native_op })
 }
 
 fn typecheck_assign(
     item: &l::Ref<l::Assign>,
     ident_m: &mut IdentManager,
+    func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
-) -> Result<t::Assign, CompileErrorSet> {
+) -> Result<StmtDependent<t::Assign>, CompileErrorSet> {
     let place_type = eval_place(&item.val.place, ident_m, type_alias_m)?.ty;
     let expr = &item.val.expr;
-    let expr_type = eval_assign_expr(expr, &place_type, ident_m, type_alias_m)?;
+    let expr_type = eval_expr(expr, Some(&place_type), ident_m, type_alias_m)?;
+
     if expr_type.is_subtype_of(&place_type).not() {
         return Err(CompileErrorSet::new_error(
             expr.range,
             CompileError::Type(TypeError::Mismatch {
-                expected: vague(&place_type),
+                expected_any_of: Arc::new(Vec::from([vague(&place_type)])),
                 found: vague(&expr_type),
             }),
         ));
     }
 
-    Ok(t::Assign {
-        place: try_tr(&item.val.place, |x| typecheck_place(x, ident_m, type_alias_m))?,
-        exprs: try_tr(&item.val.expr, |x| {
-            Ok(typecheck_assign_expr(x, &place_type, ident_m, type_alias_m)?
-                .into_iter()
-                .map(|expr| tr(x, |_| expr))
-                .collect())
+    let mut stmt_deps = Vec::new();
+
+    let assign = t::Assign {
+        place: try_tr(&item.val.place, |x| {
+            Ok(sift_stmt_deps(
+                &mut stmt_deps,
+                typecheck_place(x, ident_m, func_to_params, type_alias_m)?,
+            ))
         })?,
-    })
+        exprs: try_tr(&item.val.expr, |x| {
+            Ok(sift_stmt_deps(
+                &mut stmt_deps,
+                typecheck_expr(x, Some(&place_type), ident_m, func_to_params, type_alias_m)?,
+            )
+            .into_iter()
+            .collect())
+        })?,
+    };
+
+    Ok(StmtDependent { stmt_deps, value: assign })
 }
 
 fn typecheck_call(
@@ -837,7 +1193,7 @@ fn typecheck_call(
     ident_m: &mut IdentManager,
     func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
-) -> Result<t::FunctionCall, CompileErrorSet> {
+) -> Result<StmtDependent<t::FunctionCall>, CompileErrorSet> {
     let func_name = &item.val.func_name;
     let Some(param_decls) = func_to_params.get(func_name.val.str.as_ref()) else {
         return Err(CompileErrorSet::new_error(
@@ -849,6 +1205,7 @@ fn typecheck_call(
     let mut expr_iter = item.val.param_exprs.val.iter();
     let mut decl_iter = param_decls.val.iter();
     let mut typechecked_param_exprs_vec = Vec::new();
+    let mut stmt_deps = Vec::new();
 
     loop {
         let (expr, decl) = (expr_iter.next(), decl_iter.next());
@@ -856,22 +1213,24 @@ fn typecheck_call(
             (None, None) => break,
             (Some(expr), Some(decl)) => {
                 let decl_type = Arc::new(type_alias_m.resolve(&decl.val.ty)?);
-                let expr_type = eval_assign_expr(expr, &decl_type, ident_m, type_alias_m)?;
+                let expr_type = eval_expr(expr, Some(&decl_type), ident_m, type_alias_m)?;
                 if expr_type.is_subtype_of(&decl_type).not() {
                     return Err(CompileErrorSet::new_error(
                         expr.range,
                         CompileError::Type(TypeError::Mismatch {
-                            expected: vague(&decl_type),
+                            expected_any_of: Arc::new(Vec::from([vague(&decl_type)])),
                             found: vague(&expr_type),
                         }),
                     ));
                 }
 
                 try_tr(expr, |x| {
-                    Ok(typecheck_assign_expr(x, &decl_type, ident_m, type_alias_m)?
-                        .into_iter()
-                        .map(|expr| tr(x, |_| expr))
-                        .collect())
+                    Ok(sift_stmt_deps(
+                        &mut stmt_deps,
+                        typecheck_expr(x, Some(&decl_type), ident_m, func_to_params, type_alias_m)?,
+                    )
+                    .into_iter()
+                    .collect())
                 })?
             },
             _ => {
@@ -889,10 +1248,12 @@ fn typecheck_call(
         typechecked_param_exprs_vec.push(typechecked_param_exprs);
     }
 
-    Ok(t::FunctionCall {
+    let func_call = t::FunctionCall {
         func_name: tr(&item.val.func_name, typecheck_name),
         param_exprs: tr(&item.val.param_exprs, |_| typechecked_param_exprs_vec),
-    })
+    };
+
+    Ok(StmtDependent { stmt_deps, value: func_call })
 }
 
 fn vague(ty: &Arc<l::Type>) -> Arc<VagueType> {
@@ -902,23 +1263,41 @@ fn vague(ty: &Arc<l::Type>) -> Arc<VagueType> {
 fn typecheck_place(
     item: &l::Ref<l::Place>,
     ident_m: &mut IdentManager,
+    func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
-) -> Result<t::Place, CompileErrorSet> {
+) -> Result<StmtDependent<t::Place>, CompileErrorSet> {
     let place_eval = eval_place(item, ident_m, type_alias_m)?;
-    Ok(t::Place {
-        head: try_tr(&item.val.head, |x| typecheck_place_head(x, ident_m, type_alias_m))?,
+
+    let mut stmt_deps = Vec::new();
+
+    let place = t::Place {
+        head: try_tr(&item.val.head, |x| {
+            Ok(sift_stmt_deps(
+                &mut stmt_deps,
+                typecheck_place_head(x, ident_m, func_to_params, type_alias_m)?,
+            ))
+        })?,
         offset: match place_eval.offset {
             None => None,
             Some(offset) => Some(match offset.as_ref() {
                 PlaceOffset::Static(index) => tr(index, |_| t::Offset::Static(index.clone())),
                 PlaceOffset::Expr(expr) => try_tr(expr, |x| {
-                    Ok(t::Offset::Expr(try_tr(x, |x| {
-                        typecheck_expr(x, None, ident_m, type_alias_m)
-                    })?))
+                    Ok(t::Offset::Expr({
+                        let exprs = try_tr(x, |x| {
+                            Ok(sift_stmt_deps(
+                                &mut stmt_deps,
+                                typecheck_expr(x, None, ident_m, func_to_params, type_alias_m)?,
+                            ))
+                        })?;
+
+                        typecheck_to_t_expr(exprs)?
+                    }))
                 })?,
             }),
         },
-    })
+    };
+
+    Ok(StmtDependent { stmt_deps, value: place })
 }
 
 struct LReffer {
@@ -1060,14 +1439,22 @@ fn eval_place(
 fn typecheck_place_head(
     item: &l::Ref<l::PlaceHead>,
     ident_m: &mut IdentManager,
+    func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
-) -> Result<t::PlaceHead, CompileErrorSet> {
-    Ok(match &item.val {
+) -> Result<StmtDependent<t::PlaceHead>, CompileErrorSet> {
+    let mut stmt_deps = Vec::new();
+
+    let place_head = match &item.val {
         l::PlaceHead::Ident(x) => t::PlaceHead::Ident(try_tr(x, |x| typecheck_ident(x, ident_m))?),
-        l::PlaceHead::Deref(x) => {
-            t::PlaceHead::Deref(try_tr(x, |x| typecheck_deref(x, ident_m, type_alias_m))?)
-        },
-    })
+        l::PlaceHead::Deref(x) => t::PlaceHead::Deref(try_tr(x, |x| {
+            Ok(sift_stmt_deps(
+                &mut stmt_deps,
+                typecheck_deref(x, ident_m, func_to_params, type_alias_m)?,
+            ))
+        })?),
+    };
+
+    Ok(StmtDependent { stmt_deps, value: place_head })
 }
 
 fn eval_place_head(
@@ -1085,9 +1472,9 @@ fn typecheck_ident(
     item: &l::Ref<l::Ident>,
     ident_m: &IdentManager,
 ) -> Result<t::Ident, CompileErrorSet> {
-    let info = ident_m.get(&item.val.name)?;
-    let name = tr(&item.val.name, |_| t::Name { str: info.unique_name.clone() });
-    Ok(t::Ident { name })
+    let info = ident_m.get(&item.val)?;
+    let unique_name = tr(item.val.name(), |_| t::Name { str: info.unique_name.clone() });
+    Ok(t::Ident { name: unique_name })
 }
 
 fn eval_ident(
@@ -1095,18 +1482,28 @@ fn eval_ident(
     ident_m: &mut IdentManager,
     type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
-    let info = ident_m.get(&item.val.name)?;
+    let info = ident_m.get(&item.val)?;
     type_alias_m.resolve(&info.def.val.ty).map(Arc::new)
 }
 
 fn typecheck_deref(
     item: &l::Ref<l::Deref>,
     ident_m: &mut IdentManager,
+    func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
-) -> Result<t::Deref, CompileErrorSet> {
-    Ok(t::Deref {
-        addr: try_tr(&item.val.addr, |x| typecheck_expr(x, None, ident_m, type_alias_m))?,
-    })
+) -> Result<StmtDependent<t::Deref>, CompileErrorSet> {
+    let mut stmt_deps = Vec::new();
+
+    let exprs = try_tr(&item.val.addr, |x| {
+        Ok(sift_stmt_deps(
+            &mut stmt_deps,
+            typecheck_expr(x, None, ident_m, func_to_params, type_alias_m)?,
+        ))
+    })?;
+
+    let deref = t::Deref { addr: typecheck_to_t_expr(exprs)? };
+
+    Ok(StmtDependent { stmt_deps, value: deref })
 }
 
 fn eval_deref(
@@ -1115,6 +1512,7 @@ fn eval_deref(
     type_alias_m: &TypeAliasManager,
 ) -> Result<Arc<l::Type>, CompileErrorSet> {
     let addr_type = eval_expr(&item.val.addr, None, ident_m, type_alias_m)?;
+    println!("DEREF ADDR TY: {addr_type:?}");
     let l::Type::Ref(deref_type) = addr_type.as_ref() else {
         return Err(CompileErrorSet::new_error(
             item.range,
@@ -1154,71 +1552,155 @@ fn merge_t_offsets(
     lr.of(merged_offset)
 }
 
-fn typecheck_copy(
-    expr: &l::Ref<l::Expr>,
-    expected_place_size: u32,
+fn infer_enum_name(
+    variant_literal: &l::Ref<l::VariantLiteral>,
+    expected_type: Option<&Arc<l::Type>>,
+) -> Result<Arc<str>, CompileErrorSet> {
+    let enum_name = match &variant_literal.val.enum_name {
+        Some(enum_name) => &enum_name.val.str,
+        None => match expected_type.map(AsRef::as_ref) {
+            Some(l::Type::Enum { name }) => name,
+            _ => {
+                println!("ERR: [infer_enum_name] {variant_literal:?}");
+                return Err(CompileErrorSet::new_error(
+                    variant_literal.range,
+                    CompileError::Type(TypeError::CannotInfer),
+                ));
+            },
+        },
+    };
+
+    Ok(enum_name.clone())
+}
+
+struct StmtDependent<T> {
+    stmt_deps: Vec<t::Ref<t::Statement>>,
+    value: T,
+}
+
+fn typecheck_expr(
+    item: &l::Ref<l::Expr>,
+    expected_type: Option<&Arc<l::Type>>,
     ident_m: &mut IdentManager,
+    func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
-) -> Result<Vec<t::AssignExpr>, CompileErrorSet> {
-    Ok(match &expr.val {
+) -> Result<StmtDependent<Vec<t::Ref<t::AssignExpr>>>, CompileErrorSet> {
+    let expr_ty = eval_expr(item, expected_type, ident_m, type_alias_m)?;
+
+    let mut stmt_deps = Vec::new();
+
+    let exprs: Vec<t::Ref<t::AssignExpr>> = match &item.val {
+        l::Expr::Literal(x) => {
+            let expr = t::Expr::Literal(try_tr(x, |x| match &x.val {
+                l::Literal::Str(x) => Ok(t::Literal::Str(x.clone())),
+                l::Literal::Num(x) => Ok(t::Literal::Num(*x)),
+                l::Literal::Int(x) => Ok(t::Literal::Int(*x)),
+                l::Literal::Uint(x) => Ok(t::Literal::Uint(*x)),
+                l::Literal::Bool(x) => Ok(t::Literal::Bool(*x)),
+                l::Literal::Variant(x) => Ok(typecheck_variant_literal(
+                    &EnumName::Str(infer_enum_name(x, expected_type)?),
+                    &x.val.variant_name,
+                    x.range,
+                    type_alias_m,
+                )?),
+            })?);
+
+            Vec::from([tr(x, |x| t::AssignExpr { expr: tr(x, |_| expr), offset: 0 })])
+        },
+        l::Expr::Ref(x) => {
+            let expr = t::Expr::Ref(try_tr(x, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_place(x, ident_m, func_to_params, type_alias_m)?,
+                ))
+            })?);
+
+            Vec::from([tr(x, |x| t::AssignExpr { expr: tr(x, |_| expr), offset: 0 })])
+        },
+        l::Expr::Paren(x) => {
+            let expr = t::Expr::Paren(try_tr(x, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_paren_expr(x, ident_m, func_to_params, type_alias_m)?,
+                ))
+            })?);
+
+            Vec::from([tr(x, |x| t::AssignExpr { expr: tr(x, |_| expr), offset: 0 })])
+        },
         l::Expr::Place(place) => {
-            let place = try_tr(place, |x| typecheck_place(x, ident_m, type_alias_m))?;
-            (0..expected_place_size)
-                .map(|offset| t::AssignExpr {
-                    offset,
-                    expr: tr(&place, |x| {
-                        t::Expr::Place(tr(x, |x| {
-                            let curr_offset = tr(x, |x| t::Offset::Static(tr(x, |_| offset)));
+            let place_type = eval_place(place, ident_m, type_alias_m)?;
 
-                            let offset = match &place.val.offset {
-                                None => curr_offset,
-                                Some(next_offset) => merge_t_offsets(&curr_offset, next_offset),
-                            };
+            let place = try_tr(place, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_place(x, ident_m, func_to_params, type_alias_m)?,
+                ))
+            })?;
 
-                            t::Place { head: x.val.head.clone(), offset: Some(offset) }
-                        }))
-                    }),
+            (0..(place_type.ty.size()))
+                .map(|offset| {
+                    tr(&place, |x| t::AssignExpr {
+                        offset,
+                        expr: tr(x, |x| {
+                            t::Expr::Place(tr(x, |x| {
+                                let curr_offset = tr(x, |x| t::Offset::Static(tr(x, |_| offset)));
+
+                                let offset = match &place.val.offset {
+                                    None => curr_offset,
+                                    Some(next_offset) => merge_t_offsets(&curr_offset, next_offset),
+                                };
+
+                                t::Place { head: x.val.head.clone(), offset: Some(offset) }
+                            }))
+                        }),
+                    })
                 })
                 .collect()
         },
-        l::Expr::Cast { expr, .. } | l::Expr::Transmute { expr, .. } => {
-            typecheck_copy(expr, expected_place_size, ident_m, type_alias_m)?
-        },
-        _ => {
-            return Err(CompileErrorSet::new_error(
-                expr.range,
-                CompileError::Type(TypeError::AssignCellExprToCompoundPlace {
-                    place_size: expected_place_size,
-                }),
-            ));
-        },
-    })
-}
+        l::Expr::Cast { expr, ty } | l::Expr::Transmute { expr, ty } => {
+            let casted_from_ty = Arc::new(type_alias_m.resolve(ty)?);
 
-fn typecheck_assign_expr(
-    item: &l::Ref<l::AssignExpr>,
-    expected_type: &Arc<l::Type>,
-    ident_m: &mut IdentManager,
-    type_alias_m: &TypeAliasManager,
-) -> Result<Vec<t::AssignExpr>, CompileErrorSet> {
-    let assign_expr_ty = eval_assign_expr(item, expected_type, ident_m, type_alias_m)?;
-
-    Ok(match &item.val {
-        l::AssignExpr::Expr(x) => match expected_type.size() {
-            1 => Vec::from([t::AssignExpr {
-                offset: 0,
-                expr: try_tr(x, |x| typecheck_expr(x, Some(expected_type), ident_m, type_alias_m))?,
-            }]),
-            size => typecheck_copy(x, size, ident_m, type_alias_m)?,
+            sift_stmt_deps(
+                &mut stmt_deps,
+                typecheck_expr(expr, Some(&casted_from_ty), ident_m, func_to_params, type_alias_m)?,
+            )
         },
-        l::AssignExpr::Array { single_exprs, spread_expr } => {
+        l::Expr::If(x) => sift_stmt_deps(
+            &mut stmt_deps,
+            typecheck_if(x, expected_type, ident_m, func_to_params, type_alias_m)?,
+        ),
+        l::Expr::While(x) => sift_stmt_deps(
+            &mut stmt_deps,
+            typecheck_while(x, expected_type, ident_m, func_to_params, type_alias_m)?,
+        ),
+        l::Expr::Match(match_item) => sift_stmt_deps(
+            &mut stmt_deps,
+            typecheck_match(match_item, expected_type, ident_m, func_to_params, type_alias_m)?,
+        ),
+        l::Expr::Statement(stmt) => sift_stmt_deps(
+            &mut stmt_deps,
+            typecheck_statement(stmt, ident_m, func_to_params, type_alias_m)?,
+        ),
+        l::Expr::Block(block) => sift_stmt_deps(
+            &mut stmt_deps,
+            typecheck_block(block, expected_type, ident_m, func_to_params, type_alias_m)?,
+        ),
+        l::Expr::Array { single_exprs, spread_expr } => {
+            let Some(expected_type) = expected_type else {
+                println!("ERR: [typecheck_array] {item:?}");
+                return Err(CompileErrorSet::new_error(
+                    item.range,
+                    CompileError::Type(TypeError::CannotInfer),
+                ));
+            };
+
             let l::Type::Array { ty: expected_el_type, len: expected_len } = expected_type.as_ref()
             else {
                 return Err(CompileErrorSet::new_error(
                     item.range,
                     CompileError::Type(TypeError::Mismatch {
-                        expected: vague(expected_type),
-                        found: vague(&assign_expr_ty),
+                        expected_any_of: Arc::new(Vec::from([vague(expected_type)])),
+                        found: vague(&expr_ty),
                     }),
                 ));
             };
@@ -1236,19 +1718,30 @@ fn typecheck_assign_expr(
                             return Err(CompileErrorSet::new_error(
                                 item.range,
                                 CompileError::Type(TypeError::Mismatch {
-                                    expected: vague(expected_type),
-                                    found: vague(&assign_expr_ty),
+                                    expected_any_of: Arc::new(Vec::from([vague(expected_type)])),
+                                    found: vague(&expr_ty),
                                 }),
                             ));
                         },
                     },
                 };
 
-                let exprs = typecheck_assign_expr(el, expected_el_type, ident_m, type_alias_m)?;
+                let exprs = sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_expr(
+                        el,
+                        Some(expected_el_type),
+                        ident_m,
+                        func_to_params,
+                        type_alias_m,
+                    )?,
+                );
 
-                let el_assign_exprs = exprs.iter().map(|el| t::AssignExpr {
-                    offset: i * el_size + el.offset,
-                    expr: el.expr.clone(),
+                let el_assign_exprs = exprs.iter().map(|el| {
+                    tr(el, |el| t::AssignExpr {
+                        offset: i * el_size + el.val.offset,
+                        expr: el.val.expr.clone(),
+                    })
                 });
 
                 typechecked_assign_exprs.extend(el_assign_exprs);
@@ -1256,13 +1749,21 @@ fn typecheck_assign_expr(
 
             typechecked_assign_exprs
         },
-        l::AssignExpr::Struct(assign_fields) => {
+        l::Expr::Struct(assign_fields) => {
+            let Some(expected_type) = expected_type else {
+                println!("ERR: [typecheck_struct] {item:?}");
+                return Err(CompileErrorSet::new_error(
+                    item.range,
+                    CompileError::Type(TypeError::CannotInfer),
+                ));
+            };
+
             let l::Type::Struct(expected_fields) = expected_type.as_ref() else {
                 return Err(CompileErrorSet::new_error(
                     item.range,
                     CompileError::Type(TypeError::Mismatch {
-                        expected: vague(expected_type),
-                        found: vague(&assign_expr_ty),
+                        expected_any_of: Arc::new(Vec::from([vague(expected_type)])),
+                        found: vague(&expr_ty),
                     }),
                 ));
             };
@@ -1285,18 +1786,24 @@ fn typecheck_assign_expr(
                     ));
                 };
 
-                let field_assign_exprs = typecheck_assign_expr(
-                    &assign_field.val.assign,
-                    &expected_field.ty,
-                    ident_m,
-                    type_alias_m,
-                )?;
+                let field_assign_exprs = sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_expr(
+                        &assign_field.val.assign,
+                        Some(&expected_field.ty),
+                        ident_m,
+                        func_to_params,
+                        type_alias_m,
+                    )?,
+                );
 
                 for field_assign_expr in field_assign_exprs {
-                    struct_assign_exprs.push(t::AssignExpr {
-                        offset: field_offset + field_assign_expr.offset,
-                        expr: field_assign_expr.expr,
-                    });
+                    struct_assign_exprs.push(tr(&field_assign_expr, |field_assign_expr| {
+                        t::AssignExpr {
+                            offset: field_offset + field_assign_expr.val.offset,
+                            expr: field_assign_expr.val.expr.clone(),
+                        }
+                    }));
                 }
 
                 field_offset += expected_field.ty.size();
@@ -1304,165 +1811,14 @@ fn typecheck_assign_expr(
 
             struct_assign_exprs
         },
-        l::AssignExpr::Undefined => Default::default(),
-    })
-}
-
-fn eval_assign_expr(
-    item: &l::Ref<l::AssignExpr>,
-    expected_type: &Arc<l::Type>,
-    ident_m: &mut IdentManager,
-    type_alias_m: &TypeAliasManager,
-) -> Result<Arc<l::Type>, CompileErrorSet> {
-    match &item.val {
-        l::AssignExpr::Expr(x) => eval_expr(x, Some(expected_type), ident_m, type_alias_m),
-        l::AssignExpr::Array { single_exprs, spread_expr } => {
-            let l::Type::Array { ty: expected_el_type, len: expected_len } = expected_type.as_ref()
-            else {
-                let len = match spread_expr {
-                    None => Some(single_exprs.val.len() as u32),
-                    Some(_) => None,
-                };
-
-                return Err(CompileErrorSet::new_error(
-                    item.range,
-                    CompileError::Type(TypeError::Mismatch {
-                        expected: vague(expected_type),
-                        found: Arc::new(VagueType::Array { ty: Arc::new(VagueType::Unknown), len }),
-                    }),
-                ));
-            };
-
-            let elements = single_exprs.val.iter().chain(spread_expr.as_ref());
-
-            for el in elements {
-                let el_type = eval_assign_expr(el, expected_el_type, ident_m, type_alias_m)?;
-                if el_type.is_subtype_of(expected_el_type).not() {
-                    return Err(CompileErrorSet::new_error(
-                        el.range,
-                        CompileError::Type(TypeError::Mismatch {
-                            expected: vague(expected_el_type),
-                            found: vague(&el_type),
-                        }),
-                    ));
-                }
-            }
-
-            let min_len = single_exprs.val.len() as u32;
-
-            let len = match spread_expr {
-                None => min_len,
-                Some(_) => min_len.max(*expected_len),
-            };
-
-            Ok(Arc::new(l::Type::Array { ty: expected_el_type.clone(), len }))
-        },
-        l::AssignExpr::Struct(assign_fields) => {
-            let l::Type::Struct(expected_fields) = expected_type.as_ref() else {
-                return Err(CompileErrorSet::new_error(
-                    item.range,
-                    CompileError::Type(TypeError::Mismatch {
-                        expected: vague(expected_type),
-                        found: Arc::new(VagueType::Struct(None)),
-                    }),
-                ));
-            };
-
-            Ok(Arc::new(l::Type::Struct(Arc::new(
-                expected_fields
-                    .iter()
-                    .map(|expected_field| {
-                        let Some(assign_field) = assign_fields.val.iter().find(|assign_field| {
-                            expected_field.name == assign_field.val.name.val.str
-                        }) else {
-                            return Err(CompileErrorSet::new_error(
-                                assign_fields.range,
-                                CompileError::Type(TypeError::StructLiteralMissingField {
-                                    field_type: vague(&expected_field.ty),
-                                    field_name: expected_field.name.clone(),
-                                }),
-                            ));
-                        };
-
-                        let assign_field_ty = eval_assign_expr(
-                            &assign_field.val.assign,
-                            &expected_field.ty,
-                            ident_m,
-                            type_alias_m,
-                        )?;
-
-                        if assign_field_ty.is_subtype_of(&expected_field.ty).not() {
-                            return Err(CompileErrorSet::new_error(
-                                assign_field.val.assign.range,
-                                CompileError::Type(TypeError::Mismatch {
-                                    expected: vague(&expected_field.ty),
-                                    found: vague(&assign_field_ty),
-                                }),
-                            ));
-                        }
-
-                        Ok(Arc::new(l::FieldType {
-                            name: expected_field.name.clone(),
-                            ty: expected_field.ty.clone(),
-                        }))
-                    })
-                    .collect::<Result<Vec<_>, _>>()?,
-            ))))
-        },
-        l::AssignExpr::Undefined => Ok(expected_type.clone()),
-    }
-}
-
-fn infer_enum_name(
-    variant_literal: &l::Ref<l::VariantLiteral>,
-    expected_type: Option<&Arc<l::Type>>,
-) -> Result<Arc<str>, CompileErrorSet> {
-    let enum_name = match &variant_literal.val.enum_name {
-        Some(enum_name) => &enum_name.val.str,
-        None => match expected_type.map(AsRef::as_ref) {
-            Some(l::Type::Enum { name }) => name,
-            _ => {
-                return Err(CompileErrorSet::new_error(
-                    variant_literal.range,
-                    CompileError::Type(TypeError::CannotInfer),
-                ));
-            },
-        },
+        l::Expr::Undefined => Default::default(),
     };
 
-    Ok(enum_name.clone())
+    Ok(StmtDependent { stmt_deps, value: exprs })
 }
 
-fn typecheck_expr(
-    item: &l::Ref<l::Expr>,
-    expected_type: Option<&Arc<l::Type>>,
-    ident_m: &mut IdentManager,
-    type_alias_m: &TypeAliasManager,
-) -> Result<t::Expr, CompileErrorSet> {
-    Ok(match &item.val {
-        l::Expr::Literal(x) => t::Expr::Literal(try_tr(x, |x| match &x.val {
-            l::Literal::Str(x) => Ok(t::Literal::Str(x.clone())),
-            l::Literal::Num(x) => Ok(t::Literal::Num(*x)),
-            l::Literal::Int(x) => Ok(t::Literal::Int(*x)),
-            l::Literal::Uint(x) => Ok(t::Literal::Uint(*x)),
-            l::Literal::Bool(x) => Ok(t::Literal::Bool(*x)),
-            l::Literal::Variant(x) => Ok(typecheck_variant_literal(
-                &EnumName::Str(infer_enum_name(x, expected_type)?),
-                &x.val.variant_name,
-                x.range,
-                type_alias_m,
-            )?),
-        })?),
-        l::Expr::Place(x) => {
-            t::Expr::Place(try_tr(x, |x| typecheck_place(x, ident_m, type_alias_m))?)
-        },
-        l::Expr::Ref(x) => t::Expr::Ref(try_tr(x, |x| typecheck_place(x, ident_m, type_alias_m))?),
-        l::Expr::Paren(x) => {
-            t::Expr::Paren(try_tr(x, |x| typecheck_paren_expr(x, ident_m, type_alias_m))?)
-        },
-        l::Expr::Cast { expr, .. } => typecheck_expr(expr, None, ident_m, type_alias_m)?,
-        l::Expr::Transmute { expr, .. } => typecheck_expr(expr, None, ident_m, type_alias_m)?,
-    })
+fn compute_expr_ty_hint(expected_type: Option<&Arc<l::Type>>, range: SrcRange) -> l::TypeHint {
+    expected_type.map(|ty| TypeHint::from_type(ty, range)).unwrap_or_else(|| unit_type_hint(range))
 }
 
 fn eval_expr(
@@ -1475,19 +1831,19 @@ fn eval_expr(
         l::Expr::Literal(x) => Ok(match &x.val {
             l::Literal::Str(_) => STR_TYPE.clone(),
             l::Literal::Num(_) => NUM_TYPE.clone(),
-            l::Literal::Int(_) => INT_TYPE.clone(),
-            l::Literal::Uint(_) => UINT_TYPE.clone(),
+            l::Literal::Int(_) => INTEGER_TYPE.clone(),
+            l::Literal::Uint(_) => UINTEGER_TYPE.clone(),
             l::Literal::Bool(_) => BOOL_TYPE.clone(),
             l::Literal::Variant(x) => {
                 Arc::new(l::Type::Enum { name: infer_enum_name(x, expected_type)?.clone() })
             },
         }),
-        l::Expr::Place(x) => eval_place(x, ident_m, type_alias_m).map(|res| res.ty),
+        l::Expr::Place(x) => Ok(eval_place(x, ident_m, type_alias_m).map(|res| res.ty)?),
         l::Expr::Ref(place) => {
             let place_type = eval_place(place, ident_m, type_alias_m)?;
             Ok(Arc::new(l::Type::Ref(place_type.ty)))
         },
-        l::Expr::Paren(x) => eval_paren_expr(x, ident_m, type_alias_m),
+        l::Expr::Paren(x) => Ok(eval_paren_expr(x, ident_m, type_alias_m)?),
         l::Expr::Cast { ty, expr } => {
             let cast_ty = Arc::new(type_alias_m.resolve(ty)?);
             let expr_ty = eval_expr(expr, None, ident_m, type_alias_m)?;
@@ -1518,6 +1874,143 @@ fn eval_expr(
 
             Ok(cast_ty.clone())
         },
+        l::Expr::Statement(_) => Ok(UNIT_TYPE.clone()),
+        l::Expr::If(if_item) => Ok(expected_type.cloned().unwrap_or_else(|| UNIT_TYPE.clone())), // TODO
+        l::Expr::While(srced) => Ok(UNIT_TYPE.clone()), // TODO
+        l::Expr::Match(srced) => Ok(UNIT_TYPE.clone()), // TODO
+        l::Expr::Block(block) => 'block: {
+            let trail = &block.val.items.val;
+            if trail.trailing {
+                break 'block Ok(UNIT_TYPE.clone());
+            }
+
+            match trail.items.val.last() {
+                None => break 'block Ok(UNIT_TYPE.clone()),
+                Some(last_expr) => eval_expr(last_expr, expected_type, ident_m, type_alias_m),
+            }
+        },
+        l::Expr::Array { single_exprs, spread_expr } => {
+            println!("ERR: [eval_array] {item:?}");
+            let Some(expected_type) = expected_type else {
+                return Err(CompileErrorSet::new_error(
+                    item.range,
+                    CompileError::Type(TypeError::CannotInfer),
+                ));
+            };
+
+            let l::Type::Array { ty: expected_el_type, len: expected_len } = expected_type.as_ref()
+            else {
+                let len = match spread_expr {
+                    None => Some(single_exprs.val.len() as u32),
+                    Some(_) => None,
+                };
+
+                return Err(CompileErrorSet::new_error(
+                    item.range,
+                    CompileError::Type(TypeError::Mismatch {
+                        expected_any_of: Arc::new(Vec::from([vague(expected_type)])),
+                        found: Arc::new(VagueType::Array { ty: Arc::new(VagueType::Unknown), len }),
+                    }),
+                ));
+            };
+
+            let elements = single_exprs.val.iter().chain(spread_expr.as_ref());
+
+            for el in elements {
+                let el_type = eval_expr(el, Some(expected_el_type), ident_m, type_alias_m)?;
+                if el_type.is_subtype_of(expected_el_type).not() {
+                    return Err(CompileErrorSet::new_error(
+                        el.range,
+                        CompileError::Type(TypeError::Mismatch {
+                            expected_any_of: Arc::new(Vec::from([vague(expected_el_type)])),
+                            found: vague(&el_type),
+                        }),
+                    ));
+                }
+            }
+
+            let min_len = single_exprs.val.len() as u32;
+
+            let len = match spread_expr {
+                None => min_len,
+                Some(_) => min_len.max(*expected_len),
+            };
+
+            Ok(Arc::new(l::Type::Array { ty: expected_el_type.clone(), len }))
+        },
+        l::Expr::Struct(assign_fields) => {
+            let Some(expected_type) = expected_type else {
+                println!("ERR: [eval_struct] {item:?}");
+                return Err(CompileErrorSet::new_error(
+                    item.range,
+                    CompileError::Type(TypeError::CannotInfer),
+                ));
+            };
+
+            let l::Type::Struct(expected_fields) = expected_type.as_ref() else {
+                return Err(CompileErrorSet::new_error(
+                    item.range,
+                    CompileError::Type(TypeError::Mismatch {
+                        expected_any_of: Arc::new(Vec::from([vague(expected_type)])),
+                        found: Arc::new(VagueType::Struct(None)),
+                    }),
+                ));
+            };
+
+            let evaled_fields = expected_fields
+                .iter()
+                .map(|expected_field| {
+                    let Some(assign_field) = assign_fields
+                        .val
+                        .iter()
+                        .find(|assign_field| expected_field.name == assign_field.val.name.val.str)
+                    else {
+                        return Err(CompileErrorSet::new_error(
+                            assign_fields.range,
+                            CompileError::Type(TypeError::StructLiteralMissingField {
+                                field_type: vague(&expected_field.ty),
+                                field_name: expected_field.name.clone(),
+                            }),
+                        ));
+                    };
+
+                    let assign_field_ty = eval_expr(
+                        &assign_field.val.assign,
+                        Some(&expected_field.ty),
+                        ident_m,
+                        type_alias_m,
+                    )?;
+
+                    if assign_field_ty.is_subtype_of(&expected_field.ty).not() {
+                        return Err(CompileErrorSet::new_error(
+                            assign_field.val.assign.range,
+                            CompileError::Type(TypeError::Mismatch {
+                                expected_any_of: Arc::new(Vec::from([vague(&expected_field.ty)])),
+                                found: vague(&assign_field_ty),
+                            }),
+                        ));
+                    }
+
+                    Ok(Arc::new(l::FieldType {
+                        name: expected_field.name.clone(),
+                        ty: expected_field.ty.clone(),
+                    }))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok(Arc::new(l::Type::Struct(Arc::new(evaled_fields))))
+        },
+        l::Expr::Undefined => {
+            let Some(expected_type) = expected_type else {
+                println!("ERR: [eval_undefined] {item:?}");
+                return Err(CompileErrorSet::new_error(
+                    item.range,
+                    CompileError::Type(TypeError::CannotInfer),
+                ));
+            };
+
+            Ok(expected_type.clone())
+        },
     }
 }
 
@@ -1534,16 +2027,27 @@ fn typecheck_variant_literal(
 fn typecheck_paren_expr(
     item: &l::Ref<l::ParenExpr>,
     ident_m: &mut IdentManager,
+    func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
-) -> Result<t::ParenExpr, CompileErrorSet> {
-    Ok(match &item.val {
-        l::ParenExpr::Unary(x) => {
-            t::ParenExpr::Unary(try_tr(x, |x| typecheck_unary_expr(x, ident_m, type_alias_m))?)
-        },
-        l::ParenExpr::Binary(x) => {
-            t::ParenExpr::Binary(try_tr(x, |x| typecheck_binary_expr(x, ident_m, type_alias_m))?)
-        },
-    })
+) -> Result<StmtDependent<t::ParenExpr>, CompileErrorSet> {
+    let mut stmt_deps = Vec::new();
+
+    let paren_expr = match &item.val {
+        l::ParenExpr::Unary(x) => t::ParenExpr::Unary(try_tr(x, |x| {
+            Ok(sift_stmt_deps(
+                &mut stmt_deps,
+                typecheck_unary_expr(x, ident_m, func_to_params, type_alias_m)?,
+            ))
+        })?),
+        l::ParenExpr::Binary(x) => t::ParenExpr::Binary(try_tr(x, |x| {
+            Ok(sift_stmt_deps(
+                &mut stmt_deps,
+                typecheck_binary_expr(x, ident_m, func_to_params, type_alias_m)?,
+            ))
+        })?),
+    };
+
+    Ok(StmtDependent { stmt_deps, value: paren_expr })
 }
 
 fn eval_paren_expr(
@@ -1570,12 +2074,26 @@ macro_rules! typecheck_variants {
 fn typecheck_unary_expr(
     item: &l::Ref<l::UnaryParenExpr>,
     ident_m: &mut IdentManager,
+    func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
-) -> Result<t::UnaryParenExpr, CompileErrorSet> {
-    Ok(t::UnaryParenExpr {
-        operand: try_tr(&item.val.operand, |x| typecheck_expr(x, None, ident_m, type_alias_m))?,
+) -> Result<StmtDependent<t::UnaryParenExpr>, CompileErrorSet> {
+    let mut stmt_deps = Vec::new();
+
+    let unary_expr = t::UnaryParenExpr {
+        operand: {
+            let exprs = try_tr(&item.val.operand, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_expr(x, None, ident_m, func_to_params, type_alias_m)?,
+                ))
+            })?;
+
+            typecheck_to_t_expr(exprs)?
+        },
         op: tr(&item.val.op, |x| typecheck_variants!(&x.val, UnaryParenExprOp => [Not])),
-    })
+    };
+
+    Ok(StmtDependent { stmt_deps, value: unary_expr })
 }
 
 fn eval_unary_expr(
@@ -1591,7 +2109,7 @@ fn eval_unary_expr(
                 return Err(CompileErrorSet::new_error(
                     item.range,
                     CompileError::Type(TypeError::Mismatch {
-                        expected: vague(&BOOL_TYPE),
+                        expected_any_of: Arc::new(Vec::from([vague(&BOOL_TYPE)])),
                         found: vague(&operand_type),
                     }),
                 ));
@@ -1602,14 +2120,63 @@ fn eval_unary_expr(
     }
 }
 
+fn typecheck_to_t_expr(
+    exprs: t::Ref<Vec<t::Ref<t::AssignExpr>>>,
+) -> Result<t::Ref<t::Expr>, CompileErrorSet> {
+    let expr = 'expr: {
+        let [expr] = exprs.val.as_slice() else { break 'expr None };
+        if expr.val.offset != 0 {
+            break 'expr None;
+        };
+
+        Some(expr.val.expr.clone())
+    };
+
+    expr.ok_or_else(|| {
+        CompileErrorSet::new_error(
+            exprs.range,
+            CompileError::Type(TypeError::Mismatch {
+                expected_any_of: Arc::new(Vec::from([
+                    Arc::new(VagueType::Primitive(l::PrimitiveType::Val)),
+                    Arc::new(VagueType::Ref(Arc::new(VagueType::Unknown))),
+                    Arc::new(VagueType::Enum { name: None }),
+                    Arc::new(VagueType::Any),
+                ])),
+                found: Arc::new(VagueType::Unknown),
+            }),
+        )
+    })
+}
+
 fn typecheck_binary_expr(
     item: &l::Ref<l::BinaryParenExpr>,
     ident_m: &mut IdentManager,
+    func_to_params: &FuncToParams,
     type_alias_m: &TypeAliasManager,
-) -> Result<t::BinaryParenExpr, CompileErrorSet> {
-    Ok(t::BinaryParenExpr {
-        left: try_tr(&item.val.left, |x| typecheck_expr(x, None, ident_m, type_alias_m))?,
-        right: try_tr(&item.val.right, |x| typecheck_expr(x, None, ident_m, type_alias_m))?,
+) -> Result<StmtDependent<t::BinaryParenExpr>, CompileErrorSet> {
+    let mut stmt_deps = Vec::new();
+
+    let binary_expr = t::BinaryParenExpr {
+        left: {
+            let exprs = try_tr(&item.val.left, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_expr(x, None, ident_m, func_to_params, type_alias_m)?,
+                ))
+            })?;
+
+            typecheck_to_t_expr(exprs)?
+        },
+        right: {
+            let exprs = try_tr(&item.val.right, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_expr(x, None, ident_m, func_to_params, type_alias_m)?,
+                ))
+            })?;
+
+            typecheck_to_t_expr(exprs)?
+        },
         op: tr(&item.val.op, |x| {
             typecheck_variants!(&x.val, BinaryParenExprOp => [
                 Add,
@@ -1628,7 +2195,9 @@ fn typecheck_binary_expr(
                 Join,
             ])
         }),
-    })
+    };
+
+    Ok(StmtDependent { stmt_deps, value: binary_expr })
 }
 
 fn eval_binary_expr(
@@ -1668,19 +2237,19 @@ fn eval_binary_expr(
     match item.val.op.val {
         l::BinaryParenExprOp::Add => expect_types!(
             for "+";
-            UINT_TYPE, UINT_TYPE => UINT_TYPE;
-            INT_TYPE, INT_TYPE => INT_TYPE;
+            UINTEGER_TYPE, UINTEGER_TYPE => UINTEGER_TYPE;
+            INTEGER_TYPE, INTEGER_TYPE => INTEGER_TYPE;
             NUM_TYPE, NUM_TYPE => NUM_TYPE;
         ),
         l::BinaryParenExprOp::Sub => expect_types!(
             for "-";
-            INT_TYPE, INT_TYPE => INT_TYPE;
+            INTEGER_TYPE, INTEGER_TYPE => INTEGER_TYPE;
             NUM_TYPE, NUM_TYPE => NUM_TYPE;
         ),
         l::BinaryParenExprOp::Mul => expect_types!(
             for "*";
-            UINT_TYPE, UINT_TYPE => UINT_TYPE;
-            INT_TYPE, INT_TYPE => INT_TYPE;
+            UINTEGER_TYPE, UINTEGER_TYPE => UINTEGER_TYPE;
+            INTEGER_TYPE, INTEGER_TYPE => INTEGER_TYPE;
             NUM_TYPE, NUM_TYPE => NUM_TYPE;
         ),
         l::BinaryParenExprOp::Div => expect_types!(
