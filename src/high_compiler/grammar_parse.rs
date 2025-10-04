@@ -2,16 +2,16 @@ use std::sync::Arc;
 
 use crate::high_compiler::grammar_ast::{
     AddOp, AndOp, ArrayAssign, ArrayAssignExpr, ArrayType, Assign, BinaryParenExpr,
-    BinaryParenExprOp, Block, BoolLiteral, CastExpr, CommaList, CommaListLink, Comment, Decimal,
-    Deref, Digits, DivOp, ElseBodyItem, ElseIfItem, ElseItem, Empty, EnumItem, EqOp, Expr,
-    ExprOrSemi, FalseLiteral, Field, Func, FunctionCall, GtOp, GteOp, Ident, IdentDef, IdentInit,
-    IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, MatchCase, MatchItem, Maybe, ModOp,
-    MulOp, Name, Negative, NeqOp, NominalType, NotOp, NumLiteral, Offset, OrOp, ParenExpr,
-    ParensNest, ParensWrapped, PipeList, PipeListLink, Place, PlaceHead, PlaceIndex,
-    PlaceIndexLink, Priority, Proc, Program, RefExpr, RefType, Semi, SemiList, SemiListLink,
-    SpreadAssignExpr, Statement, StrLiteral, StructAssign, StructAssignField, StructType, SubOp,
-    TopItem, TransmuteExpr, TrueLiteral, Type, TypeAlias, UnaryParenExpr, UnaryParenExprOp,
-    Undefined, VariantLiteral, WhileItem,
+    BinaryParenExprOp, Block, BoolLiteral, CastExpr, CommaList, CommaListLink, Comment,
+    ContainedExpr, Decimal, Deref, Digits, DivOp, ElseBodyItem, ElseIfItem, ElseItem, Empty,
+    EnumItem, EqOp, ExprOrSemi, FalseLiteral, Field, Func, FunctionCall, GtOp, GteOp, Ident,
+    IdentDef, IdentInit, IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, MatchCase,
+    MatchItem, Maybe, ModOp, MulOp, Name, Negative, NeqOp, NominalType, NotOp, NumLiteral, Offset,
+    OrOp, ParenExpr, ParensNest, ParensWrapped, PipeList, PipeListLink, Place, PlaceHead,
+    PlaceIndex, PlaceIndexLink, Priority, Proc, Program, RefExpr, RefType, Semi, SemiList,
+    SemiListLink, SpreadAssignExpr, StrLiteral, StructAssign, StructAssignField, StructType, SubOp,
+    TopItem, TrailingExpr, TransmuteExpr, TrueLiteral, Type, TypeAlias, UnaryParenExpr,
+    UnaryParenExprOp, Undefined, VariantLiteral, WhileItem,
 };
 
 use super::{
@@ -717,13 +717,14 @@ impl AstParse for MatchCase {
     }
 }
 
-impl AstParse for Statement {
+impl AstParse for TrailingExpr {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_enum! {
             parse tokens => x {
                 Self::IdentInit(Arc::new(x)),
                 Self::Assign(Arc::new(x)),
-                Self::Call(Arc::new(x)),
+                Self::If(Arc::new(x)),
+                Self::While(Arc::new(x)),
             } else {
                 "Expected statement"
             }
@@ -948,7 +949,7 @@ impl AstParse for StructAssignField {
     }
 }
 
-impl AstParse for Expr {
+impl AstParse for ContainedExpr {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_enum! {
             parse tokens => x {
@@ -957,9 +958,8 @@ impl AstParse for Expr {
                 Self::Paren(Arc::new(x)),
                 Self::Ref(Arc::new(x)),
                 Self::Literal(Arc::new(x)),
+                Self::Call(Arc::new(x)),
                 Self::Place(Arc::new(x)),
-                Self::If(Arc::new(x)),
-                Self::While(Arc::new(x)),
                 Self::Match(Arc::new(x)),
                 Self::Block(Arc::new(x)),
                 Self::Struct(Arc::new(x)),

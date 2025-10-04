@@ -6,6 +6,11 @@ use super::{
 
 pub type Ref<T> = Arc<Srced<T>>;
 
+// trailing exprs don't need to be wrapped in parens
+pub type FreeTrailExpr = ParensNest<Priority<TrailingExpr, ContainedExpr>>;
+// trailing exprs MUST be wrapped in parens, but contained exprs don't need to be
+pub type ParenTrailExpr = Priority<ContainedExpr, FreeTrailExpr>;
+
 #[derive(Debug)]
 pub enum TopItem {
     Main(Ref<Main>),
@@ -81,7 +86,7 @@ pub struct IdentDef {
 #[derive(Debug)]
 pub struct IdentInit {
     pub def: Ref<IdentDef>,
-    pub expr: Ref<Priority<Statement, Expr>>,
+    pub expr: Ref<FreeTrailExpr>,
 }
 
 #[derive(Debug)]
@@ -128,7 +133,7 @@ pub enum PlaceHead {
 
 #[derive(Debug)]
 pub struct Offset {
-    pub expr: Ref<Expr>,
+    pub expr: Ref<FreeTrailExpr>,
 }
 
 #[derive(Debug)]
@@ -143,12 +148,12 @@ pub struct Ident {
 
 #[derive(Debug)]
 pub struct Deref {
-    pub addr: Ref<Priority<Expr, ParensNest<Priority<Statement, Expr>>>>,
+    pub addr: Ref<ParenTrailExpr>,
 }
 
 #[derive(Debug)]
 pub struct Proc {
-    pub body: Ref<Priority<Statement, Expr>>,
+    pub body: Ref<FreeTrailExpr>,
 }
 
 #[derive(Debug)]
@@ -158,7 +163,7 @@ pub struct Block {
 
 #[derive(Debug)]
 pub enum ExprOrSemi {
-    Expr(Ref<Priority<Statement, Expr>>),
+    Expr(Ref<FreeTrailExpr>),
     Semi(Ref<Semi>),
 }
 
@@ -167,8 +172,8 @@ pub struct Semi;
 
 #[derive(Debug)]
 pub struct IfItem {
-    pub condition: Ref<Expr>,
-    pub then_body: Ref<Expr>,
+    pub condition: Ref<FreeTrailExpr>,
+    pub then_body: Ref<FreeTrailExpr>,
     pub else_item: Ref<Maybe<ElseItem>>,
 }
 
@@ -180,7 +185,7 @@ pub enum ElseItem {
 
 #[derive(Debug)]
 pub struct ElseBodyItem {
-    pub body: Ref<Expr>,
+    pub body: Ref<FreeTrailExpr>,
 }
 
 #[derive(Debug)]
@@ -190,27 +195,30 @@ pub struct ElseIfItem {
 
 #[derive(Debug)]
 pub struct WhileItem {
-    pub condition: Ref<Expr>,
-    pub body: Ref<Expr>,
+    pub condition: Ref<FreeTrailExpr>,
+    pub body: Ref<FreeTrailExpr>,
 }
 
 #[derive(Debug)]
 pub struct MatchItem {
-    pub expr: Ref<Expr>,
+    pub expr: Ref<FreeTrailExpr>,
     pub cases: Ref<List<MatchCase>>,
 }
 
 #[derive(Debug)]
 pub struct MatchCase {
     pub variant: Ref<VariantLiteral>,
-    pub body: Ref<Expr>,
+    pub body: Ref<FreeTrailExpr>,
 }
 
+// grammar syntax containing multiple sub exprs
+// (needs parens to unambiguously affect the expr and not one of its sub exprs)
 #[derive(Debug)]
-pub enum Statement {
+pub enum TrailingExpr {
     IdentInit(Ref<IdentInit>),
     Assign(Ref<Assign>),
-    Call(Ref<FunctionCall>),
+    If(Ref<IfItem>),
+    While(Ref<WhileItem>),
 }
 
 #[derive(Debug)]
@@ -222,30 +230,30 @@ pub enum Priority<First, Second> {
 #[derive(Debug)]
 pub struct FunctionCall {
     pub func_name: Ref<Name>,
-    pub param_exprs: Ref<CommaList<Expr>>,
+    pub param_exprs: Ref<CommaList<FreeTrailExpr>>,
 }
 
 #[derive(Debug)]
 pub struct Assign {
     pub place: Ref<Place>,
-    pub expr: Ref<ParensNest<Priority<Statement, Expr>>>,
+    pub expr: Ref<FreeTrailExpr>,
 }
 
+// clearly a single/contained expr
 #[derive(Debug)]
-pub enum Expr {
+pub enum ContainedExpr {
     Literal(Ref<Literal>),
     Place(Ref<Place>),
     Ref(Ref<RefExpr>),
     Paren(Ref<ParenExpr>),
-    Cast(Ref<CastExpr<Expr>>),
-    Transmute(Ref<TransmuteExpr<Expr>>),
-    If(Ref<IfItem>),
-    While(Ref<WhileItem>),
+    Cast(Ref<CastExpr<ContainedExpr>>),
+    Transmute(Ref<TransmuteExpr<ContainedExpr>>),
     Match(Ref<MatchItem>),
     Block(Ref<Block>),
     Array(Ref<ArrayAssign>),
     Struct(Ref<StructAssign>),
     Undefined(Ref<Undefined>),
+    Call(Ref<FunctionCall>),
 }
 
 #[derive(Debug)]
@@ -327,13 +335,13 @@ pub struct ArrayAssign {
 
 #[derive(Debug)]
 pub enum ArrayAssignExpr {
-    Single(Ref<Expr>),
+    Single(Ref<FreeTrailExpr>),
     Spread(Ref<SpreadAssignExpr>),
 }
 
 #[derive(Debug)]
 pub struct SpreadAssignExpr {
-    pub expr: Ref<Expr>,
+    pub expr: Ref<FreeTrailExpr>,
 }
 
 #[derive(Debug)]
@@ -344,7 +352,7 @@ pub struct StructAssign {
 #[derive(Debug)]
 pub struct StructAssignField {
     pub name: Ref<Name>,
-    pub assign: Ref<Expr>,
+    pub assign: Ref<FreeTrailExpr>,
 }
 
 #[derive(Debug)]
@@ -356,7 +364,7 @@ pub enum ParenExpr {
 #[derive(Debug)]
 pub struct UnaryParenExpr {
     pub op: Ref<UnaryParenExprOp>,
-    pub operand: Ref<Expr>,
+    pub operand: Ref<FreeTrailExpr>,
 }
 
 #[derive(Debug)]
@@ -372,8 +380,8 @@ pub struct NotOp;
 #[derive(Debug)]
 pub struct BinaryParenExpr {
     pub op: Ref<BinaryParenExprOp>,
-    pub left: Ref<Expr>,
-    pub right: Ref<Expr>,
+    pub left: Ref<ParenTrailExpr>,
+    pub right: Ref<ParenTrailExpr>,
 }
 
 #[derive(Debug)]
