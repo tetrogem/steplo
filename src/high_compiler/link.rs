@@ -3,7 +3,7 @@ use std::{iter::Peekable, sync::Arc};
 use itertools::Itertools;
 use uuid::Uuid;
 
-use super::{srced::Srced, type_resolved_ast as ast};
+use super::{srced::Srced, type_erased_ast as ast};
 
 #[derive(Debug, Clone)]
 pub struct Proc {

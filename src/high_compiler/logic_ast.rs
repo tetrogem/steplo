@@ -294,6 +294,20 @@ impl Type {
     pub fn can_transmute_to(&self, other: &Self) -> bool {
         self.size() == other.size()
     }
+
+    pub fn closest_common_supertype<'a>(a: &'a Arc<Type>, b: &'a Arc<Type>) -> Option<Arc<Type>> {
+        if a.is_subtype_of(b) {
+            Some(b.clone())
+        } else if b.is_subtype_of(a) {
+            Some(a.clone())
+        } else if let Type::Primitive(pa) = a.as_ref()
+            && let Type::Primitive(pb) = b.as_ref()
+        {
+            Some(Arc::new(Type::Primitive(PrimitiveType::closest_common_supertype(*pa, *pb))))
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -339,6 +353,16 @@ impl PrimitiveType {
         }
 
         self.supertype().is_some_and(|supertype| supertype.is_subtype_of(other))
+    }
+
+    pub fn closest_common_supertype(a: PrimitiveType, b: PrimitiveType) -> PrimitiveType {
+        if a.is_subtype_of(b) {
+            b
+        } else if b.is_subtype_of(a) {
+            a
+        } else {
+            PrimitiveType::Val
+        }
     }
 }
 

@@ -19,7 +19,7 @@ use crate::high_compiler::{
 
 use super::{
     compile_error::{CompileError, CompileErrorSet, TypeError, VagueType},
-    logic_ast as l, type_resolved_ast as t,
+    logic_ast as l, type_erased_ast as t,
 };
 
 type IdentToTypeHint = HashMap<Arc<str>, l::Ref<l::TypeHint>>;
@@ -608,9 +608,11 @@ fn typecheck_if(
         uuid: Uuid::new_v4(),
     });
 
+    let expr_ident_ty = eval_if(item, expected_type, ident_m, type_alias_m)?;
+
     let expr_ident_info = ident_m.reg(tr(item, |x| l::IdentDef {
         ident: expr_ident.clone(),
-        ty: tr(x, |x| compute_expr_ty_hint(expected_type, x.range)),
+        ty: tr(x, |x| compute_expr_ty_hint(Some(&expr_ident_ty), x.range)),
     }));
 
     let if_item = t::IfItem {
@@ -774,9 +776,11 @@ fn typecheck_match(
         uuid: Uuid::new_v4(),
     });
 
+    let expr_ident_ty = eval_match(item, expected_type, ident_m, type_alias_m)?;
+
     let expr_ident_info = ident_m.reg(tr(item, |x| l::IdentDef {
         ident: expr_ident.clone(),
-        ty: tr(x, |x| compute_expr_ty_hint(expected_type, x.range)),
+        ty: tr(x, |x| compute_expr_ty_hint(Some(&expr_ident_ty), x.range)),
     }));
 
     let expr_ty = eval_expr(&item.val.expr, None, ident_m, type_alias_m)?;
@@ -1814,6 +1818,89 @@ fn compute_expr_ty_hint(expected_type: Option<&Arc<l::Type>>, range: SrcRange) -
     expected_type.map(|ty| TypeHint::from_type(ty, range)).unwrap_or_else(|| unit_type_hint(range))
 }
 
+fn eval_if(
+    item: &l::Ref<l::IfItem>,
+    expected_type: Option<&Arc<l::Type>>,
+    ident_m: &mut IdentManager,
+    type_alias_m: &TypeAliasManager,
+) -> Result<Arc<l::Type>, CompileErrorSet> {
+    let then_ty = eval_expr(&item.val.then_body, expected_type, ident_m, type_alias_m)?;
+
+    let Some(else_item) = &item.val.else_item else {
+        return if then_ty.is_subtype_of(&l::UNIT_TYPE) {
+            Ok(l::UNIT_TYPE.clone())
+        } else {
+            Err(CompileErrorSet::new_error(
+                item.val.then_body.range,
+                CompileError::Type(TypeError::Mismatch {
+                    expected_any_of: Arc::new(Vec::from([vague(&l::UNIT_TYPE)])),
+                    found: vague(&then_ty),
+                }),
+            ))
+        };
+    };
+
+    let else_ty = eval_expr(&else_item.val.body, expected_type, ident_m, type_alias_m)?;
+
+    match Type::closest_common_supertype(&then_ty, &else_ty) {
+        Some(if_ty) => Ok(if_ty),
+        None => Err(CompileErrorSet::new_error(
+            else_item.val.body.range,
+            CompileError::Type(TypeError::Mismatch {
+                expected_any_of: Arc::new(Vec::from([vague(&then_ty)])),
+                found: vague(&else_ty),
+            }),
+        )),
+    }
+}
+
+fn eval_match(
+    item: &l::Ref<l::MatchItem>,
+    expected_type: Option<&Arc<l::Type>>,
+    ident_m: &mut IdentManager,
+    type_alias_m: &TypeAliasManager,
+) -> Result<Arc<l::Type>, CompileErrorSet> {
+    let case_tys_with_expr_range = item
+        .val
+        .cases
+        .val
+        .iter()
+        .map(|case| {
+            Ok((
+                eval_expr(&case.val.body, expected_type, ident_m, type_alias_m)?,
+                case.val.body.range,
+            ))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let Some((match_ty, _)) = case_tys_with_expr_range.first() else {
+        return Err(CompileErrorSet::new_error(
+            item.val.cases.range,
+            CompileError::Type(TypeError::NonExhaustiveMatch {
+                unmatched_cases: Arc::new(Vec::from(["_".into()])),
+            }),
+        ));
+    };
+
+    let mut match_ty = match_ty.clone();
+    for (case_ty, case_expr_range) in &case_tys_with_expr_range {
+        match_ty = match Type::closest_common_supertype(&match_ty, case_ty) {
+            Some(ty) => ty,
+            None => {
+                return Err(CompileErrorSet::new_error(
+                    *case_expr_range,
+                    CompileError::Type(TypeError::Mismatch {
+                        expected_any_of: Arc::new(Vec::from([vague(&match_ty)])),
+                        found: vague(case_ty),
+                    }),
+                ));
+            },
+        };
+    }
+
+    Ok(match_ty)
+}
+
 fn eval_expr(
     item: &l::Ref<l::Expr>,
     expected_type: Option<&Arc<l::Type>>,
@@ -1868,9 +1955,24 @@ fn eval_expr(
             Ok(cast_ty.clone())
         },
         l::Expr::Statement(_) => Ok(UNIT_TYPE.clone()),
-        l::Expr::If(if_item) => Ok(expected_type.cloned().unwrap_or_else(|| UNIT_TYPE.clone())), // TODO
-        l::Expr::While(srced) => Ok(UNIT_TYPE.clone()), // TODO
-        l::Expr::Match(srced) => Ok(expected_type.cloned().unwrap_or_else(|| UNIT_TYPE.clone())), // TODO
+        l::Expr::If(if_item) => eval_if(if_item, expected_type, ident_m, type_alias_m),
+        l::Expr::While(while_item) => {
+            // right now, whiles cannot eval to anything but the unit type
+            let body = &while_item.val.body;
+            let body_ty = eval_expr(body, Some(&UNIT_TYPE), ident_m, type_alias_m)?;
+            if body_ty.is_subtype_of(&UNIT_TYPE).not() {
+                return Err(CompileErrorSet::new_error(
+                    body.range,
+                    CompileError::Type(TypeError::Mismatch {
+                        expected_any_of: Arc::new(Vec::from([vague(&UNIT_TYPE)])),
+                        found: vague(&body_ty),
+                    }),
+                ));
+            }
+
+            Ok(UNIT_TYPE.clone())
+        },
+        l::Expr::Match(match_item) => eval_match(match_item, expected_type, ident_m, type_alias_m),
         l::Expr::Block(block) => 'block: {
             let trail = &block.val.items.val;
             if trail.trailing {

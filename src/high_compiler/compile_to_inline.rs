@@ -6,7 +6,7 @@ use itertools::chain;
 use crate::high_compiler::compile_to_inline::loc_manager::LocManager;
 use crate::high_compiler::compile_to_inline::loc_manager::TypedVarInfo;
 use crate::high_compiler::link as l;
-use crate::high_compiler::type_resolved_ast as t;
+use crate::high_compiler::type_erased_ast as t;
 use crate::inline::ast as o;
 
 pub fn compile(procs: &[t::Ref<l::Proc>]) -> anyhow::Result<Vec<Arc<o::Proc>>> {
@@ -28,7 +28,7 @@ mod loc_manager {
 
     use crate::high_compiler::compile_to_inline::ProcKind;
     use crate::high_compiler::link as l;
-    use crate::high_compiler::type_resolved_ast as t;
+    use crate::high_compiler::type_erased_ast as t;
     use crate::inline::ast as o;
     use std::collections::BTreeMap;
     use std::sync::Arc;
