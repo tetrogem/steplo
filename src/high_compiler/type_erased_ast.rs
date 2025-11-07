@@ -23,8 +23,34 @@ pub struct Func {
 }
 
 #[derive(Debug)]
-pub struct Name {
+pub struct UserName {
     pub str: Arc<str>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InternalName {
+    Return,
+}
+
+#[derive(Debug)]
+pub enum Name {
+    Internal(Ref<InternalName>),
+    User(Ref<UserName>),
+}
+
+impl Name {
+    pub fn to_str(&self) -> Arc<str> {
+        match self {
+            Self::User(user) => user.val.str.clone(),
+            Self::Internal(internal) => {
+                let str = match internal.val {
+                    InternalName::Return => "return",
+                };
+
+                format!("~{str}").into()
+            },
+        }
+    }
 }
 
 #[derive(Debug)]

@@ -8,7 +8,7 @@ use crate::high_compiler::grammar_ast::{
     IdentDef, IdentInit, IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, MatchCase,
     MatchItem, Maybe, ModOp, MulOp, Name, Negative, NeqOp, NominalType, NotOp, NumLiteral, Offset,
     OrOp, ParenExpr, ParensNest, ParensWrapped, PipeList, PipeListLink, Place, PlaceHead,
-    PlaceIndex, PlaceIndexLink, Priority, Proc, Program, RefExpr, RefType, Semi, SemiList,
+    PlaceIndex, PlaceIndexLink, Priority, Program, RefExpr, RefType, ReturnType, Semi, SemiList,
     SemiListLink, SpreadAssignExpr, StrLiteral, StructAssign, StructAssignField, StructType, SubOp,
     TopItem, TrailingExpr, TransmuteExpr, TrueLiteral, Type, TypeAlias, UnaryParenExpr,
     UnaryParenExprOp, Undefined, VariantLiteral, WhileItem,
@@ -193,8 +193,8 @@ impl AstParse for Main {
         parse_struct! {
             parse tokens;
             [match _ = Token::Main => (); as [TokenKind::Main]];
-            [struct proc];
-            [return Self { proc: Arc::new(proc)} ];
+            [struct body];
+            [return Self { body: Arc::new(body)} ];
         }
     }
 }
@@ -208,8 +208,21 @@ impl AstParse for Func {
             [match _ = Token::LeftParen => (); as [TokenKind::LeftParen]];
             [struct params];
             [match _ = Token::RightParen => (); as [TokenKind::RightParen]];
-            [struct proc];
-            [return Self { name: Arc::new(name), params: Arc::new(params), proc: Arc::new(proc) }];
+            [struct return_ty];
+            [struct body];
+            [return Self { name: Arc::new(name), params: Arc::new(params), return_ty: Arc::new(return_ty), body: Arc::new(body) }];
+        }
+    }
+}
+
+impl AstParse for ReturnType {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Dash => (); as [TokenKind::Dash, TokenKind::RightAngle]];
+            [match _ = Token::RightAngle => (); as [TokenKind::Dash, TokenKind::RightAngle]];
+            [struct ty];
+            [return Self { ty: Arc::new(ty) }]
         }
     }
 }
@@ -448,16 +461,6 @@ impl AstParse for FalseLiteral {
             parse tokens;
             [match _ = Token::False => (); as [TokenKind::False]];
             [return Self];
-        }
-    }
-}
-
-impl AstParse for Proc {
-    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
-        parse_struct! {
-            parse tokens;
-            [struct body];
-            [return Self { body: Arc::new(body) }];
         }
     }
 }

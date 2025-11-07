@@ -6,130 +6,101 @@ type Vec = {
 
 main {
     let arr: [any; 10] = undefined;
-    let vec: Vec = undefined;
-    Vec_new(&vec, <<&any>>&arr, 10);
+    let vec: Vec = Vec_new(<<&any>>&arr, 10);
 
-    let str: str = "";
-    Vec_to_str(&str, &vec);
-    out(str);
+    out(Vec_to_str(&vec));
 
     Vec_push(&vec, 10);
     Vec_push(&vec, 2);
     Vec_push(&vec, 6);
-    Vec_to_str(&str, &vec);
-    out(str);
+    out(Vec_to_str(&vec));
 
-    let temp: val = 0;
-    Vec_pop(<<&any>>&temp, &vec);
+    let temp: val = <<val>>Vec_pop(&vec);
     out(("Popped: " ~ temp));
-    Vec_to_str(&str, &vec);
-    out(str);
+    out(Vec_to_str(&vec));
 
     Vec_insert(&vec, 99, 1);
-    Vec_to_str(&str, &vec);
-    out(str);
+    out(Vec_to_str(&vec));
 
-    Vec_remove(<<&any>>&temp, &vec, 0);
+    temp = <<val>>Vec_remove(&vec, 0);
     out(("Removed: " ~ temp));
-    Vec_to_str(&str, &vec);
-    out(str);
+    out(Vec_to_str(&vec));
 
     Vec_insert(&vec, 123, 0);
-    Vec_to_str(&str, &vec);
-    out(str);
+    out(Vec_to_str(&vec));
 
     Vec_insert(&vec, 456, 0);
-    Vec_to_str(&str, &vec);
-    out(str);
+    out(Vec_to_str(&vec));
 
     Vec_insert(&vec, -1, 2);
-    Vec_to_str(&str, &vec);
-    out(str);
+    out(Vec_to_str(&vec));
 
     Vec_clear(&vec);
-    Vec_to_str(&str, &vec);
-    out(str);
+    out(Vec_to_str(&vec));
 
     Vec_insert(&vec, 1, 0);
-    Vec_to_str(&str, &vec);
-    out(str);
+    out(Vec_to_str(&vec));
 }
 
-func Vec_new(ret: &Vec, arr: &any, cap: uint) {
-    *ret = { arr: arr, cap: cap, len: 0 };
+func Vec_new(arr: &any, cap: uint) -> Vec {
+    { arr: arr, cap: cap, len: 0 }
 }
 
-func Vec_get_mut(ret: &&any, self: &Vec, i: uint) {
-    *ret = <<&any>>(<uint>(*self).arr + i);
+func Vec_get_mut(self: &Vec, i: uint) -> &any {
+    <<&any>>(<uint>(*self).arr + i)
 }
 
-func Vec_get(ret: &any, self: &Vec, i: uint) {
-    let entry: &any = undefined;
-    Vec_get_mut(&entry, self, i);
-    *ret = *entry;
+func Vec_get(self: &Vec, i: uint) -> any {
+    *Vec_get_mut(self, i)
 }
 
 func Vec_push(self: &Vec, val: any) {
-    let entry: &any = undefined;
-    Vec_get_mut(&entry, self, (*self).len);
+    let entry: &any = Vec_get_mut(self, (*self).len);
     *entry = val;
     (*self).len = ((*self).len + 1);
 }
 
-func Vec_pop(ret: &any, self: &Vec) {
-    let val: any = 0;
-    Vec_get(&val, self, <<uint>>((*self).len - 1));
-    *ret = val;
+func Vec_pop(self: &Vec) -> any {
+    let val: any = Vec_get(self, <<uint>>((*self).len - 1));
     (*self).len = <<uint>>((*self).len - 1);
+    val
 }
 
 func Vec_insert(self: &Vec, val: any, index: uint) {
     let i: uint = (*self).len;
     Vec_push(self, 0);
 
-    let entry: &any = undefined;
     while (i >= index) {
-        Vec_get_mut(&entry, self, i);
-
-        let next_entry: &any = undefined;
-        Vec_get_mut(&next_entry, self, (i + 1));
-        *next_entry = *entry;
-
+        *Vec_get_mut(self, (i + 1)) = *Vec_get_mut(self, i);
         i = <<uint>>(i - 1);
     }
 
-    Vec_get_mut(&entry, self, index);
-    *entry = val;
+    *Vec_get_mut(self, index) = val;
 }
 
-func Vec_remove(ret: &any, self: &Vec, index: uint) {
-    Vec_get(ret, self, index);
+func Vec_remove(self: &Vec, index: uint) -> any {
+    let val: any = Vec_get(self, index);
     let i: uint = index;
     (*self).len = <<uint>>((*self).len - 1);
 
     while (i < (*self).len) {
-        let entry: &any = undefined;
-        Vec_get_mut(&entry, self, i);
-
-        let next_entry: &any = undefined;
-        Vec_get_mut(&next_entry, self, (i + 1));
-        *entry = *next_entry;
-
+        *Vec_get_mut(self, i) = *Vec_get_mut(self, (i + 1));
         i = (i + 1);
     }
+
+    val
 }
 
 func Vec_clear(self: &Vec) {
     (*self).len = 0;
 }
 
-func Vec_to_str(ret: &str, self: &Vec) {
+func Vec_to_str(self: &Vec) -> str {
     let str: str = "[";
     let i: uint = 0;
 
     while (i < (*self).len) {
-        let val: val = 0;
-        Vec_get(<<&any>>&val, self, i);
+        let val: val = <<val>>Vec_get(self, i);
         str = (str ~ val);
         if (i != ((*self).len - 1)) {
             str = (str ~ ", ");
@@ -138,6 +109,5 @@ func Vec_to_str(ret: &str, self: &Vec) {
         i = (i + 1);
     }
 
-    str = (str ~ "]");
-    *ret = str;
+    (str ~ "]")
 }

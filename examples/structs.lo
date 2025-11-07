@@ -17,13 +17,13 @@ func test_user() {
     out(user2.id);
     out(user2.name);
 
-    User_new(&user1, 5678, "Steplo2");
+    user1 = User_new(5678, "Steplo2");
     User_print(user1);
+
+    User_print(User_new(9999, "Steplo3"));
 }
 
-func User_new(return: &User, id: uint, name: val) {
-    (*return) = { id: id, name: name };
-}
+func User_new(id: uint, name: val) -> User { id: id, name: name }
 
 func User_print(user: User) {
     out((((user.name ~ " (ID: ") ~ user.id) ~ ")"));

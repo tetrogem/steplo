@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashSet, fmt::Display, path::Path, sync::Arc};
+use std::{cmp::Ordering, collections::HashSet, fmt::Display, ops::Not, path::Path, sync::Arc};
 
 use colored::Colorize;
 use itertools::Itertools;
@@ -202,7 +202,13 @@ impl VagueType {
                         .join(", "),
                 };
 
-                VagueTypeDisplay::Ticked(format!("{{ {fields} }}").into())
+                VagueTypeDisplay::Ticked(
+                    format!(
+                        "{{{padding}{fields}{padding}}}",
+                        padding = if fields.is_empty().not() { " " } else { "" }
+                    )
+                    .into(),
+                )
             },
             Self::Enum { name } => match name {
                 Some(name) => VagueTypeDisplay::Ticked(name.clone()),

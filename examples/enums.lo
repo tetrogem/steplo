@@ -17,7 +17,7 @@ main {
 }
 
 func State_print(state: State) match state {
-    #None -> out("None");
-    #Loading -> out("Loading");
-    #Loaded -> out("Loaded");
+    #None -> out("None")
+    #Loading -> out("Loading")
+    #Loaded -> out("Loaded")
 }

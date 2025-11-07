@@ -1,0 +1,10 @@
+main {
+    let msg: str = hello_world();
+    out(msg);
+
+    out(hello_world());
+}
+
+func hello_world() -> str {
+    "Hello world!"
+}

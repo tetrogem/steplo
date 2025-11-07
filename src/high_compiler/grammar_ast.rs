@@ -21,14 +21,20 @@ pub enum TopItem {
 
 #[derive(Debug)]
 pub struct Main {
-    pub proc: Ref<Proc>,
+    pub body: Ref<FreeTrailExpr>,
 }
 
 #[derive(Debug)]
 pub struct Func {
     pub name: Ref<Name>,
     pub params: Ref<CommaList<IdentDef>>,
-    pub proc: Ref<Proc>,
+    pub return_ty: Ref<Maybe<ReturnType>>,
+    pub body: Ref<FreeTrailExpr>,
+}
+
+#[derive(Debug)]
+pub struct ReturnType {
+    pub ty: Ref<Type>,
 }
 
 #[derive(Debug)]
@@ -149,11 +155,6 @@ pub struct Ident {
 #[derive(Debug)]
 pub struct Deref {
     pub addr: Ref<ParenTrailExpr>,
-}
-
-#[derive(Debug)]
-pub struct Proc {
-    pub body: Ref<FreeTrailExpr>,
 }
 
 #[derive(Debug)]

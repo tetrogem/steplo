@@ -1,4 +1,4 @@
-main{
+main {
     let arr: [num; 11] = [1, 1, 2, 3, 3, 4, 5, 6, 6, 6, 7];
     out("With duplicates:");
     print_arr(&arr, 11);

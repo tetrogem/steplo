@@ -66,7 +66,7 @@ pub static UNIT_TYPE: LazyLock<Arc<Type>> =
     LazyLock::new(|| Arc::new(Type::Struct(Arc::new(Vec::new()))));
 
 pub fn unit_type_hint(range: SrcRange) -> TypeHint {
-    TypeHint::Struct(Arc::new(Srced { range, val: Vec::new() }))
+    TypeHint::from_type(&UNIT_TYPE, range)
 }
 
 #[derive(Debug)]
@@ -101,14 +101,15 @@ pub struct EnumItem {
 
 #[derive(Debug)]
 pub struct Main {
-    pub proc: Ref<Proc>,
+    pub body: Ref<Expr>,
 }
 
 #[derive(Debug)]
 pub struct Func {
     pub name: Ref<Name>,
     pub params: Ref<Vec<Ref<IdentDef>>>,
-    pub proc: Ref<Proc>,
+    pub return_ty: Ref<TypeHint>,
+    pub body: Ref<Expr>,
 }
 
 #[derive(Debug)]
@@ -429,11 +430,6 @@ pub struct Deref {
 }
 
 #[derive(Debug)]
-pub struct Proc {
-    pub body: Ref<Expr>,
-}
-
-#[derive(Debug)]
 pub struct Trail<T> {
     pub items: Ref<Vec<T>>,
     pub trailing: bool,
@@ -478,7 +474,6 @@ pub struct MatchCase {
 pub enum Statement {
     IdentInit(Ref<IdentInit>),
     Assign(Ref<Assign>),
-    Call(Ref<FunctionCall>),
     Native(Ref<NativeOperation>), // not compiled to by source code, internal/built-ins only
 }
 
@@ -508,6 +503,7 @@ pub enum Expr {
     Paren(Ref<ParenExpr>),
     Cast { ty: Ref<TypeHint>, expr: Ref<Expr> },
     Transmute { ty: Ref<TypeHint>, expr: Ref<Expr> },
+    Call(Ref<FunctionCall>),
     Statement(Ref<Statement>),
     If(Ref<IfItem>),
     While(Ref<WhileItem>),

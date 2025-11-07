@@ -60,7 +60,7 @@ mod loc_manager {
         fn from(value: &l::ProcKind) -> Self {
             match &value {
                 l::ProcKind::Main => ProcKind::Main,
-                l::ProcKind::Func { name, .. } => ProcKind::Func { name: name.val.str.clone() },
+                l::ProcKind::Func { name, .. } => ProcKind::Func { name: name.val.to_str() },
             }
         }
     }
@@ -72,7 +72,6 @@ mod loc_manager {
         ordered_user_arg_names: Vec<Arc<str>>,
         // \/ these two are both considered ArgVars, as they are inputs to functions
         return_label_arg_info: o::VarInfo, // where to jump when returning
-        return_value_arg_info: o::VarInfo, // reference to store return value of function in
     }
 
     impl ProcLocs {
@@ -82,9 +81,9 @@ mod loc_manager {
 
             for decl in proc.idents.iter() {
                 local_name_to_info
-                    .insert(decl.val.name.val.str.clone(), o::VarInfo::new(decl.val.size));
+                    .insert(decl.val.name.val.to_str(), o::VarInfo::new(decl.val.size));
 
-                ordered_local_names.push(decl.val.name.val.str.clone());
+                ordered_local_names.push(decl.val.name.val.to_str());
             }
 
             let (arg_name_to_info, ordered_arg_names) = match &proc.kind {
@@ -95,9 +94,9 @@ mod loc_manager {
 
                     for decl in &params.val {
                         arg_name_to_info
-                            .insert(decl.val.name.val.str.clone(), o::VarInfo::new(decl.val.size));
+                            .insert(decl.val.name.val.to_str(), o::VarInfo::new(decl.val.size));
 
-                        ordered_arg_names.push(decl.val.name.val.str.clone());
+                        ordered_arg_names.push(decl.val.name.val.to_str());
                     }
 
                     (arg_name_to_info, ordered_arg_names)
@@ -110,7 +109,6 @@ mod loc_manager {
                 ordered_local_names,
                 ordered_user_arg_names: ordered_arg_names,
                 return_label_arg_info: o::VarInfo::new(1),
-                return_value_arg_info: o::VarInfo::new(1),
             }
         }
 
@@ -146,10 +144,6 @@ mod loc_manager {
             self.return_label_arg_info
         }
 
-        pub fn get_return_value_arg(&self) -> o::VarInfo {
-            self.return_value_arg_info
-        }
-
         pub fn ordered_local_names(&self) -> &Vec<Arc<str>> {
             &self.ordered_local_names
         }
@@ -169,11 +163,7 @@ mod loc_manager {
                 .map(|name| self.get_arg(name))
                 .collect::<Result<Vec<_>, _>>()?;
 
-            Ok(chain!(
-                [self.return_label_arg_info, self.return_value_arg_info],
-                ordered_user_arg_uuids
-            )
-            .collect())
+            Ok(chain!([self.return_label_arg_info], ordered_user_arg_uuids).collect())
         }
     }
 
@@ -190,7 +180,7 @@ fn compile_proc(proc: &l::Proc, loc_m: &LocManager) -> anyhow::Result<o::Proc> {
     Ok(o::Proc {
         kind: Arc::new(match &proc.kind {
             l::ProcKind::Main => o::ProcKind::Main,
-            l::ProcKind::Func { name, .. } => o::ProcKind::Func { name: name.val.str.clone() },
+            l::ProcKind::Func { name, .. } => o::ProcKind::Func { name: name.val.to_str() },
         }),
         ordered_local_infos: Arc::new(locs.ordered_local_infos()?),
         ordered_arg_infos: Arc::new(locs.ordered_arg_infos()?),
@@ -378,7 +368,7 @@ fn compile_call(
             }
         },
         l::Call::Func { name, param_exprs, return_sub_proc } => {
-            let func_kind = ProcKind::Func { name: name.val.str.clone() };
+            let func_kind = ProcKind::Func { name: name.val.to_str() };
             let func_locs = loc_m.get_locs(&func_kind)?;
 
             // set return label
@@ -387,8 +377,6 @@ fn compile_call(
                 arg_offset: 0,
                 expr: Arc::new(o::Expr::Value(Arc::new(o::Value::Label(*return_sub_proc)))),
             }];
-
-            // return values currently aren't implemented -- skipping
 
             // set user-defined args
             let mut user_arg_prereq_commands = Vec::new();
@@ -427,7 +415,7 @@ fn compile_call(
             CompiledCall {
                 prereq_commands: user_arg_prereq_commands,
                 call: o::Call::Func {
-                    to_func_name: name.val.str.clone(),
+                    to_func_name: name.val.to_str(),
                     arg_assignments: Arc::new(arg_assignments),
                 },
             }
@@ -464,7 +452,7 @@ fn compile_place_to_addr_expr(
 
     let place_head = match &item.head.val {
         t::PlaceHead::Ident(ident) => {
-            let addr = match loc_m.get_locs(proc_kind)?.get_loc(&ident.val.name.val.str)? {
+            let addr = match loc_m.get_locs(proc_kind)?.get_loc(&ident.val.name.val.to_str())? {
                 TypedVarInfo::Local(info) => o::StackAddr::Local { uuid: info.uuid },
                 TypedVarInfo::Arg(info) => o::StackAddr::Arg { uuid: info.uuid },
             };

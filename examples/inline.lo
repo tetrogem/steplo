@@ -2,23 +2,17 @@ main {
     let a: num = 10;
     print(a);
 
-    let b: num = 0;
-    double(&b, a);
+    let b: num = double(a);
     print(b);
 
-    sum(&a, a, b);
+    a = sum(a, b);
     print(a);
 
     out("Finished!");
 }
 
-func double(ret: &num, x: num) {
-    *ret = (x * 2);
-}
-
-func sum(ret: &num, a: num, b: num) {
-    *ret = (a + b);
-}
+func double(x: num) -> num (x * 2)
+func sum(a: num, b: num) -> num (a + b)
 
 func print(num: num) {
     let str: str = "The value is: ";

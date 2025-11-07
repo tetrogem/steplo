@@ -153,7 +153,7 @@ impl TryFrom<&g::Ref<g::Main>> for l::Main {
     type Error = CompileErrorSet;
 
     fn try_from(value: &g::Ref<g::Main>) -> Result<Self, Self::Error> {
-        Ok(Self { proc: try_convert(&value.val.proc)? })
+        Ok(Self { body: try_convert_free_trail_expr(&value.val.body)? })
     }
 }
 
@@ -161,10 +161,19 @@ impl TryFrom<&g::Ref<g::Func>> for l::Func {
     type Error = CompileErrorSet;
 
     fn try_from(value: &g::Ref<g::Func>) -> Result<Self, Self::Error> {
+        let return_ty = match convert_maybe(&value.val.return_ty) {
+            Some(return_ty) => try_convert(&return_ty.val.ty)?,
+            None => Arc::new(Srced {
+                range: value.val.return_ty.range,
+                val: l::unit_type_hint(value.val.return_ty.range),
+            }),
+        };
+
         Ok(Self {
             name: convert(&value.val.name),
             params: try_convert_list(&value.val.params)?,
-            proc: try_convert(&value.val.proc)?,
+            return_ty,
+            body: try_convert_free_trail_expr(&value.val.body)?,
         })
     }
 }
@@ -274,19 +283,6 @@ impl From<&g::Ref<g::NominalType>> for l::TypeHint {
     fn from(value: &g::Ref<g::NominalType>) -> Self {
         let name = &value.val.name;
         Self::Nominal(convert(name))
-    }
-}
-
-impl TryFrom<&g::Ref<g::Proc>> for l::Proc {
-    type Error = CompileErrorSet;
-
-    fn try_from(value: &g::Ref<g::Proc>) -> Result<Self, Self::Error> {
-        Ok(Self {
-            body: match &unnest(&value.val.body).val {
-                g::Priority::First(expr) => try_convert(expr),
-                g::Priority::Second(expr) => try_convert(expr),
-            }?,
-        })
     }
 }
 
@@ -469,10 +465,7 @@ impl TryFrom<&g::Ref<g::ContainedExpr>> for l::Expr {
                 ty: try_convert(&x.val.ty)?,
                 expr: try_convert(unnest(&x.val.item))?,
             },
-            g::ContainedExpr::Call(x) => Self::Statement(Arc::new(Srced {
-                range: value.range,
-                val: l::Statement::Call(try_convert(x)?),
-            })),
+            g::ContainedExpr::Call(x) => Self::Call(try_convert(x)?),
             g::ContainedExpr::Match(x) => Self::Match(try_convert(x)?),
             g::ContainedExpr::Block(x) => Self::Block(try_convert(x)?),
             g::ContainedExpr::Struct(st) => Self::Struct(try_convert_list(&st.val.fields)?),
