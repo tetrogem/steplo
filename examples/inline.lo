@@ -20,3 +20,9 @@ func print(num: num) {
     str = (str ~ "!");
     out(str);
 }
+
+// Expected stdout:
+// The value is: 10!
+// The value is: 20!
+// The value is: 30!
+// Finished!

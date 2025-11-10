@@ -3,3 +3,6 @@ main {
     stdout_read(&line, 10);
     out((line ~ "x"));
 }
+
+// Expected stdout:
+// x

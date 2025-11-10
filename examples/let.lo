@@ -18,3 +18,11 @@ main {
     out(bar);
     out(foo);
 }
+
+// Expected stdout:
+// Hello world!
+// 10
+// Other string
+// true
+// Hello world!
+// 10

@@ -81,6 +81,7 @@ impl TempManager<'_> {
             ast::UMemLoc::Temp(temp) => match self.temp_to_register.get(temp) {
                 Some(register) => RMemLoc::Register(register.clone()),
                 None => {
+                    // println!("Allocating temp... {:?}", temp.uuid);
                     let register = self.register_manager.alloc();
                     let previous = self.temp_to_register.insert(temp.clone(), register.clone());
                     if previous.is_some() {
@@ -97,9 +98,10 @@ impl TempManager<'_> {
 
     fn free(&mut self, temp: &ast::TempVar) {
         let Some(register) = self.temp_to_register.remove(temp) else {
-            panic!("Attempted to free a temp var that was never allocated");
+            panic!("Attempted to free a temp var that is not allocated: {:?}", temp.uuid);
         };
 
+        // println!("Freeing temp... {:?}", temp.uuid);
         self.register_manager.free(&register);
     }
 }
@@ -131,15 +133,17 @@ pub fn designate_registers(
                 },
             };
 
-            for umem in call_umem_locs {
+            for umem in &call_umem_locs {
                 if let ast::UMemLoc::Temp(temp) = umem.as_ref() {
                     freed_temps.insert(temp.clone());
                 }
             }
 
+            // println!("call_umem_locs: {:?}", &call_umem_locs);
+
             // find when temps are last used (iterate over statements in reverse)
             for command in sp.commands.as_ref().iter().rev() {
-                let add = |umems: &[Arc<ast::UMemLoc>]| {
+                let add = |umems: &BTreeSet<Arc<ast::UMemLoc>>| {
                     let mut temps = Vec::new();
                     for umem in umems {
                         if let ast::UMemLoc::Temp(temp) = umem.as_ref() {
@@ -224,18 +228,6 @@ pub fn designate_registers(
                 },
             };
 
-            let call_umem_locs = match sp.call.as_ref() {
-                ast::Call::Exit => Vec::new(),
-                ast::Call::Jump(to) => to.to_mem_locs(),
-                ast::Call::Branch { cond, then_to, else_to } => {
-                    chain!(cond.to_mem_locs(), then_to.to_mem_locs(), else_to.to_mem_locs())
-                        .collect()
-                },
-                ast::Call::Sleep { duration_s, to } => {
-                    chain!(duration_s.to_mem_locs(), to.to_mem_locs()).collect()
-                },
-            };
-
             for umem in call_umem_locs {
                 if let ast::UMemLoc::Temp(temp) = umem.as_ref() {
                     temp_m.free(temp);
@@ -260,16 +252,16 @@ pub fn designate_registers(
 trait HasMemLocs {
     type RMem;
 
-    fn to_mem_locs(&self) -> Vec<Arc<ast::UMemLoc>>;
+    fn to_mem_locs(&self) -> BTreeSet<Arc<ast::UMemLoc>>;
     fn to_rmem(&self, temp_m: &mut TempManager) -> Arc<Self::RMem>;
 }
 
 impl HasMemLocs for ast::Expr<ast::UMemLoc> {
     type RMem = ast::Expr<RMemLoc>;
 
-    fn to_mem_locs(&self) -> Vec<Arc<ast::UMemLoc>> {
+    fn to_mem_locs(&self) -> BTreeSet<Arc<ast::UMemLoc>> {
         match self {
-            ast::Expr::MemLoc(mem_loc) => Vec::from([mem_loc.clone()]),
+            ast::Expr::MemLoc(mem_loc) => BTreeSet::from([mem_loc.clone()]),
             ast::Expr::Value(_) => Default::default(),
             ast::Expr::StackDeref(expr) => expr.to_mem_locs(),
             ast::Expr::StdoutDeref(expr) => expr.to_mem_locs(),
@@ -323,7 +315,7 @@ impl HasMemLocs for ast::Expr<ast::UMemLoc> {
 impl HasMemLocs for ast::BinaryArgs<ast::UMemLoc> {
     type RMem = ast::BinaryArgs<RMemLoc>;
 
-    fn to_mem_locs(&self) -> Vec<Arc<ast::UMemLoc>> {
+    fn to_mem_locs(&self) -> BTreeSet<Arc<ast::UMemLoc>> {
         chain!(self.left.to_mem_locs(), self.right.to_mem_locs()).collect()
     }
 
@@ -338,8 +330,8 @@ impl HasMemLocs for ast::BinaryArgs<ast::UMemLoc> {
 impl HasMemLocs for Arc<ast::UMemLoc> {
     type RMem = RMemLoc;
 
-    fn to_mem_locs(&self) -> Vec<Arc<ast::UMemLoc>> {
-        Vec::from([self.clone()])
+    fn to_mem_locs(&self) -> BTreeSet<Arc<ast::UMemLoc>> {
+        BTreeSet::from([self.clone()])
     }
 
     fn to_rmem(&self, temp_m: &mut TempManager) -> Arc<Self::RMem> {

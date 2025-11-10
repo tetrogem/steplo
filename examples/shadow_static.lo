@@ -1,0 +1,27 @@
+static foo: str = "Static!";
+
+main {
+    out(foo);
+
+    let foo: str = "Local!";
+    out(foo);
+    foo = "Local (Mutated)";
+    out(foo);
+
+    print_static();
+    mutate_static("Static (Mutated)");
+    print_static();
+
+    out(foo);
+}
+
+func print_static() out(foo)
+func mutate_static(val: str) foo = val
+
+// Expected stdout:
+// Static!
+// Local!
+// Local (Mutated)
+// Static!
+// Static (Mutated)
+// Local (Mutated)

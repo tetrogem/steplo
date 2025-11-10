@@ -50,3 +50,4 @@ main {
     val = <val>val_ref;
 }
 
+// No output

@@ -17,6 +17,7 @@ pub enum TopItem {
     Func(Ref<Func>),
     TypeAlias(Ref<TypeAlias>),
     Enum(Ref<EnumItem>),
+    Static(Ref<Static>),
 }
 
 #[derive(Debug)]
@@ -47,6 +48,11 @@ pub struct TypeAlias {
 pub struct EnumItem {
     pub name: Ref<Name>,
     pub variants: Ref<PipeList<Name>>,
+}
+
+#[derive(Debug)]
+pub struct Static {
+    pub ident_init: Ref<IdentInit>,
 }
 
 #[derive(Debug)]
@@ -93,6 +99,11 @@ pub struct IdentDef {
 pub struct IdentInit {
     pub def: Ref<IdentDef>,
     pub expr: Ref<FreeTrailExpr>,
+}
+
+#[derive(Debug)]
+pub struct LetItem {
+    pub ident_init: Ref<IdentInit>,
 }
 
 #[derive(Debug)]
@@ -216,7 +227,7 @@ pub struct MatchCase {
 // (needs parens to unambiguously affect the expr and not one of its sub exprs)
 #[derive(Debug)]
 pub enum TrailingExpr {
-    IdentInit(Ref<IdentInit>),
+    Let(Ref<LetItem>),
     Assign(Ref<Assign>),
     If(Ref<IfItem>),
     While(Ref<WhileItem>),

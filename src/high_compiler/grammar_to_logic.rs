@@ -145,6 +145,10 @@ impl TryFrom<&g::Ref<g::TopItem>> for l::TopItem {
             g::TopItem::Enum(x) => {
                 Self::Type(Arc::new(Srced { range: x.range, val: l::TypeItem::Enum(convert(x)) }))
             },
+            g::TopItem::Static(x) => Self::Exe(Arc::new(Srced {
+                range: x.range,
+                val: l::ExeItem::Static(try_convert(x)?),
+            })),
         })
     }
 }
@@ -175,6 +179,14 @@ impl TryFrom<&g::Ref<g::Func>> for l::Func {
             return_ty,
             body: try_convert_free_trail_expr(&value.val.body)?,
         })
+    }
+}
+
+impl TryFrom<&g::Ref<g::Static>> for l::Static {
+    type Error = CompileErrorSet;
+
+    fn try_from(value: &g::Ref<g::Static>) -> Result<Self, Self::Error> {
+        Ok(Self { ident_init: try_convert(&value.val.ident_init)? })
     }
 }
 
@@ -322,9 +334,9 @@ impl TryFrom<&g::Ref<g::TrailingExpr>> for l::Expr {
 
     fn try_from(value: &g::Ref<g::TrailingExpr>) -> Result<Self, Self::Error> {
         Ok(match &value.val {
-            g::TrailingExpr::IdentInit(x) => Self::Statement(Arc::new(Srced {
+            g::TrailingExpr::Let(x) => Self::Statement(Arc::new(Srced {
                 range: value.range,
-                val: l::Statement::IdentInit(try_convert(x)?),
+                val: l::Statement::Let(try_convert(x)?),
             })),
             g::TrailingExpr::Assign(x) => Self::Statement(Arc::new(Srced {
                 range: value.range,
@@ -359,6 +371,14 @@ impl TryFrom<&g::Ref<g::WhileItem>> for l::WhileItem {
             condition: try_convert_free_trail_expr(&value.val.condition)?,
             body: try_convert_free_trail_expr(&value.val.body)?,
         })
+    }
+}
+
+impl TryFrom<&g::Ref<g::LetItem>> for l::Let {
+    type Error = CompileErrorSet;
+
+    fn try_from(value: &g::Ref<g::LetItem>) -> Result<Self, Self::Error> {
+        Ok(Self { ident_init: try_convert(&value.val.ident_init)? })
     }
 }
 

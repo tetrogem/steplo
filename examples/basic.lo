@@ -9,3 +9,5 @@ main {
     d = "works!";
     b = "world!";
 }
+
+// No output

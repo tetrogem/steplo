@@ -21,3 +21,5 @@ func struct_refs() {
     let foo_ref: &{ a: val, b: val } = &foo;
     // foo_ref = bar_ref; // does not compile
 }
+
+// No output

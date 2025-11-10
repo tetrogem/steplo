@@ -8,3 +8,7 @@ main {
 func hello_world() -> str {
     "Hello world!"
 }
+
+// Expected stdout:
+// Hello world!
+// Hello world!

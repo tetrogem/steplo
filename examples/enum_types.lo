@@ -13,3 +13,5 @@ main {
     // bool = (foo == any);
     // bool = (foo == bool);
 }
+
+// No output

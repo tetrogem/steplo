@@ -8,3 +8,8 @@ main {
     let side: Side = #Right;
     out((match side { #Left -> "Hello" #Right -> 10 } ~ " world!"))
 }
+
+// Expected stdout:
+// 6
+// 10
+// 10 world!

@@ -10,10 +10,18 @@ use std::{ops::Not, sync::Arc};
 
 use itertools::Itertools;
 
-use crate::inline::{ast::Proc, opt::procs::optimize_procs};
+use crate::inline::{
+    ast::{Proc, Program},
+    opt::procs::optimize_procs,
+};
 
-pub fn optimize(procs: &[Arc<Proc>]) -> Vec<Arc<Proc>> {
-    exhaust_optimizations(procs.iter().cloned().collect_vec(), |procs| optimize_procs(&procs)).val
+pub fn optimize(program: &Program) -> Program {
+    let procs = exhaust_optimizations(program.procs.iter().cloned().collect_vec(), |procs| {
+        optimize_procs(&procs)
+    })
+    .val;
+
+    Program { procs: Arc::new(procs), statics: program.statics.clone() }
 }
 
 pub struct MaybeOptimized<T> {

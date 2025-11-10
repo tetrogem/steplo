@@ -237,22 +237,81 @@ impl EnumName {
     }
 }
 
+struct StaticItems {
+    items: Vec<l::Ref<l::Static>>,
+}
+
 pub fn typecheck(program: &l::Ref<l::Program>) -> Result<t::Ref<t::Program>, CompileErrorSet> {
     let func_m = FuncManager::new(program);
     let type_alias_m = TypeAliasManager::new(program);
-    let mut ident_m = IdentManager::default();
+    let mut ident_m = IdentManager::new(program);
 
-    let items = try_tr(&program.val.items, |x| {
-        Ok(x.val
+    let static_items = StaticItems {
+        items: program
+            .val
+            .items
+            .val
             .iter()
-            .map(|x| try_tr(x, |x| typecheck_top_item(x, &mut ident_m, &func_m, &type_alias_m)))
+            .filter_map(|item| {
+                if let l::TopItem::Exe(item) = &item.val
+                    && let l::ExeItem::Static(item) = &item.val
+                {
+                    Some(item.clone())
+                } else {
+                    None
+                }
+            })
+            .collect(),
+    };
+
+    let items = Arc::new(
+        program
+            .val
+            .items
+            .val
+            .iter()
+            .map(|x| {
+                try_tr(x, |x| {
+                    typecheck_top_item(x, &mut ident_m, &func_m, &type_alias_m, &static_items)
+                })
+            })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .filter_map(|x| x.val.clone())
-            .collect_vec())
-    })?;
+            .collect_vec(),
+    );
 
-    Ok(Arc::new(Srced { range: program.range, val: t::Program { items } }))
+    let static_defs = Arc::new(
+        program
+            .val
+            .items
+            .val
+            .iter()
+            .filter_map(|x| {
+                if let l::TopItem::Exe(x) = &x.val
+                    && let l::ExeItem::Static(x) = &x.val
+                {
+                    Some(x)
+                } else {
+                    None
+                }
+            })
+            .map(|x| {
+                try_tr(x, |x| {
+                    let info = ident_m.get(&x.val.ident_init.val.def.val.ident.val)?;
+                    let ty = type_alias_m.resolve(&info.def.val.ty)?;
+                    Ok(t::IdentDef {
+                        name: tr(&x.val.ident_init.val.def.val.ident, |x| {
+                            t::Name::User(tr(x, |_| t::UserName { str: info.unique_name.clone() }))
+                        }),
+                        size: ty.size(),
+                    })
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+    );
+
+    Ok(Arc::new(Srced { range: program.range, val: t::Program { items, statics: static_defs } }))
 }
 
 fn typecheck_top_item(
@@ -260,10 +319,14 @@ fn typecheck_top_item(
     ident_m: &mut IdentManager,
     func_m: &FuncManager,
     type_alias_m: &TypeAliasManager,
+    static_items: &StaticItems,
 ) -> Result<Option<t::Ref<t::ExeItem>>, CompileErrorSet> {
     Ok(match &item.val {
         l::TopItem::Exe(x) => {
-            Some(try_tr(x, |x| typecheck_exe_item(x, ident_m, func_m, type_alias_m))?)
+            match typecheck_exe_item(x, ident_m, func_m, type_alias_m, static_items)? {
+                Some(item) => Some(tr(x, |_| item)),
+                None => None,
+            }
         },
         l::TopItem::Type(x) => {
             typecheck_type_item(x);
@@ -277,14 +340,16 @@ fn typecheck_exe_item(
     ident_m: &mut IdentManager,
     func_m: &FuncManager,
     type_alias_m: &TypeAliasManager,
-) -> Result<t::ExeItem, CompileErrorSet> {
+    static_items: &StaticItems,
+) -> Result<Option<t::ExeItem>, CompileErrorSet> {
     Ok(match &item.val {
-        l::ExeItem::Main(x) => {
-            t::ExeItem::Main(try_tr(x, |x| typecheck_main(x, ident_m, func_m, type_alias_m))?)
-        },
+        l::ExeItem::Main(x) => Some(t::ExeItem::Main(try_tr(x, |x| {
+            typecheck_main(x, ident_m, func_m, type_alias_m, static_items)
+        })?)),
         l::ExeItem::Func(x) => {
-            t::ExeItem::Func(try_tr(x, |x| typecheck_func(x, ident_m, func_m, type_alias_m))?)
+            Some(t::ExeItem::Func(try_tr(x, |x| typecheck_func(x, ident_m, func_m, type_alias_m))?))
         },
+        l::ExeItem::Static(_) => None, // statics are scanned & registered earlier and then will be inserted into the main function
     })
 }
 
@@ -295,11 +360,19 @@ fn typecheck_main(
     ident_m: &mut IdentManager,
     func_m: &FuncManager,
     type_alias_m: &TypeAliasManager,
+    static_items: &StaticItems,
 ) -> Result<t::Main, CompileErrorSet> {
     ident_m.layer(|ident_m| {
         Ok(t::Main {
             proc: try_tr(&item.val.body, |x| {
-                typecheck_proc(x, &l::UNIT_TYPE, true, ident_m, func_m, type_alias_m)
+                typecheck_proc(
+                    x,
+                    &l::UNIT_TYPE,
+                    ProcCompilation::Main { static_items },
+                    ident_m,
+                    func_m,
+                    type_alias_m,
+                )
             })?,
         })
     })
@@ -330,7 +403,7 @@ fn typecheck_func(
 ) -> Result<t::Func, CompileErrorSet> {
     ident_m.layer(|ident_m| {
         for param in item.val.params.val.iter() {
-            ident_m.reg(param.clone());
+            ident_m.reg_let(param.clone());
         }
 
         let return_ty = Arc::new(type_alias_m.resolve(&item.val.return_ty)?);
@@ -360,8 +433,14 @@ fn typecheck_func(
 
         let func_name = tr(&item.val.name, typecheck_name);
 
-        let t_proc =
-            typecheck_proc(&item.val.body, &return_ty, false, ident_m, func_m, type_alias_m)?;
+        let t_proc = typecheck_proc(
+            &item.val.body,
+            &return_ty,
+            ProcCompilation::Func,
+            ident_m,
+            func_m,
+            type_alias_m,
+        )?;
 
         Ok(t::Func {
             name: Arc::new(Srced { range: func_name.range, val: t::Name::User(func_name) }),
@@ -423,8 +502,9 @@ mod ident_manager {
 
     #[derive(Default)]
     pub struct IdentManager {
-        prev_layers: Vec<IdentLayer>,
-        curr_layer: IdentLayer,
+        static_layer: IdentLayer,
+        prev_let_layers: Vec<IdentLayer>,
+        curr_let_layer: IdentLayer,
     }
 
     impl IdentLayer {
@@ -458,44 +538,81 @@ mod ident_manager {
     }
 
     impl IdentManager {
+        pub fn new(program: &l::Ref<l::Program>) -> Self {
+            let mut ident_m = Self::default();
+
+            for item in program.val.items.val.iter() {
+                if let l::TopItem::Exe(exe) = &item.val
+                    && let l::ExeItem::Static(x) = &exe.val
+                {
+                    ident_m.reg_static(x.val.ident_init.val.def.clone());
+                }
+            }
+
+            ident_m
+        }
+
         pub fn layer<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
-            self.prev_layers.push(mem::take(&mut self.curr_layer));
+            self.prev_let_layers.push(mem::take(&mut self.curr_let_layer));
 
             let res = f(self);
 
-            self.curr_layer = self.prev_layers.pop().unwrap_or_default();
+            self.curr_let_layer = self.prev_let_layers.pop().unwrap_or_default();
             res
         }
 
         pub fn scope<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
-            let layer = &mut self.curr_layer;
+            let layer = &mut self.curr_let_layer;
             layer.prev_ident_to_info_scopes.push(mem::take(&mut layer.curr_ident_to_info_scope));
 
             let res = f(self);
 
-            let layer = &mut self.curr_layer;
+            let layer = &mut self.curr_let_layer;
             layer.curr_ident_to_info_scope =
                 layer.prev_ident_to_info_scopes.pop().unwrap_or_default();
 
             res
         }
 
-        pub fn reg(&mut self, def: l::Ref<l::IdentDef>) -> Arc<IdentInfo> {
+        pub fn reg_static(&mut self, def: l::Ref<l::IdentDef>) -> Arc<IdentInfo> {
+            let ident_name = &def.val.ident.val.name().val.str;
+            let name_count = self.static_layer.name_to_count.entry(ident_name.clone()).or_default();
+
+            let unique_name = format!("{ident_name}$static${name_count}", name_count = *name_count);
+
+            *name_count += 1;
+
+            self.static_layer.reg(def, unique_name.into())
+        }
+
+        pub fn reg_let(&mut self, def: l::Ref<l::IdentDef>) -> Arc<IdentInfo> {
             let ident_name = def.val.ident.val.name().val.str.clone();
             let name_count = self
-                .layers()
+                .let_layers()
                 .map(|layer| layer.name_to_count.get(&ident_name).copied().unwrap_or_default())
                 .sum::<usize>();
 
-            let unique_name = format!("{ident_name}${name_count}");
+            let unique_name = format!("{ident_name}$let${name_count}");
 
-            let name_count = self.curr_layer.name_to_count.entry(ident_name).or_default();
+            let name_count = self.curr_let_layer.name_to_count.entry(ident_name).or_default();
             *name_count += 1;
 
-            self.curr_layer.reg(def, unique_name.into())
+            self.curr_let_layer.reg(def, unique_name.into())
         }
 
         pub fn get(&self, ident: &l::Ident) -> Result<&Arc<IdentInfo>, CompileErrorSet> {
+            self.get_from_layers(ident, self.layers())
+        }
+
+        pub fn get_static(&self, ident: &l::Ident) -> Result<&Arc<IdentInfo>, CompileErrorSet> {
+            self.get_from_layers(ident, [&self.static_layer].into_iter())
+        }
+
+        fn get_from_layers<'a>(
+            &self,
+            ident: &l::Ident,
+            layers: impl DoubleEndedIterator<Item = &'a IdentLayer>,
+        ) -> Result<&'a Arc<IdentInfo>, CompileErrorSet> {
             let m_ident = match ident {
                 l::Ident::User { name } => Ident::User { name: name.val.str.clone() },
                 l::Ident::Internal { name, uuid } => {
@@ -503,7 +620,7 @@ mod ident_manager {
                 },
             };
 
-            for layer in self.layers().rev() {
+            for layer in layers.rev() {
                 if let Some(info) = layer.get(&m_ident) {
                     return Ok(info);
                 }
@@ -515,26 +632,56 @@ mod ident_manager {
             ))
         }
 
+        fn let_layers(&self) -> impl DoubleEndedIterator<Item = &IdentLayer> {
+            chain!(self.prev_let_layers.iter(), [&self.curr_let_layer])
+        }
+
         fn layers(&self) -> impl DoubleEndedIterator<Item = &IdentLayer> {
-            chain!(self.prev_layers.iter(), [&self.curr_layer])
+            chain!([&self.static_layer], self.prev_let_layers.iter(), [&self.curr_let_layer])
         }
 
         pub fn layer_infos(&self) -> &Vec<Arc<IdentInfo>> {
-            &self.curr_layer.infos
+            &self.curr_let_layer.infos
         }
     }
+}
+
+enum ProcCompilation<'a> {
+    Main { static_items: &'a StaticItems },
+    Func,
 }
 
 fn typecheck_proc(
     body: &l::Ref<l::Expr>,
     return_ty: &Arc<l::Type>,
-    main_proc: bool,
+    compilation: ProcCompilation,
     ident_m: &mut IdentManager,
     func_m: &FuncManager,
     type_alias_m: &TypeAliasManager,
 ) -> Result<t::Proc, CompileErrorSet> {
     ident_m.layer(|ident_m| {
         let mut stmt_deps = Vec::new();
+
+        // set up all static memory
+        if let ProcCompilation::Main { static_items } = compilation {
+            for static_item in static_items.items.iter() {
+                let ident_init = &static_item.val.ident_init;
+
+                if ident_init.val.expr.val.is_const().not() {
+                    return Err(CompileErrorSet::new_error(
+                        ident_init.val.expr.range,
+                        CompileError::Type(TypeError::ExpectedConstExpr),
+                    ));
+                }
+
+                let assign = sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_var_init(VarInit::Static(ident_init), ident_m, func_m, type_alias_m)?,
+                );
+
+                stmt_deps.push(tr(static_item, |x| t::Statement::Assign(tr(x, |_| assign))));
+            }
+        }
 
         let body_expr = try_tr(body, |x| {
             Ok(sift_stmt_deps(
@@ -543,7 +690,7 @@ fn typecheck_proc(
             ))
         })?;
 
-        if main_proc.not() {
+        if let ProcCompilation::Func = compilation {
             let return_value = tr(body, |x| {
                 t::Statement::Assign(tr(x, |x| t::Assign {
                     place: tr(x, |x| t::Place {
@@ -645,11 +792,16 @@ fn typecheck_statement(
     let mut stmt_deps = Vec::new();
 
     let body_items = match &item.val {
-        l::Statement::IdentInit(x) => {
+        l::Statement::Let(x) => {
             let stmt = t::Statement::Assign(try_tr(x, |x| {
                 Ok(sift_stmt_deps(
                     &mut stmt_deps,
-                    typecheck_ident_init(x, ident_m, func_m, type_alias_m)?,
+                    typecheck_var_init(
+                        VarInit::Let(&x.val.ident_init),
+                        ident_m,
+                        func_m,
+                        type_alias_m,
+                    )?,
                 ))
             })?);
 
@@ -709,7 +861,7 @@ fn typecheck_if(
 
     let expr_ident_ty = eval_if(item, expected_type, ident_m, func_m, type_alias_m)?;
 
-    let expr_ident_info = ident_m.reg(tr(item, |x| l::IdentDef {
+    let expr_ident_info = ident_m.reg_let(tr(item, |x| l::IdentDef {
         ident: expr_ident.clone(),
         ty: tr(x, |x| compute_expr_ty_hint(Some(&expr_ident_ty), x.range)),
     }));
@@ -871,7 +1023,7 @@ fn typecheck_match(
 
     let expr_ident_ty = eval_match(item, expected_type, ident_m, func_m, type_alias_m)?;
 
-    let expr_ident_info = ident_m.reg(tr(item, |x| l::IdentDef {
+    let expr_ident_info = ident_m.reg_let(tr(item, |x| l::IdentDef {
         ident: expr_ident.clone(),
         ty: tr(x, |x| compute_expr_ty_hint(Some(&expr_ident_ty), x.range)),
     }));
@@ -1059,18 +1211,29 @@ fn typecheck_match(
     Ok(StmtDependent { stmt_deps, value: match_assign_exprs })
 }
 
-fn typecheck_ident_init(
-    item: &l::Ref<l::IdentInit>,
+#[derive(Clone, Copy)]
+enum VarInit<'a> {
+    Let(&'a l::Ref<l::IdentInit>),
+    Static(&'a l::Ref<l::IdentInit>),
+}
+
+fn typecheck_var_init(
+    item: VarInit,
     ident_m: &mut IdentManager,
     func_m: &FuncManager,
     type_alias_m: &TypeAliasManager,
 ) -> Result<StmtDependent<t::Assign>, CompileErrorSet> {
-    let ident_ty = Arc::new(type_alias_m.resolve(&item.val.def.val.ty)?);
-    let expr_ty = eval_expr(&item.val.expr, Some(&ident_ty), ident_m, func_m, type_alias_m)?;
+    let (ident_init, info) = match item {
+        VarInit::Let(item) => (item, ident_m.reg_let(item.val.def.clone())),
+        VarInit::Static(item) => (item, ident_m.get_static(&item.val.def.val.ident.val)?.clone()),
+    };
+
+    let ident_ty = Arc::new(type_alias_m.resolve(&ident_init.val.def.val.ty)?);
+    let expr_ty = eval_expr(&ident_init.val.expr, Some(&ident_ty), ident_m, func_m, type_alias_m)?;
 
     if expr_ty.is_subtype_of(&ident_ty).not() {
         return Err(CompileErrorSet::new_error(
-            item.range,
+            ident_init.range,
             CompileError::Type(TypeError::Mismatch {
                 expected_any_of: Arc::new(Vec::from([vague(&ident_ty)])),
                 found: vague(&expr_ty),
@@ -1078,12 +1241,10 @@ fn typecheck_ident_init(
         ));
     }
 
-    let info = ident_m.reg(item.val.def.clone());
-
     let mut stmt_deps = Vec::new();
 
     let assign = t::Assign {
-        place: tr(&item.val.def, |x| t::Place {
+        place: tr(&ident_init.val.def, |x| t::Place {
             head: tr(x, |x| {
                 t::PlaceHead::Ident(tr(x.val.ident.val.name(), |x| t::Ident {
                     name: tr(x, |x| {
@@ -1093,7 +1254,7 @@ fn typecheck_ident_init(
             }),
             offset: None,
         }),
-        exprs: try_tr(&item.val.expr, |x| {
+        exprs: try_tr(&ident_init.val.expr, |x| {
             Ok(sift_stmt_deps(
                 &mut stmt_deps,
                 typecheck_expr(x, Some(&ident_ty), ident_m, func_m, type_alias_m)?,
@@ -1293,7 +1454,7 @@ fn typecheck_call(
     let expr_ident_ty = func_m.return_ty(func_name)?;
     let expr_ident_ty = Arc::new(type_alias_m.resolve(expr_ident_ty)?);
 
-    let expr_ident_info = ident_m.reg(tr(item, |x| l::IdentDef {
+    let expr_ident_info = ident_m.reg_let(tr(item, |x| l::IdentDef {
         ident: expr_ident.clone(),
         ty: tr(x, |x| compute_expr_ty_hint(Some(&expr_ident_ty), x.range)),
     }));
@@ -2118,9 +2279,9 @@ fn eval_expr(
                 for l_item in trail.items.val.iter() {
                     // register all ident defs to ident_m
                     if let l::Expr::Statement(statement) = &l_item.val
-                        && let l::Statement::IdentInit(ident_init) = &statement.val
+                        && let l::Statement::Let(ident_init) = &statement.val
                     {
-                        ident_m.reg(ident_init.val.def.clone());
+                        ident_m.reg_let(ident_init.val.ident_init.val.def.clone());
                     }
                 }
 

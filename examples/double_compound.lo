@@ -15,3 +15,9 @@ func print_xy(xy: &{ x: num, y: num }) {
     str = (str ~ ")");
     out(str);
 }
+
+// Expected stdout:
+// (1, 2)
+// (4.4, -5.6)
+// (6, 1000)
+// (4.4, -5.6)

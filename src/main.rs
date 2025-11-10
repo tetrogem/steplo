@@ -109,7 +109,7 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
 
     if args.opt_artifacts {
         time("Writing intermediate inline 0 file...", || {
-            let asm_export = inline::export::export(inline_opt_ast.iter().map(AsRef::as_ref));
+            let asm_export = inline::export::export(&inline_opt_ast);
             let name = src_path
                 .file_stem()
                 .and_then(|stem| stem.to_str())
@@ -128,7 +128,7 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
 
         if args.opt_artifacts {
             time("Writing intermediate inline 1 file...", || {
-                let asm_export = inline::export::export(inline_opt_ast.iter().map(AsRef::as_ref));
+                let asm_export = inline::export::export(&inline_opt_ast);
                 let name = src_path
                     .file_stem()
                     .and_then(|stem| stem.to_str())

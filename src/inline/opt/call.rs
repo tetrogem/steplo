@@ -26,10 +26,12 @@ pub fn optimize_call(call: &Arc<Call>) -> MaybeOptimized<Arc<Call>> {
         Call::Func { to_func_name, arg_assignments } => {
             let arg_assignments = arg_assignments
                 .iter()
-                .map(|aa| ArgAssignment {
-                    arg_uuid: aa.arg_uuid,
-                    arg_offset: aa.arg_offset,
-                    expr: expr!(aa.expr),
+                .map(|aa| {
+                    Arc::new(ArgAssignment {
+                        arg_uuid: aa.arg_uuid,
+                        arg_offset: aa.arg_offset,
+                        expr: expr!(aa.expr),
+                    })
                 })
                 .collect();
 

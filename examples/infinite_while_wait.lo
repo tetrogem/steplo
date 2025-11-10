@@ -4,3 +4,6 @@ main {
         wait_s(1);
     }
 }
+
+// Expected stdout: (infinite loop)
+// Hello!

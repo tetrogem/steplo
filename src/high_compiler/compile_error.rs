@@ -106,6 +106,7 @@ pub(crate) enum TypeError {
         left: Arc<VagueType>,
         right: Arc<VagueType>,
     },
+    ExpectedConstExpr,
 }
 
 #[derive(Debug)]
@@ -325,6 +326,7 @@ enum CollapsedTypeError {
         left: Arc<VagueType>,
         right: Arc<VagueType>,
     },
+    ExpectedConstExpr,
 }
 
 impl CollapsedGrammarError {
@@ -445,6 +447,7 @@ impl CollapsedCompileError {
                     TokenKind::Match => TokenString::Keyword("match"),
                     TokenKind::Let => TokenString::Keyword("let"),
                     TokenKind::Undefined => TokenString::Keyword("undefined"),
+                    TokenKind::Static => TokenString::Keyword("static"),
                 }
             }
 
@@ -642,6 +645,9 @@ impl CollapsedCompileError {
                         right.to_display().display()
                     )
                 },
+                CollapsedTypeError::ExpectedConstExpr => {
+                    "Expected const expr in this context".to_string()
+                },
             },
         }
     }
@@ -722,6 +728,7 @@ impl From<CompileError> for CollapsedCompileError {
                 TypeError::Uncomparable { left, right } => {
                     CollapsedTypeError::Uncomparable { left, right }
                 },
+                TypeError::ExpectedConstExpr => CollapsedTypeError::ExpectedConstExpr,
             }),
         }
     }

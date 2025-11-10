@@ -41,3 +41,9 @@ func print_links(links: &[Link; 2]) {
         i = (i + 1);
     }
 }
+
+// Expected stdout:
+// Steplo says: Hello world!
+// (4 likes)
+// Visit 'GitHub': https://github.com/tetrogem/steplo
+// Visit 'Book': https://steplo.tetro.dev/

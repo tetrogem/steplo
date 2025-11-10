@@ -165,10 +165,12 @@ fn proc_inline_funcs(
                         Call::Func { to_func_name, arg_assignments } => {
                             let arg_assignments = arg_assignments
                                 .iter()
-                                .map(|aa| ArgAssignment {
-                                    arg_uuid: aa.arg_uuid,
-                                    arg_offset: aa.arg_offset,
-                                    expr: inline_expr!(&aa.expr),
+                                .map(|aa| {
+                                    Arc::new(ArgAssignment {
+                                        arg_uuid: aa.arg_uuid,
+                                        arg_offset: aa.arg_offset,
+                                        expr: inline_expr!(&aa.expr),
+                                    })
                                 })
                                 .collect();
 
@@ -296,17 +298,18 @@ fn expr_replace_stack_addrs(
             inlined_arg_to_local,
             inlined_local_to_local,
         ))),
-        Expr::StackAddr(addr) => {
-            let uuid = match addr.as_ref() {
-                StackAddr::Arg { uuid } => {
-                    inlined_arg_to_local.get(uuid).map(|info| info.uuid).unwrap_or(*uuid)
-                },
-                StackAddr::Local { uuid } => {
-                    inlined_local_to_local.get(uuid).map(|info| info.uuid).unwrap_or(*uuid)
-                },
-            };
-
-            Expr::StackAddr(Arc::new(StackAddr::Local { uuid }))
+        Expr::StackAddr(addr) => match addr.as_ref() {
+            StackAddr::Arg { uuid } => {
+                let uuid = inlined_arg_to_local.get(uuid).map(|info| info.uuid).unwrap_or(*uuid);
+                Expr::StackAddr(Arc::new(StackAddr::Local { uuid }))
+            },
+            StackAddr::Local { uuid } => {
+                let uuid = inlined_local_to_local.get(uuid).map(|info| info.uuid).unwrap_or(*uuid);
+                Expr::StackAddr(Arc::new(StackAddr::Local { uuid }))
+            },
+            StackAddr::Static { uuid } => {
+                Expr::StackAddr(Arc::new(StackAddr::Static { uuid: *uuid }))
+            },
         },
         Expr::Value(value) => Expr::Value(value.clone()),
         Expr::StdoutDeref(expr) => Expr::StdoutDeref(Arc::new(expr_replace_stack_addrs(
@@ -556,10 +559,37 @@ fn optimization_remove_unused_stack_addrs(
                         .cloned()
                         .collect();
 
+                    let call = match sp.call.as_ref() {
+                        Call::Jump { to } => Call::Jump { to: to.clone() },
+                        Call::Branch { cond, then_to, else_to } => Call::Branch {
+                            cond: cond.clone(),
+                            then_to: then_to.clone(),
+                            else_to: else_to.clone(),
+                        },
+                        Call::Sleep { duration_s, to } => {
+                            Call::Sleep { duration_s: duration_s.clone(), to: to.clone() }
+                        },
+                        Call::Func { to_func_name, arg_assignments } => Call::Func {
+                            to_func_name: to_func_name.clone(),
+                            arg_assignments: Arc::new(
+                                arg_assignments
+                                    .iter()
+                                    .filter(|aa| {
+                                        used_stack_addrs
+                                            .contains(&StackAddr::Arg { uuid: aa.arg_uuid })
+                                    })
+                                    .cloned()
+                                    .collect(),
+                            ),
+                        },
+                        Call::Return { to } => Call::Return { to: to.clone() },
+                        Call::Exit => Call::Exit,
+                    };
+
                     Arc::new(SubProc {
                         uuid: sp.uuid,
                         commands: Arc::new(commands),
-                        call: sp.call.clone(),
+                        call: Arc::new(call),
                     })
                 })
                 .collect();

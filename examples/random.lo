@@ -12,3 +12,5 @@ main {
     out(int);
     out(uint);
 }
+
+// Expected stdout: Random

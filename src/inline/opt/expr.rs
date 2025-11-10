@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     ops::{Add, Div, Mul, Neg, Not, Rem, Sub},
     str::FromStr,
     sync::Arc,
@@ -248,19 +249,7 @@ fn maybe_const_eval_expr(expr: &Arc<Expr>) -> Option<Arc<Expr>> {
         }
     }
 
-    fn is_value_like(expr: &Expr) -> bool {
-        match expr {
-            Expr::StackAddr(_) => true,
-            Expr::Value(_) => true,
-            Expr::StdoutLen => true,
-            Expr::InAnswer => true,
-            // may change between when checked on left and checked on right?
-            // not sure, but better to be safe
-            Expr::Timer => false,
-            _ => false,
-        }
-    }
-
+    #[deprecated]
     fn is_staticly_comparable(expr: &Expr) -> bool {
         macro_rules! args {
             ($args:expr) => {
@@ -294,6 +283,83 @@ fn maybe_const_eval_expr(expr: &Arc<Expr>) -> Option<Arc<Expr>> {
             Expr::InAnswer => true,
             Expr::Join(args) => args!(args),
             Expr::Random(args) => args!(args),
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Equality {
+        Eq,
+        Neq(Option<Inequality>),
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Inequality {
+        Lt,
+        Gt,
+    }
+
+    /// None = Cannot statically compare, Some = Result of static comparison
+    fn staticly_compare(this: &Expr, other: &Expr) -> Option<Equality> {
+        match (this, other) {
+            (Expr::Value(this), Expr::Value(other)) => match (this.as_ref(), other.as_ref()) {
+                (Value::Label(this), Value::Label(other)) => Some(match this == other {
+                    true => Equality::Eq,
+                    false => Equality::Neq(None),
+                }),
+                (Value::Literal(this), Value::Literal(other)) => 'lit: {
+                    // scratch detects if both are numbers, and if so, compares them as numbers
+                    if let Ok(this) = this.parse::<Int>()
+                        && let Ok(other) = other.parse::<Int>()
+                    {
+                        break 'lit this.partial_cmp(&other).map(|ord| match ord {
+                            Ordering::Equal => Equality::Eq,
+                            Ordering::Greater => Equality::Neq(Some(Inequality::Gt)),
+                            Ordering::Less => Equality::Neq(Some(Inequality::Lt)),
+                        });
+                    }
+
+                    if let Ok(this) = this.parse::<Float>()
+                        && let Ok(other) = other.parse::<Float>()
+                    {
+                        break 'lit this.partial_cmp(&other).map(|ord| match ord {
+                            Ordering::Equal => Equality::Eq,
+                            Ordering::Greater => Equality::Neq(Some(Inequality::Gt)),
+                            Ordering::Less => Equality::Neq(Some(Inequality::Lt)),
+                        });
+                    }
+
+                    // otherwise it just uses string comparison
+                    Some(match this.cmp(other) {
+                        Ordering::Equal => Equality::Eq,
+                        Ordering::Greater => Equality::Neq(Some(Inequality::Gt)),
+                        Ordering::Less => Equality::Neq(Some(Inequality::Lt)),
+                    })
+                },
+                _ => None,
+            },
+            (Expr::Loc(this), Expr::Loc(other)) => match (this.as_ref(), other.as_ref()) {
+                (Loc::Temp(this), Loc::Temp(other)) => Some(match this == other {
+                    true => Equality::Eq,
+                    false => Equality::Neq(None),
+                }),
+                (Loc::Deref(this), Loc::Deref(other)) => match staticly_compare(this, other) {
+                    None => None,
+                    Some(eq) => match eq {
+                        Equality::Eq => Some(Equality::Eq), // same address must have same value
+                        Equality::Neq(_) => None, // different address may or may not have eq value
+                    },
+                },
+                _ => None,
+            },
+            (Expr::StackAddr(this), Expr::StackAddr(other)) => Some(match this == other {
+                true => Equality::Eq,
+                false => Equality::Neq(None),
+            }),
+            (Expr::StdoutDeref(this), Expr::StdoutDeref(other)) => staticly_compare(this, other),
+            (Expr::StdoutLen, Expr::StdoutLen) => Some(Equality::Eq),
+            (Expr::Not(this), Expr::Not(other)) => staticly_compare(this, other),
+            (Expr::InAnswer, Expr::InAnswer) => Some(Equality::Eq),
+            _ => None,
         }
     }
 
@@ -364,33 +430,50 @@ fn maybe_const_eval_expr(expr: &Arc<Expr>) -> Option<Arc<Expr>> {
         },
         Expr::Mod(args) => {
             if let Some((a, b)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
-                return Some((a % b).to_literal());
+                let res = a % b;
+                return Some(res.to_literal());
             }
         },
         Expr::Eq(args) => {
-            if is_value_like(&args.left) && is_value_like(&args.right) {
-                return Some(Bool(args.left == args.right).to_literal());
-            }
+            if let Some(eq) = staticly_compare(&args.left, &args.right) {
+                let eq = match eq {
+                    Equality::Eq => true,
+                    Equality::Neq(_) => false,
+                };
 
-            // handles other expressions that must be identical
-            // but that we can't actually compare the values for (e.g. temps/stack vars)
-            // because of this, we can tell if two value will be equal (stack[local:ab] == stack[local:ab])
-            // but not if they aren't equal (stack[local:ab] == "2")??
-            if is_staticly_comparable(&args.left)
-                && is_staticly_comparable(&args.right)
-                && args.left == args.right
-            {
-                return Some(Bool(true).to_literal());
+                return Some(Bool(eq).to_literal());
             }
         },
         Expr::Lt(args) => {
-            if let Some((l, r)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
-                return Some(Bool(l < r).to_literal());
+            if let Some(eq) = staticly_compare(&args.left, &args.right) {
+                let lt = match eq {
+                    Equality::Eq => Some(false),
+                    Equality::Neq(neq) => match neq {
+                        None => None,
+                        Some(Inequality::Gt) => Some(false),
+                        Some(Inequality::Lt) => Some(true),
+                    },
+                };
+
+                if let Some(lt) = lt {
+                    return Some(Bool(lt).to_literal());
+                }
             }
         },
         Expr::Gt(args) => {
-            if let Some((l, r)) = lr_sides_filter_map(args, parse_filter_map::<Float>) {
-                return Some(Bool(l > r).to_literal());
+            if let Some(eq) = staticly_compare(&args.left, &args.right) {
+                let gt = match eq {
+                    Equality::Eq => Some(false),
+                    Equality::Neq(neq) => match neq {
+                        None => None,
+                        Some(Inequality::Gt) => Some(true),
+                        Some(Inequality::Lt) => Some(false),
+                    },
+                };
+
+                if let Some(gt) = gt {
+                    return Some(Bool(gt).to_literal());
+                }
             }
         },
         Expr::Not(expr) => {

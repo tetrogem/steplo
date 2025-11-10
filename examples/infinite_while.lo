@@ -3,3 +3,6 @@ main {
         out("Hello!");
     }
 }
+
+// Expected stdout: (infinite loop)
+// Hello!

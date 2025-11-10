@@ -103,3 +103,5 @@ func count_neighbors(world: &World, x: uint, y: uint) -> uint {
 
     count
 }
+
+// Interactive

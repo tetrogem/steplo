@@ -16,3 +16,9 @@ func swap(a: &num, b: &num) {
     *a = *b;
     *b = temp;
 }
+
+// Expected stdout:
+// A: 100
+// B: 987
+// A: 987
+// B: 100

@@ -1,9 +1,6 @@
 main {
-    let rect1: Rect = undefined;
-    Rect_new(&rect1, 4, 4);
-
-    let rect2: Rect = undefined;
-    Rect_new(&rect2, 5, 8);
+    let rect1: Rect = Rect_new(4, 4);
+    let rect2: Rect = Rect_new(5, 8);
 
     Rect_print_info(&rect1, "Rect 1");
     Rect_print_info(&rect2, "Rect 2");
@@ -16,17 +13,9 @@ type Rect = {
     height: num,
 };
 
-func Rect_new(return: &Rect, width: num, height: num) {
-    *return = { width: width, height: height };
-}
-
-func Rect_area(return: &num, self: &Rect) {
-    *return = ((*self).width * (*self).height);
-}
-
-func Rect_perimeter(return: &num, self: &Rect) {
-    *return = (((*self).width + (*self).height) * 2);
-}
+func Rect_new(width: num, height: num) -> Rect { width: width, height: height }
+func Rect_area(self: &Rect) -> num ((*self).width * (*self).height)
+func Rect_perimeter(self: &Rect) -> num (((*self).width + (*self).height) * 2)
 
 func Rect_print_info(self: &Rect, name: str) {
     let str: str = name;
@@ -36,16 +25,24 @@ func Rect_print_info(self: &Rect, name: str) {
     str = (str ~ (*self).height);
     out(str);
 
-    let temp: num = 0;
-    Rect_perimeter(&temp, self);
+    let perimeter: num = Rect_perimeter(self);
     str = name;
     str = (str ~ " perimeter: ");
-    str = (str ~ temp);
+    str = (str ~ perimeter);
     out(str);
 
-    Rect_area(&temp, self);
+    let area: num = Rect_area(self);
     str = name;
     str = (str ~ " area: ");
-    str = (str ~ temp);
+    str = (str ~ area);
     out(str);
 }
+
+// Expected stdout:
+// Rect 1 dimensions: 4 x 4
+// Rect 1 perimeter: 16
+// Rect 1 area: 16
+// Rect 2 dimensions: 5 x 8
+// Rect 2 perimeter: 26
+// Rect 2 area: 40
+// Done!

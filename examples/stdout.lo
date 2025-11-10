@@ -21,3 +21,5 @@ main {
     stdout_len(&len);
     out(("stdout line count: " ~ len));
 }
+
+// Interactive

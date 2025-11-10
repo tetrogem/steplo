@@ -4,7 +4,8 @@ use std::{
     sync::Arc,
 };
 
-use itertools::chain;
+use anyhow::bail;
+use itertools::{Itertools, chain};
 use uuid::Uuid;
 
 use crate::inline::{
@@ -88,6 +89,11 @@ fn optimization_tempify_local_vars(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>
                                                 StackAddr::Arg { uuid: *uuid },
                                             ))))
                                         },
+                                        StackAddr::Static { uuid } => {
+                                            Loc::Deref(Arc::new(Expr::StackAddr(Arc::new(
+                                                StackAddr::Static { uuid: *uuid },
+                                            ))))
+                                        },
                                         StackAddr::Local { uuid } => {
                                             if tempifiable_stack_vars.contains(uuid) {
                                                 let temp = Arc::new(TempVar::new());
@@ -133,10 +139,12 @@ fn optimization_tempify_local_vars(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>
                     arg_assignments: Arc::new(
                         arg_assignments
                             .iter()
-                            .map(|aa| ArgAssignment {
-                                arg_uuid: aa.arg_uuid,
-                                arg_offset: aa.arg_offset,
-                                expr: expr!(&aa.expr),
+                            .map(|aa| {
+                                Arc::new(ArgAssignment {
+                                    arg_uuid: aa.arg_uuid,
+                                    arg_offset: aa.arg_offset,
+                                    expr: expr!(&aa.expr),
+                                })
                             })
                             .collect(),
                     ),
@@ -162,6 +170,7 @@ fn find_tempifiable_local_vars(proc: &Arc<Proc>) -> BTreeSet<Uuid> {
     let addr_expr_used_local_vars =
         proc_find_addr_expr_used_vars(proc).into_iter().filter_map(|addr| match addr {
             StackAddr::Arg { .. } => None,
+            StackAddr::Static { .. } => None,
             StackAddr::Local { uuid } => Some(uuid),
         });
 
@@ -260,6 +269,7 @@ fn expr_find_written_and_read_local_vars(expr: &Expr) -> WrittenAndReadLocalVars
         },
         Expr::StackAddr(addr) => match addr.as_ref() {
             StackAddr::Arg { .. } => Default::default(),
+            StackAddr::Static { .. } => Default::default(),
             StackAddr::Local { uuid } => WrittenAndReadLocalVars {
                 written: BTreeSet::from([*uuid]),
                 read: Default::default(),
@@ -365,6 +375,7 @@ fn loc_find_read_local_vars(loc: &Loc) -> BTreeSet<Uuid> {
         Loc::Deref(addr) => match addr.as_ref() {
             Expr::StackAddr(addr) => match addr.as_ref() {
                 StackAddr::Arg { .. } => Default::default(),
+                StackAddr::Static { .. } => Default::default(),
                 StackAddr::Local { uuid } => BTreeSet::from([*uuid]),
             },
             addr => expr_find_read_local_vars(addr),
@@ -464,6 +475,11 @@ fn loc_replace_locals_with_temps(
                 StackAddr::Arg { uuid } => {
                     Loc::Deref(Arc::new(Expr::StackAddr(Arc::new(StackAddr::Arg { uuid: *uuid }))))
                 },
+                StackAddr::Static { uuid } => {
+                    Loc::Deref(Arc::new(Expr::StackAddr(Arc::new(StackAddr::Static {
+                        uuid: *uuid,
+                    }))))
+                },
                 StackAddr::Local { uuid } => match local_var_uuid_to_temp.get(uuid) {
                     Some(temp) => Loc::Temp(temp.clone()),
                     None => Loc::Deref(Arc::new(Expr::StackAddr(Arc::new(StackAddr::Local {
@@ -498,10 +514,13 @@ fn optimization_inline_sp_jumps(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>> {
                 // dbg!(to_sp.uuid, &to_sp.call, sp.uuid, &sp.call);
                 optimized = true;
 
-                let commands =
-                    chain!(sp.commands.iter().cloned(), to_sp.commands.iter().cloned()).collect();
+                let (uniquified_to_commands, uniquified_to_call) =
+                    inline_uniquify_temps(to_sp.commands.as_ref(), &to_sp.call);
 
-                (Arc::new(commands), to_sp.call.clone())
+                let commands =
+                    chain!(sp.commands.iter().cloned(), uniquified_to_commands).collect();
+
+                (Arc::new(commands), Arc::new(uniquified_to_call))
             } else {
                 (sp.commands.clone(), sp.call.clone())
             };
@@ -539,4 +558,136 @@ fn sp_can_jump_to_itself(sp: &SubProc) -> bool {
     }
 
     false
+}
+
+type OldToNewTemp = BTreeMap<Arc<TempVar>, Arc<TempVar>>;
+
+fn inline_uniquify_temps(commands: &[Arc<Command>], call: &Call) -> (Vec<Arc<Command>>, Call) {
+    // only uniquify temps that are created in these commands
+    // not just existing ones that are use as values (which could be from outside of these commands)
+    let temps = commands_find_created_temps(commands);
+    let old_to_new_temp: OldToNewTemp =
+        temps.into_iter().map(|old| (old, Arc::new(TempVar::new()))).collect::<BTreeMap<_, _>>();
+
+    let uniquified_commands = commands
+        .iter()
+        .map(|command| Arc::new(command_uniquify_temps(command, &old_to_new_temp)))
+        .collect();
+
+    let uniquified_call = call_uniquify_temps(call, &old_to_new_temp);
+
+    (uniquified_commands, uniquified_call)
+}
+
+fn command_uniquify_temps(command: &Command, old_to_new_temp: &OldToNewTemp) -> Command {
+    match command {
+        Command::SetLoc { loc, val } => Command::SetLoc {
+            loc: Arc::new(loc_uniquify_temps(loc, old_to_new_temp)),
+            val: Arc::new(expr_uniquify_temps(val, old_to_new_temp)),
+        },
+        Command::In => Command::In,
+        Command::Out(expr) => Command::Out(Arc::new(expr_uniquify_temps(expr, old_to_new_temp))),
+        Command::ClearStdout => Command::ClearStdout,
+        Command::WriteStdout { index, val } => Command::WriteStdout {
+            index: Arc::new(expr_uniquify_temps(index, old_to_new_temp)),
+            val: Arc::new(expr_uniquify_temps(val, old_to_new_temp)),
+        },
+    }
+}
+
+fn expr_uniquify_temps(expr: &Expr, old_to_new_temp: &OldToNewTemp) -> Expr {
+    match expr {
+        Expr::Loc(loc) => Expr::Loc(Arc::new(loc_uniquify_temps(loc, old_to_new_temp))),
+        Expr::StackAddr(stack_addr) => Expr::StackAddr(stack_addr.clone()),
+        Expr::Value(value) => Expr::Value(value.clone()),
+        Expr::StdoutDeref(expr) => {
+            Expr::StdoutDeref(Arc::new(expr_uniquify_temps(expr, old_to_new_temp)))
+        },
+        Expr::StdoutLen => Expr::StdoutLen,
+        Expr::Timer => Expr::Timer,
+        Expr::Add(args) => Expr::Add(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Sub(args) => Expr::Sub(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Mul(args) => Expr::Mul(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Div(args) => Expr::Div(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Mod(args) => Expr::Mod(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Eq(args) => Expr::Eq(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Lt(args) => Expr::Lt(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Gt(args) => Expr::Gt(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Not(expr) => Expr::Not(Arc::new(expr_uniquify_temps(expr, old_to_new_temp))),
+        Expr::Or(args) => Expr::Or(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::And(args) => Expr::And(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::InAnswer => Expr::InAnswer,
+        Expr::Join(args) => Expr::Join(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Random(args) => Expr::Random(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+    }
+}
+
+fn loc_uniquify_temps(loc: &Loc, old_to_new_temp: &OldToNewTemp) -> Loc {
+    match loc {
+        Loc::Deref(expr) => Loc::Deref(Arc::new(expr_uniquify_temps(expr, old_to_new_temp))),
+        Loc::Temp(old_temp) => {
+            let temp = match old_to_new_temp.get(old_temp) {
+                Some(new_temp) => new_temp,
+                None => old_temp,
+            };
+
+            Loc::Temp(temp.clone())
+        },
+    }
+}
+
+fn args_uniquify_temps(args: &BinaryArgs, old_to_new_temp: &OldToNewTemp) -> BinaryArgs {
+    BinaryArgs {
+        left: Arc::new(expr_uniquify_temps(&args.left, old_to_new_temp)),
+        right: Arc::new(expr_uniquify_temps(&args.right, old_to_new_temp)),
+    }
+}
+
+fn call_uniquify_temps(call: &Call, old_to_new_temp: &OldToNewTemp) -> Call {
+    match call {
+        Call::Jump { to } => Call::Jump { to: Arc::new(expr_uniquify_temps(to, old_to_new_temp)) },
+        Call::Branch { cond, then_to, else_to } => Call::Branch {
+            cond: Arc::new(expr_uniquify_temps(cond, old_to_new_temp)),
+            then_to: Arc::new(expr_uniquify_temps(then_to, old_to_new_temp)),
+            else_to: Arc::new(expr_uniquify_temps(else_to, old_to_new_temp)),
+        },
+        Call::Sleep { duration_s, to } => Call::Sleep {
+            duration_s: Arc::new(expr_uniquify_temps(duration_s, old_to_new_temp)),
+            to: Arc::new(expr_uniquify_temps(to, old_to_new_temp)),
+        },
+        Call::Func { to_func_name, arg_assignments } => Call::Func {
+            to_func_name: to_func_name.clone(),
+            arg_assignments: Arc::new(
+                arg_assignments
+                    .iter()
+                    .map(|aa| {
+                        Arc::new(ArgAssignment {
+                            arg_uuid: aa.arg_uuid,
+                            arg_offset: aa.arg_offset,
+                            expr: Arc::new(expr_uniquify_temps(&aa.expr, old_to_new_temp)),
+                        })
+                    })
+                    .collect(),
+            ),
+        },
+        Call::Return { to } => {
+            Call::Return { to: Arc::new(expr_uniquify_temps(to, old_to_new_temp)) }
+        },
+        Call::Exit => Call::Exit,
+    }
+}
+
+fn commands_find_created_temps(commands: &[Arc<Command>]) -> BTreeSet<Arc<TempVar>> {
+    commands
+        .iter()
+        .filter_map(|command| {
+            if let Command::SetLoc { loc, val: _ } = command.as_ref()
+                && let Loc::Temp(temp) = loc.as_ref()
+            {
+                return Some(temp.clone());
+            }
+
+            None
+        })
+        .collect()
 }

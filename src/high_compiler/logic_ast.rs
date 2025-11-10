@@ -79,6 +79,7 @@ pub enum TopItem {
 pub enum ExeItem {
     Main(Ref<Main>),
     Func(Ref<Func>),
+    Static(Ref<Static>),
 }
 
 #[derive(Debug)]
@@ -110,6 +111,11 @@ pub struct Func {
     pub params: Ref<Vec<Ref<IdentDef>>>,
     pub return_ty: Ref<TypeHint>,
     pub body: Ref<Expr>,
+}
+
+#[derive(Debug)]
+pub struct Static {
+    pub ident_init: Ref<IdentInit>,
 }
 
 #[derive(Debug)]
@@ -392,6 +398,11 @@ pub struct IdentInit {
 }
 
 #[derive(Debug)]
+pub struct Let {
+    pub ident_init: Ref<IdentInit>,
+}
+
+#[derive(Debug)]
 pub struct Place {
     pub head: Ref<PlaceHead>,
     pub index_chain: Ref<Vec<Ref<PlaceIndex>>>,
@@ -472,7 +483,7 @@ pub struct MatchCase {
 
 #[derive(Debug)]
 pub enum Statement {
-    IdentInit(Ref<IdentInit>),
+    Let(Ref<Let>),
     Assign(Ref<Assign>),
     Native(Ref<NativeOperation>), // not compiled to by source code, internal/built-ins only
 }
@@ -512,6 +523,31 @@ pub enum Expr {
     Array { single_exprs: Ref<Vec<Ref<Expr>>>, spread_expr: Option<Ref<Expr>> },
     Struct(Ref<Vec<Ref<StructAssignField>>>),
     Undefined,
+}
+
+impl Expr {
+    pub fn is_const(&self) -> bool {
+        match self {
+            Self::Literal(_) => true,
+            Self::Array { single_exprs, spread_expr } => {
+                single_exprs.val.iter().all(|x| x.val.is_const())
+                    && spread_expr.as_ref().map(|x| x.val.is_const()).unwrap_or(true)
+            },
+            Self::Block(_) => false,
+            Self::Call(_) => false,
+            Self::Cast { ty: _, expr } => expr.val.is_const(),
+            Self::If(_) => false,
+            Self::Match(_) => false,
+            Self::Paren(_) => false,
+            Self::Place(_) => false,
+            Self::Ref(_) => false,
+            Self::Statement(_) => false,
+            Self::Struct(fields) => fields.val.iter().all(|field| field.val.assign.val.is_const()),
+            Self::Transmute { ty: _, expr } => expr.val.is_const(),
+            Self::Undefined => true,
+            Self::While(_) => false,
+        }
+    }
 }
 
 #[derive(Debug)]

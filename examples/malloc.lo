@@ -1,69 +1,48 @@
 main {
-    let heap_books: [uint; 100] = undefined;
-    let heap_book_vec: Vec = undefined;
-    Vec_new(&heap_book_vec, <<&any>>&heap_books, 100);
+    let heap: Heap = Heap_new();
 
-    let heap_open: [any; 1000] = undefined;
-    let heap: Heap = undefined;
-    Heap_new(&heap, &heap_open, &heap_book_vec);
-
-    let val: &uint = undefined;
-    malloc(<<&&any>>&val, &heap, 1);
+    let val: &uint = <<&uint>>malloc(&heap, 1);
     *val = 10;
+    Heap_report_books(&heap);
 
-    let str: str = "";
-    Vec_to_str(&str, &heap_book_vec);
-    out(str);
-
-    let arr: &[uint; 3] = undefined;
-    malloc(<<&&any>>&arr, &heap, 3);
+    let arr: &[uint; 3] = <<&[uint; 3]>>malloc(&heap, 3);
     *arr = [11, 22, 33];
-    Vec_to_str(&str, &heap_book_vec);
-    out(str);
+    Heap_report_books(&heap);
 
-    let val2: &num = undefined;
-    malloc(<<&&any>>&val2, &heap, 1);
+    let val2: &num = <<&num>>malloc(&heap, 1);
     *val2 = -9.5;
-    Vec_to_str(&str, &heap_book_vec);
-    out(str);
+    Heap_report_books(&heap);
 
     free(&heap, <<&any>>val);
-    Vec_to_str(&str, &heap_book_vec);
-    out(str);
+    Heap_report_books(&heap);
 
-    let five: &[int; 5] = undefined;
-    malloc(<<&&any>>&five, &heap, 5);
+    let five: &[int; 5] = <<&[int; 5]>>malloc(&heap, 5);
     *five = [-2, -1, 0, 1, 2];
-    Vec_to_str(&str, &heap_book_vec);
-    out(str);
+    Heap_report_books(&heap);
 
-    malloc(<<&&any>>&val, &heap, 1);
+    val = <<&uint>>malloc(&heap, 1);
     *val = 88;
-    Vec_to_str(&str, &heap_book_vec);
-    out(str);
+    Heap_report_books(&heap);
 }
 
 type Heap = {
-    open: &[any; 1000],
-    books: &Vec,
+    open: [any; 1000],
+    books_mem: [uint; 100],
+    cap: uint,
+    len: uint,
 };
 
-func Heap_new(ret: &Heap, open: &[any; 1000], books: &Vec) {
-    *ret = { open: open, books: books };
-}
+func Heap_new() -> Heap { open: undefined, books_mem: undefined, cap: 1000, len: 0 }
 
-func Heap_books_find_open(ret: &uint, books: &Vec, size: uint) {
+func Heap_books_find_open(self: &Heap, size: uint) -> uint {
     let i: uint = 0;
     let addr: uint = 0;
     let loop: bool = true;
+    let books: _Vec = Heap_books_vec(self);
 
-    while (loop && (i < (*books).len)) {
-        let start: uint = 0;
-        Vec_get(<<&any>>&start, books, i);
-
-        let end: uint = 0;
-        Vec_get(<<&any>>&end, books, (i + 1));
-
+    while (loop && (i < *books.len)) {
+        let start: uint = <<uint>>_Vec_get(&books, i);
+        let end: uint = <<uint>>_Vec_get(&books, (i + 1));
         let range: uint = <<uint>>(end - start);
 
         if (((addr >= start) && (addr < end)) || (size > range)) {
@@ -74,118 +53,115 @@ func Heap_books_find_open(ret: &uint, books: &Vec, size: uint) {
         }
     }
 
-    Vec_insert(books, (addr + size), i);
-    Vec_insert(books, addr, i);
+    _Vec_insert(&books, (addr + size), i);
+    _Vec_insert(&books, addr, i);
 
-    *ret = addr;
+    addr
 }
 
-func malloc(ret: &&any, heap: &Heap, size: uint) {
-    let addr: uint = 0;
-    Heap_books_find_open(&addr, (*heap).books, size);
-    *ret = <<&any>>&(*(*heap).open)[addr];
+func Heap_books_vec(self: &Heap) -> _Vec {
+    arr: <<&any>>&(*self).books_mem,
+    cap: &(*self).cap,
+    len: &(*self).len,
+}
+
+func Heap_report_books(self: &Heap) {
+    let books: _Vec = Heap_books_vec(self);
+    out(_Vec_to_str(&books));
+}
+
+func malloc(heap: &Heap, size: uint) -> &any {
+    let addr: uint = Heap_books_find_open(heap, size);
+    <<&any>>&(*heap).open[addr]
 }
 
 func free(heap: &Heap, ptr: &any) {
-    let addr: uint = <<uint>>(<uint>ptr - <uint>(*heap).open);
+    let addr: uint = <<uint>>(<uint>ptr - <uint>&(*heap).open);
     let i: uint = 0;
-    while (i < (*(*heap).books).len) {
-        let start: uint = 0;
-        Vec_get(<<&any>>&start, (*heap).books, i);
+    let books: _Vec = Heap_books_vec(heap);
+
+    while (i < *books.len) {
+        let start: uint = <<uint>>_Vec_get(&books, i);
 
         if (start == addr) {
-            let null: any = 0;
-            Vec_remove(&null, (*heap).books, i);
-            Vec_remove(&null, (*heap).books, i);
-            i = (*(*heap).books).len;
+            _Vec_remove(&books, i);
+            _Vec_remove(&books, i);
+            i = *books.len;
         } else {
             i = (i + 2);
         }
     }
 }
-type Vec = {
+
+// The underscore signifies _Vec is an "unsafe" struct
+// it can't be moved without invalidating its references, so it needs to be used carefully
+// (should never be moved up out of the scope it was created in)
+type _Vec = {
     arr: &any,
-    cap: uint,
-    len: uint,
+    cap: &uint,
+    len: &uint,
 };
 
-func Vec_new(ret: &Vec, arr: &any, cap: uint) {
-    *ret = { arr: arr, cap: cap, len: 0 };
-}
+func _Vec_get_mut(self: &_Vec, i: uint) -> &any <<&any>>(<uint>(*self).arr + i)
+func _Vec_get(self: &_Vec, i: uint) -> any *_Vec_get_mut(self, i)
 
-func Vec_get_mut(ret: &&any, self: &Vec, i: uint) {
-    *ret = <<&any>>(<uint>(*self).arr + i);
-}
-
-func Vec_get(ret: &any, self: &Vec, i: uint) {
-    let entry: &any = undefined;
-    Vec_get_mut(&entry, self, i);
-    *ret = *entry;
-}
-
-func Vec_push(self: &Vec, val: any) {
-    let entry: &any = undefined;
-    Vec_get_mut(&entry, self, (*self).len);
+func _Vec_push(self: &_Vec, val: any) {
+    let entry: &any = _Vec_get_mut(self, *(*self).len);
     *entry = val;
-    (*self).len = ((*self).len + 1);
+    *(*self).len = (*(*self).len + 1);
 }
 
-func Vec_pop(ret: &any, self: &Vec) {
-    let val: any = 0;
-    Vec_get(&val, self, <<uint>>((*self).len - 1));
-    *ret = val;
-    (*self).len = <<uint>>((*self).len - 1);
+func _Vec_pop(self: &_Vec) -> any {
+    let val: any = _Vec_get(self, <<uint>>(*(*self).len - 1));
+    *(*self).len = <<uint>>(*(*self).len - 1);
+    val
 }
 
-func Vec_insert(self: &Vec, val: any, index: uint) {
-    let i: uint = (*self).len;
-    Vec_push(self, 0);
+func _Vec_insert(self: &_Vec, val: any, index: uint) {
+    let i: uint = *(*self).len;
+    _Vec_push(self, 0);
 
     let entry: &any = undefined;
     while (i >= index) {
-        Vec_get_mut(&entry, self, i);
-
-        let next_entry: &any = undefined;
-        Vec_get_mut(&next_entry, self, (i + 1));
+        entry = _Vec_get_mut(self, i);
+        let next_entry: &any = _Vec_get_mut(self, (i + 1));
         *next_entry = *entry;
 
         i = <<uint>>(i - 1);
     }
 
-    Vec_get_mut(&entry, self, index);
+    entry = _Vec_get_mut(self, index);
     *entry = val;
 }
 
-func Vec_remove(ret: &any, self: &Vec, index: uint) {
-    Vec_get(ret, self, index);
+func _Vec_remove(self: &_Vec, index: uint) -> any {
+    let ret: any = _Vec_get(self, index);
     let i: uint = index;
-    (*self).len = <<uint>>((*self).len - 1);
+    *(*self).len = <<uint>>(*(*self).len - 1);
 
-    while (i < (*self).len) {
-        let entry: &any = undefined;
-        Vec_get_mut(&entry, self, i);
-
-        let next_entry: &any = undefined;
-        Vec_get_mut(&next_entry, self, (i + 1));
+    while (i < *(*self).len) {
+        let entry: &any = _Vec_get_mut(self, i);
+        let next_entry: &any = _Vec_get_mut(self, (i + 1));
         *entry = *next_entry;
 
         i = (i + 1);
     }
+
+    ret
 }
 
-func Vec_clear(self: &Vec) {
-    (*self).len = 0;
+func _Vec_clear(self: &_Vec) {
+    *(*self).len = 0;
 }
 
-func Vec_to_str(ret: &str, self: &Vec) {
+func _Vec_to_str(self: &_Vec) -> str {
     let str: str = "[";
     let i: uint = 0;
 
-    while (i < (*self).len) {
-        let val: val = 0;
-        Vec_get(<<&any>>&val, self, i);
+    while (i < *(*self).len) {
+        let val: val = <<val>>_Vec_get(self, i);
         str = (str ~ val);
-        if (i != ((*self).len - 1)) {
+        if (i != (*(*self).len - 1)) {
             str = (str ~ ", ");
         }
 
@@ -193,5 +169,13 @@ func Vec_to_str(ret: &str, self: &Vec) {
     }
 
     str = (str ~ "]");
-    *ret = str;
+    str
 }
+
+// Expected stdout:
+// [0, 1]
+// [0, 1, 1, 4]
+// [0, 1, 1, 4, 4, 5]
+// [1, 4, 4, 5]
+// [1, 4, 4, 5, 5, 10]
+// [0, 1, 1, 4, 4, 5, 5, 10]

@@ -1,7 +1,12 @@
-use std::{collections::BTreeMap, ops::Not, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    ops::Not,
+    sync::Arc,
+};
 
 use crate::inline::{
     ast::{ArgAssignment, BinaryArgs, Call, Command, Expr, Loc, SubProc, TempVar},
+    export,
     opt::{
         MaybeOptimized, OptimizationFn,
         call::optimize_call,
@@ -202,10 +207,12 @@ fn call_inline_temps(
             arg_assignments: Arc::new(
                 arg_assignments
                     .iter()
-                    .map(|aa| ArgAssignment {
-                        arg_uuid: aa.arg_uuid,
-                        arg_offset: aa.arg_offset,
-                        expr: expr!(&aa.expr),
+                    .map(|aa| {
+                        Arc::new(ArgAssignment {
+                            arg_uuid: aa.arg_uuid,
+                            arg_offset: aa.arg_offset,
+                            expr: expr!(&aa.expr),
+                        })
                     })
                     .collect(),
             ),
@@ -406,6 +413,7 @@ fn optimization_remove_zero_read_temps(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<
 
     let mut temp_to_reads = BTreeMap::new();
     sp_count_temp_reads(sp, &mut temp_to_reads);
+    let mut removed_temps = BTreeSet::new();
 
     let commands = sp
         .commands
@@ -415,6 +423,7 @@ fn optimization_remove_zero_read_temps(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<
                 && let Loc::Temp(temp) = loc.as_ref()
                 && temp_to_reads.get(temp).copied().unwrap_or_default() == 0
             {
+                removed_temps.insert(temp.clone());
                 optimized = true;
                 false
             } else {
@@ -424,9 +433,19 @@ fn optimization_remove_zero_read_temps(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<
         .cloned()
         .collect();
 
-    let sp = SubProc { uuid: sp.uuid, commands: Arc::new(commands), call: sp.call.clone() };
+    let optimized_sp =
+        SubProc { uuid: sp.uuid, commands: Arc::new(commands), call: sp.call.clone() };
 
-    MaybeOptimized { optimized, val: Arc::new(sp) }
+    // if optimized {
+    //     println!("Before:");
+    //     println!("{}", export::export_sub_proc(&mut export::NameManager::default(), sp));
+    //     println!("After:");
+    //     println!("{}", export::export_sub_proc(&mut export::NameManager::default(), &optimized_sp));
+    //     println!("Removed:");
+    //     println!("{:#?}", &removed_temps);
+    // }
+
+    MaybeOptimized { optimized, val: Arc::new(optimized_sp) }
 }
 
 fn optimization_inline_constant_trivial_derefs(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<SubProc>> {
@@ -494,10 +513,12 @@ fn optimization_inline_constant_trivial_derefs(sp: &Arc<SubProc>) -> MaybeOptimi
             arg_assignments: Arc::new(
                 arg_assignments
                     .iter()
-                    .map(|aa| ArgAssignment {
-                        arg_uuid: aa.arg_uuid,
-                        arg_offset: aa.arg_offset,
-                        expr: expr!(&aa.expr),
+                    .map(|aa| {
+                        Arc::new(ArgAssignment {
+                            arg_uuid: aa.arg_uuid,
+                            arg_offset: aa.arg_offset,
+                            expr: expr!(&aa.expr),
+                        })
                     })
                     .collect(),
             ),

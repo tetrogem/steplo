@@ -7,3 +7,7 @@ main {
     arr[(0 + 1)] = "World!";
     out(arr[(2 - 1)]);
 }
+
+// Expected stdout:
+// Hello
+// World!

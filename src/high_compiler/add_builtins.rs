@@ -25,6 +25,10 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         })
     }
 
+    fn let_stmt(name: &str, ty: l::TypeHint, expr: l::Expr) -> l::Statement {
+        l::Statement::Let(rf(l::Let { ident_init: ident_init(name, ty, expr) }))
+    }
+
     fn ident_init(name: &str, ty: l::TypeHint, expr: l::Expr) -> l::Ref<l::IdentInit> {
         rf(l::IdentInit { def: ident_def(name, ty), expr: rf(expr) })
     }
@@ -100,11 +104,7 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         return_ty: rf(unit_type_hint(*SRC_RANGE)),
         body: block(
             [
-                stmt(l::Statement::IdentInit(ident_init(
-                    "answer",
-                    str_type_hint(*SRC_RANGE),
-                    l::Expr::Undefined,
-                ))),
+                stmt(let_stmt("answer", str_type_hint(*SRC_RANGE), l::Expr::Undefined)),
                 stmt(l::Statement::Native(rf(l::NativeOperation::In {
                     dest_place: place("answer"),
                 }))),
@@ -127,11 +127,7 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         return_ty: rf(unit_type_hint(*SRC_RANGE)),
         body: block(
             [
-                stmt(l::Statement::IdentInit(ident_init(
-                    "generated",
-                    num_type_hint(*SRC_RANGE),
-                    l::Expr::Undefined,
-                ))),
+                stmt(let_stmt("generated", num_type_hint(*SRC_RANGE), l::Expr::Undefined)),
                 stmt(l::Statement::Native(rf(l::NativeOperation::Random {
                     dest_place: place("generated"),
                     min: rf(l::Expr::Literal(rf(l::Literal::Num(0.)))),
@@ -172,11 +168,7 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         return_ty: rf(unit_type_hint(*SRC_RANGE)),
         body: block(
             [
-                stmt(l::Statement::IdentInit(ident_init(
-                    "generated",
-                    integer_type_hint(*SRC_RANGE),
-                    l::Expr::Undefined,
-                ))),
+                stmt(let_stmt("generated", integer_type_hint(*SRC_RANGE), l::Expr::Undefined)),
                 stmt(l::Statement::Native(rf(l::NativeOperation::Random {
                     dest_place: place("generated"),
                     min: rf(l::Expr::Place(place("min"))),
@@ -201,11 +193,7 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         return_ty: rf(unit_type_hint(*SRC_RANGE)),
         body: block(
             [
-                stmt(l::Statement::IdentInit(ident_init(
-                    "generated",
-                    uinteger_type_hint(*SRC_RANGE),
-                    l::Expr::Undefined,
-                ))),
+                stmt(let_stmt("generated", uinteger_type_hint(*SRC_RANGE), l::Expr::Undefined)),
                 stmt(l::Statement::Native(rf(l::NativeOperation::Random {
                     dest_place: place("generated"),
                     min: rf(l::Expr::Place(place("min"))),
@@ -260,11 +248,7 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         return_ty: rf(unit_type_hint(*SRC_RANGE)),
         body: block(
             [
-                stmt(l::Statement::IdentInit(ident_init(
-                    "len",
-                    uinteger_type_hint(*SRC_RANGE),
-                    l::Expr::Undefined,
-                ))),
+                stmt(let_stmt("len", uinteger_type_hint(*SRC_RANGE), l::Expr::Undefined)),
                 rf(l::Expr::Call(rf(l::FunctionCall {
                     func_name: name("stdout_len"),
                     param_exprs: rf(Vec::from([rf(l::Expr::Ref(place("len")))])),

@@ -15,3 +15,6 @@ func mutate_ref(ref: &any) {
 func needs_val(val: val) {
     out(val);
 }
+
+// Expected stdout:
+// 1

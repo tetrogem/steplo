@@ -5,13 +5,13 @@ use crate::high_compiler::grammar_ast::{
     BinaryParenExprOp, Block, BoolLiteral, CastExpr, CommaList, CommaListLink, Comment,
     ContainedExpr, Decimal, Deref, Digits, DivOp, ElseBodyItem, ElseIfItem, ElseItem, Empty,
     EnumItem, EqOp, ExprOrSemi, FalseLiteral, Field, Func, FunctionCall, GtOp, GteOp, Ident,
-    IdentDef, IdentInit, IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, MatchCase,
-    MatchItem, Maybe, ModOp, MulOp, Name, Negative, NeqOp, NominalType, NotOp, NumLiteral, Offset,
-    OrOp, ParenExpr, ParensNest, ParensWrapped, PipeList, PipeListLink, Place, PlaceHead,
-    PlaceIndex, PlaceIndexLink, Priority, Program, RefExpr, RefType, ReturnType, Semi, SemiList,
-    SemiListLink, SpreadAssignExpr, StrLiteral, StructAssign, StructAssignField, StructType, SubOp,
-    TopItem, TrailingExpr, TransmuteExpr, TrueLiteral, Type, TypeAlias, UnaryParenExpr,
-    UnaryParenExprOp, Undefined, VariantLiteral, WhileItem,
+    IdentDef, IdentInit, IfItem, JoinOp, LetItem, List, ListLink, Literal, LtOp, LteOp, Main,
+    MatchCase, MatchItem, Maybe, ModOp, MulOp, Name, Negative, NeqOp, NominalType, NotOp,
+    NumLiteral, Offset, OrOp, ParenExpr, ParensNest, ParensWrapped, PipeList, PipeListLink, Place,
+    PlaceHead, PlaceIndex, PlaceIndexLink, Priority, Program, RefExpr, RefType, ReturnType, Semi,
+    SemiList, SemiListLink, SpreadAssignExpr, Static, StrLiteral, StructAssign, StructAssignField,
+    StructType, SubOp, TopItem, TrailingExpr, TransmuteExpr, TrueLiteral, Type, TypeAlias,
+    UnaryParenExpr, UnaryParenExprOp, Undefined, VariantLiteral, WhileItem,
 };
 
 use super::{
@@ -181,6 +181,7 @@ impl AstParse for TopItem {
                 Self::Func(Arc::new(x)),
                 Self::TypeAlias(Arc::new(x)),
                 Self::Enum(Arc::new(x)),
+                Self::Static(Arc::new(x)),
             } else {
                 "Expected top item"
             }
@@ -281,11 +282,33 @@ impl AstParse for IdentInit {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_struct! {
             parse tokens;
-            [match _ = Token::Let => (); as [TokenKind::Let]];
             [struct def];
             [match _ = Token::Eq => (); as [TokenKind::Eq]];
             [struct expr];
             [return Self { def: Arc::new(def), expr: Arc::new(expr) }];
+        }
+    }
+}
+
+impl AstParse for Static {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Static => (); as [TokenKind::Static]];
+            [struct ident_init];
+            [match _ = Token::Semi => (); as [TokenKind::Semi]];
+            [return Self { ident_init: Arc::new(ident_init) }];
+        }
+    }
+}
+
+impl AstParse for LetItem {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Let => (); as [TokenKind::Let]];
+            [struct ident_init];
+            [return Self { ident_init: Arc::new(ident_init) }];
         }
     }
 }
@@ -724,7 +747,7 @@ impl AstParse for TrailingExpr {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_enum! {
             parse tokens => x {
-                Self::IdentInit(Arc::new(x)),
+                Self::Let(Arc::new(x)),
                 Self::Assign(Arc::new(x)),
                 Self::If(Arc::new(x)),
                 Self::While(Arc::new(x)),

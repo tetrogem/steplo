@@ -63,3 +63,9 @@ func print_arr(arr: &[num; 11], len: uint) {
     str = (str ~ "]");
     out(str);
 }
+
+// Expected stdout:
+// With duplicates:
+// [1, 1, 2, 3, 3, 4, 5, 6, 6, 6, 7]
+// Without duplicates:
+// [1, 2, 3, 4, 5, 6, 7]

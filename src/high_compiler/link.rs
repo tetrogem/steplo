@@ -5,6 +5,11 @@ use uuid::Uuid;
 
 use super::{srced::Srced, type_erased_ast as ast};
 
+pub struct Program {
+    pub procs: Arc<Vec<ast::Ref<Proc>>>,
+    pub statics: Arc<Vec<ast::Ref<ast::IdentDef>>>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Proc {
     pub kind: ProcKind,
@@ -64,8 +69,8 @@ pub enum Statement {
     Native(ast::Ref<NativeOperation>),
 }
 
-pub fn link(ast: &ast::Ref<ast::Program>) -> Vec<ast::Ref<Proc>> {
-    let exe_items = ast.val.items.val.iter().cloned().collect_vec();
+pub fn link(ast: &ast::Ref<ast::Program>) -> Program {
+    let exe_items = ast.val.items.iter().cloned().collect_vec();
 
     // parse user top items
     let mut procs = Vec::<ast::Ref<Proc>>::new();
@@ -104,7 +109,7 @@ pub fn link(ast: &ast::Ref<ast::Program>) -> Vec<ast::Ref<Proc>> {
         procs.push(Arc::new(Srced { range: proc.sub_procs.range, val: proc }));
     }
 
-    procs
+    Program { procs: Arc::new(procs), statics: ast.val.statics.clone() }
 }
 
 struct CreateSubProcRes {

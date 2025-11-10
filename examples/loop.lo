@@ -16,3 +16,6 @@ func iterate(i_r: &uint) {
 func greet() {
     out("Hello!");
 }
+
+// Expected stdout: (20 times)
+// Hello!

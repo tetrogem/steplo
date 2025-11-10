@@ -21,3 +21,5 @@ func State_print(state: State) match state {
     #Loading -> out("Loading")
     #Loaded -> out("Loaded")
 }
+
+// Interactive

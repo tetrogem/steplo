@@ -21,3 +21,5 @@ main {
     // uint = (int + int);
     int = (uint + int);
 }
+
+// No output

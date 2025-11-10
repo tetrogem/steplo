@@ -1,24 +1,19 @@
 main {
     let arr: [num; 99] = undefined;
-    let vec: Vec = undefined;
-    Vec_new(&vec, <<&any>>&arr, 99, 0);
+    let vec: Vec = Vec_new(<<&any>>&arr, 99, 0);
     Vec_random_populate(&vec, 10, -100, 100);
 
     out("Unsorted:");
-    let str: str = "";
-    Vec_to_str(&str, &vec);
-    out(str);
+    out(Vec_to_str(&vec));
 
     out("Sorted:");
     Vec_sort(&vec);
-    Vec_to_str(&str, &vec);
-    out(str);
+    out(Vec_to_str(&vec));
 
     out("Pushing `12.5` then sorting again:");
     Vec_push(&vec, 12.5);
     Vec_sort(&vec);
-    Vec_to_str(&str, &vec);
-    out(str);
+    out(Vec_to_str(&vec));
 }
 
 type Vec = {
@@ -27,81 +22,64 @@ type Vec = {
     len: uint,
 };
 
-func Vec_new(ret: &Vec, arr: &any, cap: uint, len: uint) {
-    *ret = { arr: arr, cap: cap, len: len };
-}
-
-func Vec_get_mut(ret: &&any, self: &Vec, i: uint) {
-    *ret = <<&any>>(<uint>(*self).arr + i);
-}
-
-func Vec_get(ret: &any, self: &Vec, i: uint) {
-    let entry: &any = undefined;
-    Vec_get_mut(&entry, self, i);
-    *ret = *entry;
-}
+func Vec_new(arr: &any, cap: uint, len: uint) -> Vec { arr: arr, cap: cap, len: len }
+func Vec_get_mut(self: &Vec, i: uint) -> &any <<&any>>(<uint>(*self).arr + i)
+func Vec_get(self: &Vec, i: uint) -> any *Vec_get_mut(self, i)
 
 func Vec_push(self: &Vec, val: any) {
-    let entry: &any = undefined;
-    Vec_get_mut(&entry, self, (*self).len);
+    let entry: &any = Vec_get_mut(self, (*self).len);
     *entry = val;
     (*self).len = ((*self).len + 1);
 }
 
-func Vec_pop(ret: &any, self: &Vec) {
-    let val: any = 0;
-    Vec_get(&val, self, <<uint>>((*self).len - 1));
-    *ret = val;
+func Vec_pop(self: &Vec) -> any {
+    let val: any = Vec_get(self, <<uint>>((*self).len - 1));
     (*self).len = <<uint>>((*self).len - 1);
+    val
 }
 
 func Vec_insert(self: &Vec, val: any, index: uint) {
     let i: uint = (*self).len;
     Vec_push(self, 0);
 
-    let entry: &any = undefined;
     while (i >= index) {
-        Vec_get_mut(&entry, self, i);
-
-        let next_entry: &any = undefined;
-        Vec_get_mut(&next_entry, self, (i + 1));
+        let entry: &any = Vec_get_mut(self, i);
+        let next_entry: &any = Vec_get_mut(self, (i + 1));
         *next_entry = *entry;
 
         i = <<uint>>(i - 1);
     }
 
-    Vec_get_mut(&entry, self, index);
+    let entry: &any = Vec_get_mut(self, index);
     *entry = val;
 }
 
-func Vec_remove(ret: &any, self: &Vec, index: uint) {
-    Vec_get(ret, self, index);
+func Vec_remove(self: &Vec, index: uint) -> any {
+    let ret: any = Vec_get(self, index);
     let i: uint = index;
     (*self).len = <<uint>>((*self).len - 1);
 
     while (i < (*self).len) {
-        let entry: &any = undefined;
-        Vec_get_mut(&entry, self, i);
-
-        let next_entry: &any = undefined;
-        Vec_get_mut(&next_entry, self, (i + 1));
+        let entry: &any = Vec_get_mut(self, i);
+        let next_entry: &any = Vec_get_mut(self, (i + 1));
         *entry = *next_entry;
 
         i = (i + 1);
     }
+
+    ret
 }
 
 func Vec_clear(self: &Vec) {
     (*self).len = 0;
 }
 
-func Vec_to_str(ret: &str, self: &Vec) {
+func Vec_to_str(self: &Vec) -> str {
     let str: str = "[";
     let i: uint = 0;
 
     while (i < (*self).len) {
-        let val: val = 0;
-        Vec_get(<<&any>>&val, self, i);
+        let val: val = <<val>>Vec_get(self, i);
         str = (str ~ val);
         if (i != ((*self).len - 1)) {
             str = (str ~ ", ");
@@ -111,7 +89,7 @@ func Vec_to_str(ret: &str, self: &Vec) {
     }
 
     str = (str ~ "]");
-    *ret = str;
+    str
 }
 
 func Vec_sort(self: &Vec) {
@@ -119,10 +97,9 @@ func Vec_sort(self: &Vec) {
     while (i < (*self).len) {
         let j: uint = i;
         while (j < (*self).len) {
-            let a_r: &val = undefined;
-            let b_r: &val = undefined;
-            Vec_get_mut(<<&&any>>&a_r, self, i);
-            Vec_get_mut(<<&&any>>&b_r, self, j);
+            let a_r: &val = <<&val>>Vec_get_mut(self, i);;
+            let b_r: &val = <<&val>>Vec_get_mut(self, j);;
+
             let a: val = *a_r;
             let b: val = *b_r;
 
@@ -143,12 +120,14 @@ func swap(a_r: &val, b_r: &val) {
     *b_r = temp;
 }
 
-func Vec_random_populate(self_r: &Vec, len: uint, min: int, max: int) {
+func Vec_random_populate(self: &Vec, len: uint, min: int, max: int) {
     let i: uint = 0;
     while (i < len) {
         let num: int = 0;
         random_int(&num, min, max);
-        Vec_push(self_r, num);
+        Vec_push(self, num);
         i = (i + 1);
     }
 }
+
+// Expected stdout: (Random)

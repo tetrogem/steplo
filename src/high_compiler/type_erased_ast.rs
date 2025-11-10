@@ -222,5 +222,6 @@ pub enum NativeOperation {
 
 #[derive(Debug)]
 pub struct Program {
-    pub items: Ref<Vec<Ref<ExeItem>>>,
+    pub items: Arc<Vec<Ref<ExeItem>>>,
+    pub statics: Arc<Vec<Ref<IdentDef>>>,
 }

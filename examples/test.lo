@@ -11,3 +11,6 @@ func test() {
 
     out("i >= 0");
 }
+
+// Expected output:
+// i >= 0

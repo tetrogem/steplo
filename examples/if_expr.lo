@@ -39,3 +39,11 @@ func Parity_to_str(self: Parity) -> str match self {
     #Even -> "Even"
     #Odd -> "Odd"
 }
+
+// Expected stdout:
+// 2: Pos & Even
+// 1: Pos & Odd
+// 4: Pos & Even
+// -6: Neg & Even
+// -5: Neg & Odd
+// 0: Pos & Even

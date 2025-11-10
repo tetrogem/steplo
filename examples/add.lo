@@ -9,3 +9,7 @@ main {
     sum = (b + c);
     out(sum);
 }
+
+// Expected stdout:
+// 25
+// 65
