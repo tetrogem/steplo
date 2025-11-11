@@ -1,0 +1,24 @@
+static KEY_PRESSED: bool = false;
+
+main {
+    callback();
+    while true {
+        out(if KEY_PRESSED "Wow!" else "Hello!");
+        KEY_PRESSED = false;
+        wait();
+    }
+}
+
+func callback() {
+    KEY_PRESSED = true;
+    out("Key pressed!");
+}
+
+func wait() {
+    out("Waiting...");
+    wait_s(1);
+    out("Wait done!");
+}
+
+// Expected stdout: (infinite loop)
+// Hello!

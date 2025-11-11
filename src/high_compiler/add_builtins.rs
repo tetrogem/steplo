@@ -326,5 +326,17 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         ),
     }));
 
+    top_items.push(func(l::Func {
+        name: name("since_2000_days"),
+        params: rf(Vec::from([ident_def("return", ref_ty(num_type_hint(*SRC_RANGE)))])),
+        return_ty: rf(unit_type_hint(*SRC_RANGE)),
+        body: block(
+            [stmt(l::Statement::Native(rf(l::NativeOperation::DaysSince2000Get {
+                dest_place: deref(rf(l::Expr::Place(place("return")))),
+            })))],
+            BodyTrailing::True,
+        ),
+    }));
+
     rf(l::Program { items: rf(top_items) })
 }

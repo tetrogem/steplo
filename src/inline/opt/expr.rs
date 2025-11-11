@@ -44,6 +44,7 @@ pub fn optimize_expr(expr: &Arc<Expr>) -> MaybeOptimized<Arc<Expr>> {
         Expr::StdoutDeref(expr) => Arc::new(Expr::StdoutDeref(expr!(expr))),
         Expr::StdoutLen => Arc::new(Expr::StdoutLen),
         Expr::Timer => Arc::new(Expr::Timer),
+        Expr::DaysSince2000 => Arc::new(Expr::DaysSince2000),
         Expr::Add(args) => Arc::new(Expr::Add(args!(args))),
         Expr::Sub(args) => Arc::new(Expr::Sub(args!(args))),
         Expr::Mul(args) => Arc::new(Expr::Mul(args!(args))),
@@ -266,9 +267,12 @@ fn maybe_const_eval_expr(expr: &Arc<Expr>) -> Option<Arc<Expr>> {
             Expr::Value(_) => true,
             Expr::StdoutDeref(expr) => is_staticly_comparable(expr),
             Expr::StdoutLen => true,
+
             // may change between when checked on left and checked on right?
             // not sure, but better to be safe
             Expr::Timer => false,
+            Expr::DaysSince2000 => false,
+
             Expr::Add(args) => args!(args),
             Expr::Sub(args) => args!(args),
             Expr::Mul(args) => args!(args),

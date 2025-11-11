@@ -55,6 +55,7 @@ pub enum Expr<MemLoc> {
     InAnswer,
     Join(Arc<BinaryArgs<MemLoc>>),
     Random(Arc<BinaryArgs<MemLoc>>),
+    DaysSince2000,
 }
 
 #[derive(Debug)]

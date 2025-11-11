@@ -75,6 +75,7 @@ pub enum Expr {
     InAnswer,
     Join(Arc<BinaryArgs>),
     Random(Arc<BinaryArgs>),
+    DaysSince2000,
 }
 
 #[derive(Debug)]

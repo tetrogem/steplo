@@ -316,6 +316,12 @@ impl Op {
                     fields: JsMap::new(),
                     mutation: None,
                 },
+                SensingOp::DaysSince2000 => ExprMetadata {
+                    opcode: "sensing_dayssince2000",
+                    inputs: JsMap::new(),
+                    fields: JsMap::new(),
+                    mutation: None,
+                },
             },
             Self::Operator(op) => match op {
                 OperatorOp::Subtract { num_a, num_b } => ExprMetadata {

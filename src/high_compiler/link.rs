@@ -61,6 +61,7 @@ pub enum NativeOperation {
     StdoutWrite { val: ast::Ref<ast::Expr>, index: ast::Ref<ast::Expr> },
     StdoutLen { dest_place: ast::Ref<ast::Place> },
     TimerGet { dest_place: ast::Ref<ast::Place> },
+    DaysSince2000Get { dest_place: ast::Ref<ast::Place> },
 }
 
 #[derive(Debug, Clone)]
@@ -272,6 +273,11 @@ fn create_sub_proc<'a>(
                     },
                     ast::NativeOperation::TimerGet { dest_place } => {
                         other_native!(NativeOperation::TimerGet { dest_place: dest_place.clone() })
+                    },
+                    ast::NativeOperation::DaysSince2000Get { dest_place } => {
+                        other_native!(NativeOperation::DaysSince2000Get {
+                            dest_place: dest_place.clone()
+                        })
                     },
                 }
             },

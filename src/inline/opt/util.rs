@@ -66,6 +66,7 @@ pub mod find_addr_expr_used_local_vars {
             Expr::StdoutDeref(expr) => expr_find_addr_expr_used_vars(expr),
             Expr::StdoutLen => Default::default(),
             Expr::Timer => Default::default(),
+            Expr::DaysSince2000 => Default::default(),
             Expr::Add(args) => args_find_addr_expr_used_vars(args),
             Expr::Sub(args) => args_find_addr_expr_used_vars(args),
             Expr::Mul(args) => args_find_addr_expr_used_vars(args),

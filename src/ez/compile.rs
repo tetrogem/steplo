@@ -285,6 +285,7 @@ impl Op {
                         ir::SensingOp::AskAndWait { question: compile(question) }
                     },
                     SensingOp::Timer => ir::SensingOp::Timer,
+                    SensingOp::DaysSince2000 => ir::SensingOp::DaysSince2000,
                 };
 
                 ir::Op::Sensing(ir_op)

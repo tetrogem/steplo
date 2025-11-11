@@ -282,6 +282,7 @@ fn expr_find_written_and_read_local_vars(expr: &Expr) -> WrittenAndReadLocalVars
         },
         Expr::StdoutLen => Default::default(),
         Expr::Timer => Default::default(),
+        Expr::DaysSince2000 => Default::default(),
         // add and sub can count towards writes for offsets e.g. (stack[local:ab + "2"]) is a write
         // but stack[stack[local:ab]] and stack[local:ab * 2] are not
         Expr::Add(args) => args_find_written_and_read_local_vars(args),
@@ -352,6 +353,7 @@ fn expr_find_read_local_vars(expr: &Expr) -> BTreeSet<Uuid> {
         Expr::StdoutDeref(expr) => expr_find_read_local_vars(expr),
         Expr::StdoutLen => Default::default(),
         Expr::Timer => Default::default(),
+        Expr::DaysSince2000 => Default::default(),
         Expr::Add(args) => args_find_read_local_vars(args),
         Expr::Sub(args) => args_find_read_local_vars(args),
         Expr::Mul(args) => args_find_read_local_vars(args),
@@ -411,6 +413,7 @@ fn expr_replace_locals_with_temps(
         ))),
         Expr::StdoutLen => Expr::StdoutLen,
         Expr::Timer => Expr::Timer,
+        Expr::DaysSince2000 => Expr::DaysSince2000,
         Expr::Add(args) => {
             Expr::Add(Arc::new(args_replace_locals_with_temps(args, local_var_uuid_to_temp)))
         },
@@ -605,6 +608,7 @@ fn expr_uniquify_temps(expr: &Expr, old_to_new_temp: &OldToNewTemp) -> Expr {
         },
         Expr::StdoutLen => Expr::StdoutLen,
         Expr::Timer => Expr::Timer,
+        Expr::DaysSince2000 => Expr::DaysSince2000,
         Expr::Add(args) => Expr::Add(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
         Expr::Sub(args) => Expr::Sub(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
         Expr::Mul(args) => Expr::Mul(Arc::new(args_uniquify_temps(args, old_to_new_temp))),

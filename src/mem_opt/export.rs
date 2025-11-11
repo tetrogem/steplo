@@ -109,6 +109,7 @@ fn export_expr(name_m: &mut NameManager, expr: &Expr<UMemLoc>) -> String {
         Expr::StdoutDeref(expr) => format!("stdout[{}]", export_expr(name_m, expr)),
         Expr::StdoutLen => "stdout.len".into(),
         Expr::Timer => "timer".into(),
+        Expr::DaysSince2000 => "days_since_2000".into(),
         Expr::Add(args) => export_binary_op_expr(name_m, args, "+"),
         Expr::Sub(args) => export_binary_op_expr(name_m, args, "-"),
         Expr::Mul(args) => export_binary_op_expr(name_m, args, "*"),

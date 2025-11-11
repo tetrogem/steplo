@@ -1393,6 +1393,16 @@ fn typecheck_native_op(
                 ))
             })?,
         },
+        l::NativeOperation::DaysSince2000Get { dest_place } => {
+            t::NativeOperation::DaysSince2000Get {
+                dest_place: try_tr(dest_place, |x| {
+                    Ok(sift_stmt_deps(
+                        &mut stmt_deps,
+                        typecheck_place(x, ident_m, func_m, type_alias_m)?,
+                    ))
+                })?,
+            }
+        },
     };
 
     Ok(StmtDependent { stmt_deps, value: native_op })

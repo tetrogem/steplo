@@ -198,8 +198,15 @@ impl TargetManager for ScratchTargetManager {
             then_substack: Some(Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
                 root: Arc::new(ez::Op::Data(ez::DataOp::SetVariableTo {
                     variable: self.wait_start_s_variable.clone(),
-                    value: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Sensing(
-                        ez::SensingOp::Timer,
+                    value: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
+                        ez::OperatorOp::Multiply {
+                            num_a: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Sensing(
+                                ez::SensingOp::DaysSince2000,
+                            )))),
+                            num_b: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::PosInt(
+                                86400,
+                            )))),
+                        },
                     )))),
                 })),
                 rest: Arc::new(Vec::from([Arc::new(ez::Op::Control(
@@ -209,7 +216,14 @@ impl TargetManager for ScratchTargetManager {
                                 operand: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
                                     ez::OperatorOp::LessThan {
                                         operand_a: Arc::new(ez::Expr::Derived(Arc::new(
-                                            ez::Op::Sensing(ez::SensingOp::Timer),
+                                            ez::Op::Operator(ez::OperatorOp::Multiply {
+                                                num_a: Arc::new(ez::Expr::Derived(Arc::new(
+                                                    ez::Op::Sensing(ez::SensingOp::DaysSince2000),
+                                                ))),
+                                                num_b: Arc::new(ez::Expr::Literal(Arc::new(
+                                                    ez::Literal::PosInt(86400),
+                                                ))),
+                                            }),
                                         ))),
                                         operand_b: Arc::new(ez::Expr::Derived(Arc::new(
                                             ez::Op::Operator(ez::OperatorOp::Add {
@@ -412,7 +426,7 @@ impl TargetManager for TurboWarpTargetManager {
             });
         }
 
-        let stack = if let Some(dyn_stack) = dyn_stack {
+        if let Some(dyn_stack) = dyn_stack {
             let wait_stack = Arc::new(ez::Expr::Stack(Arc::new(ez::Stack {
                 root: Arc::new(ez::Op::Control(ez::ControlOp::If {
                     condition: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
@@ -420,7 +434,14 @@ impl TargetManager for TurboWarpTargetManager {
                             operand: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
                                 ez::OperatorOp::LessThan {
                                     operand_a: Arc::new(ez::Expr::Derived(Arc::new(
-                                        ez::Op::Sensing(ez::SensingOp::Timer),
+                                        ez::Op::Operator(ez::OperatorOp::Multiply {
+                                            num_a: Arc::new(ez::Expr::Derived(Arc::new(
+                                                ez::Op::Sensing(ez::SensingOp::DaysSince2000),
+                                            ))),
+                                            num_b: Arc::new(ez::Expr::Literal(Arc::new(
+                                                ez::Literal::PosInt(86400),
+                                            ))),
+                                        }),
                                     ))),
                                     operand_b: Arc::new(ez::Expr::Derived(Arc::new(
                                         ez::Op::Operator(ez::OperatorOp::Add {
@@ -479,9 +500,7 @@ impl TargetManager for TurboWarpTargetManager {
             }))])
         } else {
             Vec::new()
-        };
-
-        stack
+        }
     }
 
     fn program_exit_call(&self) -> Vec<Arc<ez::Op>> {
@@ -495,7 +514,14 @@ impl TargetManager for TurboWarpTargetManager {
         Vec::from([
             ez::Op::Data(ez::DataOp::SetVariableTo {
                 variable: self.wait_start_s_variable.clone(),
-                value: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Sensing(ez::SensingOp::Timer)))),
+                value: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
+                    ez::OperatorOp::Multiply {
+                        num_a: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Sensing(
+                            ez::SensingOp::DaysSince2000,
+                        )))),
+                        num_b: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::PosInt(86400)))),
+                    },
+                )))),
             }),
             ez::Op::Data(ez::DataOp::SetVariableTo {
                 variable: self.wait_duration_s_variable.clone(),
@@ -762,6 +788,9 @@ fn compile_expr(
             list: compile_m.stdout_list().clone(),
         }))),
         Expr::Timer => ez::Expr::Derived(Arc::new(ez::Op::Sensing(ez::SensingOp::Timer))),
+        Expr::DaysSince2000 => {
+            ez::Expr::Derived(Arc::new(ez::Op::Sensing(ez::SensingOp::DaysSince2000)))
+        },
         Expr::Add(args) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::Add {
             num_a: compile_expr(compile_m, &args.left),
             num_b: compile_expr(compile_m, &args.right),

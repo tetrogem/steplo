@@ -367,6 +367,14 @@ fn compile_statement(
                         val: Arc::new(o::Expr::Timer),
                     }])
                 },
+                l::NativeOperation::DaysSince2000Get { dest_place } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::DaysSince2000),
+                    }])
+                },
             };
 
             Ok(commands.into_iter().map(Arc::new).collect())

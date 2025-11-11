@@ -482,6 +482,7 @@ fn compile_expr(
         a::Expr::StdoutLen => o::Expr::StdoutLen,
         a::Expr::Sub(args) => o::Expr::Sub(Arc::new(compile_args(args, stack_m, proc_kind)?)),
         a::Expr::Timer => o::Expr::Timer,
+        a::Expr::DaysSince2000 => o::Expr::DaysSince2000,
     })
 }
 

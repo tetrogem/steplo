@@ -111,6 +111,7 @@ pub enum SensingOp {
     AskAndWait { question: Arc<Expr> },
     Answer,
     Timer,
+    DaysSince2000,
 }
 
 #[derive(Debug)]

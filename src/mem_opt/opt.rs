@@ -250,6 +250,7 @@ fn optimize_expr(mut expr: Arc<Expr<UMemLoc>>) -> OptimizationReport<Arc<Expr<UM
             },
             Expr::StdoutLen => Expr::StdoutLen,
             Expr::Timer => Expr::Timer,
+            Expr::DaysSince2000 => Expr::DaysSince2000,
             Expr::Add(args) => Expr::Add(tracker.record(optimize_binary_args(args.clone()))),
             Expr::Sub(args) => Expr::Sub(tracker.record(optimize_binary_args(args.clone()))),
             Expr::Mul(args) => Expr::Mul(tracker.record(optimize_binary_args(args.clone()))),
@@ -493,6 +494,7 @@ fn optimization_inline_assignments(
             Expr::StdoutLen => Arc::new(Expr::StdoutLen),
             Expr::Sub(args) => Arc::new(Expr::Sub(args_inline_locs(args, loc_to_val, optimized))),
             Expr::Timer => Arc::new(Expr::Timer),
+            Expr::DaysSince2000 => Arc::new(Expr::DaysSince2000),
             Expr::Value(value) => Arc::new(Expr::Value(value.clone())),
         }
     }
@@ -536,6 +538,7 @@ fn optimization_inline_assignments(
             Expr::StdoutLen => false,
             Expr::Sub(args) => args_contains_mem_loc(args, mem_loc),
             Expr::Timer => false,
+            Expr::DaysSince2000 => false,
             Expr::Value(_) => false,
         }
     }
@@ -576,6 +579,7 @@ fn optimization_inline_assignments(
             Expr::StdoutLen => false,
             Expr::Sub(args) => args_contains_stack_deref(args, deref_addr),
             Expr::Timer => false,
+            Expr::DaysSince2000 => false,
             Expr::Value(_) => false,
         }
     }
@@ -786,6 +790,7 @@ fn optimization_inline_pure_redirect_labels(
             )),
             Expr::StdoutLen => Expr::StdoutLen,
             Expr::Timer => Expr::Timer,
+            Expr::DaysSince2000 => Expr::DaysSince2000,
             Expr::Add(args) => Expr::Add(binary_args_replace_pure_redirect_labels(
                 optimized,
                 rlabel_to_tlabel,
@@ -1108,6 +1113,7 @@ fn optimization_remove_unused_sub_procs(
             Expr::StdoutDeref(expr) => expr_find_used_labels(expr),
             Expr::StdoutLen => Default::default(),
             Expr::Timer => Default::default(),
+            Expr::DaysSince2000 => Default::default(),
             Expr::Add(args) => binary_args_find_used_labels(args),
             Expr::Sub(args) => binary_args_find_used_labels(args),
             Expr::Mul(args) => binary_args_find_used_labels(args),
@@ -1633,6 +1639,7 @@ fn expr_replace_trivial_temps(
         },
         Expr::StdoutLen => Arc::new(Expr::StdoutLen),
         Expr::Timer => Arc::new(Expr::Timer),
+        Expr::DaysSince2000 => Arc::new(Expr::DaysSince2000),
         Expr::Add(args) => {
             Arc::new(Expr::Add(binary_args_replace_trivial_temps(args, trivial_temp_to_expr)))
         },
@@ -1741,6 +1748,7 @@ fn expr_get_used_temps(expr: &Expr<UMemLoc>) -> BTreeSet<Arc<TempVar>> {
         Expr::StdoutDeref(expr) => expr_get_used_temps(expr),
         Expr::StdoutLen => Default::default(),
         Expr::Timer => Default::default(),
+        Expr::DaysSince2000 => Default::default(),
         Expr::Add(args) => binary_args_get_used_temps(args),
         Expr::Sub(args) => binary_args_get_used_temps(args),
         Expr::Mul(args) => binary_args_get_used_temps(args),

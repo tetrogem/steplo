@@ -624,6 +624,7 @@ pub enum NativeOperation {
     StdoutLen { dest_place: Ref<Place> },
     Wait { duration_s: Ref<Expr> },
     TimerGet { dest_place: Ref<Place> },
+    DaysSince2000Get { dest_place: Ref<Place> },
 }
 
 #[derive(Debug)]
