@@ -186,6 +186,14 @@ fn optimize_command(
                 index: tracker.record(optimize_expr(index.clone())),
                 val: tracker.record(optimize_expr(val.clone())),
             },
+            Command::ClearKeyEventsKeyQueue => Command::ClearKeyEventsKeyQueue,
+            Command::DeleteKeyEventsKeyQueue { index } => Command::DeleteKeyEventsKeyQueue {
+                index: tracker.record(optimize_expr(index.clone())),
+            },
+            Command::ClearKeyEventsTimeQueue => Command::ClearKeyEventsTimeQueue,
+            Command::DeleteKeyEventsTimeQueue { index } => Command::DeleteKeyEventsTimeQueue {
+                index: tracker.record(optimize_expr(index.clone())),
+            },
         });
 
         command = tracker.record(optimizer.optimize(command));
@@ -249,6 +257,14 @@ fn optimize_expr(mut expr: Arc<Expr<UMemLoc>>) -> OptimizationReport<Arc<Expr<UM
                 Expr::StdoutDeref(tracker.record(optimize_expr(expr.clone())))
             },
             Expr::StdoutLen => Expr::StdoutLen,
+            Expr::KeyEventsKeyQueueDeref(expr) => {
+                Expr::KeyEventsKeyQueueDeref(tracker.record(optimize_expr(expr.clone())))
+            },
+            Expr::KeyEventsKeyQueueLen => Expr::KeyEventsKeyQueueLen,
+            Expr::KeyEventsTimeQueueDeref(expr) => {
+                Expr::KeyEventsTimeQueueDeref(tracker.record(optimize_expr(expr.clone())))
+            },
+            Expr::KeyEventsTimeQueueLen => Expr::KeyEventsTimeQueueLen,
             Expr::Timer => Expr::Timer,
             Expr::DaysSince2000 => Expr::DaysSince2000,
             Expr::Add(args) => Expr::Add(tracker.record(optimize_binary_args(args.clone()))),
@@ -381,6 +397,14 @@ fn optimization_inline_trivial_temps(
                 index: expr_replace_trivial_temps(index, &trivial_temp_to_expr),
                 val: expr_replace_trivial_temps(val, &trivial_temp_to_expr),
             },
+            Command::ClearKeyEventsKeyQueue => Command::ClearKeyEventsKeyQueue,
+            Command::DeleteKeyEventsKeyQueue { index } => Command::DeleteKeyEventsKeyQueue {
+                index: expr_replace_trivial_temps(index, &trivial_temp_to_expr),
+            },
+            Command::ClearKeyEventsTimeQueue => Command::ClearKeyEventsTimeQueue,
+            Command::DeleteKeyEventsTimeQueue { index } => Command::DeleteKeyEventsTimeQueue {
+                index: expr_replace_trivial_temps(index, &trivial_temp_to_expr),
+            },
         };
 
         opt_commands.push(Arc::new(opt_command));
@@ -492,6 +516,14 @@ fn optimization_inline_assignments(
                 Arc::new(Expr::StdoutDeref(expr_inline_loc(addr, loc_to_val, optimized)))
             },
             Expr::StdoutLen => Arc::new(Expr::StdoutLen),
+            Expr::KeyEventsKeyQueueDeref(addr) => {
+                Arc::new(Expr::KeyEventsKeyQueueDeref(expr_inline_loc(addr, loc_to_val, optimized)))
+            },
+            Expr::KeyEventsKeyQueueLen => Arc::new(Expr::KeyEventsKeyQueueLen),
+            Expr::KeyEventsTimeQueueDeref(addr) => Arc::new(Expr::KeyEventsTimeQueueDeref(
+                expr_inline_loc(addr, loc_to_val, optimized),
+            )),
+            Expr::KeyEventsTimeQueueLen => Arc::new(Expr::KeyEventsTimeQueueLen),
             Expr::Sub(args) => Arc::new(Expr::Sub(args_inline_locs(args, loc_to_val, optimized))),
             Expr::Timer => Arc::new(Expr::Timer),
             Expr::DaysSince2000 => Arc::new(Expr::DaysSince2000),
@@ -536,6 +568,10 @@ fn optimization_inline_assignments(
             Expr::StackDeref(expr) => expr_contains_mem_loc(expr, mem_loc),
             Expr::StdoutDeref(expr) => expr_contains_mem_loc(expr, mem_loc),
             Expr::StdoutLen => false,
+            Expr::KeyEventsKeyQueueDeref(expr) => expr_contains_mem_loc(expr, mem_loc),
+            Expr::KeyEventsKeyQueueLen => false,
+            Expr::KeyEventsTimeQueueDeref(expr) => expr_contains_mem_loc(expr, mem_loc),
+            Expr::KeyEventsTimeQueueLen => false,
             Expr::Sub(args) => args_contains_mem_loc(args, mem_loc),
             Expr::Timer => false,
             Expr::DaysSince2000 => false,
@@ -577,6 +613,10 @@ fn optimization_inline_assignments(
             Expr::Random(args) => args_contains_stack_deref(args, deref_addr),
             Expr::StdoutDeref(expr) => expr_contains_stack_deref(expr, deref_addr),
             Expr::StdoutLen => false,
+            Expr::KeyEventsKeyQueueDeref(expr) => expr_contains_stack_deref(expr, deref_addr),
+            Expr::KeyEventsKeyQueueLen => false,
+            Expr::KeyEventsTimeQueueDeref(expr) => expr_contains_stack_deref(expr, deref_addr),
+            Expr::KeyEventsTimeQueueLen => false,
             Expr::Sub(args) => args_contains_stack_deref(args, deref_addr),
             Expr::Timer => false,
             Expr::DaysSince2000 => false,
@@ -605,12 +645,24 @@ fn optimization_inline_assignments(
                     let inlined_command = match command.as_ref() {
                         Command::In => Command::In,
                         Command::ClearStdout => Command::ClearStdout,
+                        Command::ClearKeyEventsKeyQueue => Command::ClearKeyEventsKeyQueue,
+                        Command::ClearKeyEventsTimeQueue => Command::ClearKeyEventsTimeQueue,
                         Command::Out(expr) => {
                             Command::Out(expr_inline_loc(expr, &loc_to_val, &mut optimized))
                         },
                         Command::WriteStdout { index, val } => Command::WriteStdout {
                             index: expr_inline_loc(index, &loc_to_val, &mut optimized),
                             val: expr_inline_loc(val, &loc_to_val, &mut optimized),
+                        },
+                        Command::DeleteKeyEventsKeyQueue { index } => {
+                            Command::DeleteKeyEventsKeyQueue {
+                                index: expr_inline_loc(index, &loc_to_val, &mut optimized),
+                            }
+                        },
+                        Command::DeleteKeyEventsTimeQueue { index } => {
+                            Command::DeleteKeyEventsTimeQueue {
+                                index: expr_inline_loc(index, &loc_to_val, &mut optimized),
+                            }
                         },
                         Command::SetMemLoc { mem_loc, val } => Command::SetMemLoc {
                             mem_loc: mem_loc.clone(),
@@ -625,8 +677,12 @@ fn optimization_inline_assignments(
                     match &inlined_command {
                         Command::In => {},
                         Command::ClearStdout => {},
+                        Command::ClearKeyEventsKeyQueue => {},
+                        Command::ClearKeyEventsTimeQueue => {},
                         Command::Out(_expr) => {},
                         Command::WriteStdout { index: _, val: _ } => {},
+                        Command::DeleteKeyEventsKeyQueue { index: _ } => {},
+                        Command::DeleteKeyEventsTimeQueue { index: _ } => {},
                         Command::SetMemLoc { mem_loc, val } => {
                             // remove all cached locs dependent on this mem_loc
                             loc_to_val.retain(|loc, _| loc_contains_mem_loc(loc, mem_loc).not());
@@ -789,6 +845,14 @@ fn optimization_inline_pure_redirect_labels(
                 expr,
             )),
             Expr::StdoutLen => Expr::StdoutLen,
+            Expr::KeyEventsKeyQueueDeref(expr) => Expr::KeyEventsKeyQueueDeref(
+                expr_replace_pure_redirect_labels(optimized, rlabel_to_tlabel, expr),
+            ),
+            Expr::KeyEventsKeyQueueLen => Expr::KeyEventsKeyQueueLen,
+            Expr::KeyEventsTimeQueueDeref(expr) => Expr::KeyEventsTimeQueueDeref(
+                expr_replace_pure_redirect_labels(optimized, rlabel_to_tlabel, expr),
+            ),
+            Expr::KeyEventsTimeQueueLen => Expr::KeyEventsTimeQueueLen,
             Expr::Timer => Expr::Timer,
             Expr::DaysSince2000 => Expr::DaysSince2000,
             Expr::Add(args) => Expr::Add(binary_args_replace_pure_redirect_labels(
@@ -938,6 +1002,30 @@ fn optimization_inline_pure_redirect_labels(
                                                         ),
                                                     }
                                                 },
+                                                Command::ClearKeyEventsKeyQueue => {
+                                                    Command::ClearKeyEventsKeyQueue
+                                                },
+                                                Command::DeleteKeyEventsKeyQueue { index } => {
+                                                    Command::DeleteKeyEventsKeyQueue {
+                                                        index: expr_replace_pure_redirect_labels(
+                                                            &mut optimized,
+                                                            &pure_redirect_label_to_to_label,
+                                                            index,
+                                                        ),
+                                                    }
+                                                },
+                                                Command::ClearKeyEventsTimeQueue => {
+                                                    Command::ClearKeyEventsTimeQueue
+                                                },
+                                                Command::DeleteKeyEventsTimeQueue { index } => {
+                                                    Command::DeleteKeyEventsTimeQueue {
+                                                        index: expr_replace_pure_redirect_labels(
+                                                            &mut optimized,
+                                                            &pure_redirect_label_to_to_label,
+                                                            index,
+                                                        ),
+                                                    }
+                                                },
                                             };
 
                                             Arc::new(command)
@@ -1083,6 +1171,10 @@ fn optimization_remove_unused_sub_procs(
             Command::WriteStdout { index, val } => {
                 chain!(expr_find_used_labels(index), expr_find_used_labels(val)).collect()
             },
+            Command::ClearKeyEventsKeyQueue => Default::default(),
+            Command::DeleteKeyEventsKeyQueue { index } => expr_find_used_labels(index),
+            Command::ClearKeyEventsTimeQueue => Default::default(),
+            Command::DeleteKeyEventsTimeQueue { index } => expr_find_used_labels(index),
         }
     }
 
@@ -1112,6 +1204,10 @@ fn optimization_remove_unused_sub_procs(
             Expr::StackDeref(expr) => expr_find_used_labels(expr),
             Expr::StdoutDeref(expr) => expr_find_used_labels(expr),
             Expr::StdoutLen => Default::default(),
+            Expr::KeyEventsKeyQueueDeref(expr) => expr_find_used_labels(expr),
+            Expr::KeyEventsKeyQueueLen => Default::default(),
+            Expr::KeyEventsTimeQueueDeref(expr) => expr_find_used_labels(expr),
+            Expr::KeyEventsTimeQueueLen => Default::default(),
             Expr::Timer => Default::default(),
             Expr::DaysSince2000 => Default::default(),
             Expr::Add(args) => binary_args_find_used_labels(args),
@@ -1638,6 +1734,14 @@ fn expr_replace_trivial_temps(
             Arc::new(Expr::StdoutDeref(expr_replace_trivial_temps(expr, trivial_temp_to_expr)))
         },
         Expr::StdoutLen => Arc::new(Expr::StdoutLen),
+        Expr::KeyEventsKeyQueueDeref(expr) => Arc::new(Expr::KeyEventsKeyQueueDeref(
+            expr_replace_trivial_temps(expr, trivial_temp_to_expr),
+        )),
+        Expr::KeyEventsKeyQueueLen => Arc::new(Expr::KeyEventsKeyQueueLen),
+        Expr::KeyEventsTimeQueueDeref(expr) => Arc::new(Expr::KeyEventsTimeQueueDeref(
+            expr_replace_trivial_temps(expr, trivial_temp_to_expr),
+        )),
+        Expr::KeyEventsTimeQueueLen => Arc::new(Expr::KeyEventsTimeQueueLen),
         Expr::Timer => Arc::new(Expr::Timer),
         Expr::DaysSince2000 => Arc::new(Expr::DaysSince2000),
         Expr::Add(args) => {
@@ -1717,6 +1821,14 @@ fn find_unused_temps(sp: &SubProc<UMemLoc>) -> BTreeSet<Arc<TempVar>> {
                 used_temps.extend(expr_get_used_temps(index));
                 used_temps.extend(expr_get_used_temps(val));
             },
+            Command::ClearKeyEventsKeyQueue => {},
+            Command::DeleteKeyEventsKeyQueue { index } => {
+                used_temps.extend(expr_get_used_temps(index));
+            },
+            Command::ClearKeyEventsTimeQueue => {},
+            Command::DeleteKeyEventsTimeQueue { index } => {
+                used_temps.extend(expr_get_used_temps(index));
+            },
         }
     }
 
@@ -1747,6 +1859,10 @@ fn expr_get_used_temps(expr: &Expr<UMemLoc>) -> BTreeSet<Arc<TempVar>> {
         Expr::StackDeref(expr) => expr_get_used_temps(expr),
         Expr::StdoutDeref(expr) => expr_get_used_temps(expr),
         Expr::StdoutLen => Default::default(),
+        Expr::KeyEventsKeyQueueDeref(expr) => expr_get_used_temps(expr),
+        Expr::KeyEventsKeyQueueLen => Default::default(),
+        Expr::KeyEventsTimeQueueDeref(expr) => expr_get_used_temps(expr),
+        Expr::KeyEventsTimeQueueLen => Default::default(),
         Expr::Timer => Default::default(),
         Expr::DaysSince2000 => Default::default(),
         Expr::Add(args) => binary_args_get_used_temps(args),

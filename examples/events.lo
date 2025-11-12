@@ -1,24 +1,39 @@
-static KEY_PRESSED: bool = false;
-
 main {
-    callback();
     while true {
-        out(if KEY_PRESSED "Wow!" else "Hello!");
-        KEY_PRESSED = false;
-        wait();
+        // let key_queue_len: uint = undefined;
+        // key_events_key_queue_len(&key_queue_len);
+        // while (key_queue_len > 0) {
+        //     let key: Key = undefined;
+        //     let time: num = undefined;
+        //     key_events_key_queue_read(&key, 0);
+        //     key_events_time_queue_read(&time, 0);
+        //     key_events_key_queue_delete(0);
+        //     key_events_time_queue_delete(0);
+
+        //     out(((("Key press read: " ~ <uint>key) ~ " @ ") ~ time));
+
+        //     if (key == Key#Space) {
+        //         out("Pressed Space!");
+        //     }
+
+        //     key_events_key_queue_len(&key_queue_len);
+        // }
+
+        let keys_has_next: bool = undefined;
+        key_events_has_next(&keys_has_next);
+        while keys_has_next {
+            let event: KeyEvent = undefined;
+            key_events_next(&event);
+
+            out(((("Key press read: " ~ <uint>event.key) ~ " @ ") ~ event.time));
+
+            if (event.key == Key#Space) {
+                out("Pressed Space!");
+            }
+
+            key_events_has_next(&keys_has_next);
+        }
     }
 }
 
-func callback() {
-    KEY_PRESSED = true;
-    out("Key pressed!");
-}
-
-func wait() {
-    out("Waiting...");
-    wait_s(1);
-    out("Wait done!");
-}
-
-// Expected stdout: (infinite loop)
-// Hello!
+// TODO result

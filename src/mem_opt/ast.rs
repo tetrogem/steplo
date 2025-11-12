@@ -40,6 +40,10 @@ pub enum Expr<MemLoc> {
     StackDeref(Arc<Expr<MemLoc>>),
     StdoutDeref(Arc<Expr<MemLoc>>),
     StdoutLen,
+    KeyEventsKeyQueueDeref(Arc<Expr<MemLoc>>),
+    KeyEventsKeyQueueLen,
+    KeyEventsTimeQueueDeref(Arc<Expr<MemLoc>>),
+    KeyEventsTimeQueueLen,
     Timer,
     Add(Arc<BinaryArgs<MemLoc>>),
     Sub(Arc<BinaryArgs<MemLoc>>),
@@ -66,6 +70,10 @@ pub enum Command<MemLoc> {
     Out(Arc<Expr<MemLoc>>),
     ClearStdout,
     WriteStdout { index: Arc<Expr<MemLoc>>, val: Arc<Expr<MemLoc>> },
+    ClearKeyEventsKeyQueue,
+    DeleteKeyEventsKeyQueue { index: Arc<Expr<MemLoc>> },
+    ClearKeyEventsTimeQueue,
+    DeleteKeyEventsTimeQueue { index: Arc<Expr<MemLoc>> },
 }
 
 #[derive(Debug)]

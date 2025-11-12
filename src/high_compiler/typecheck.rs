@@ -1373,6 +1373,96 @@ fn typecheck_native_op(
                 ))
             })?,
         },
+        l::NativeOperation::KeyEventsKeyQueueClear => t::NativeOperation::KeyEventsKeyQueueClear,
+        l::NativeOperation::KeyEventsKeyQueueDelete { index } => {
+            t::NativeOperation::KeyEventsKeyQueueDelete {
+                index: {
+                    let exprs = try_tr(index, |x| {
+                        Ok(sift_stmt_deps(
+                            &mut stmt_deps,
+                            typecheck_expr(x, None, ident_m, func_m, type_alias_m)?,
+                        ))
+                    })?;
+
+                    typecheck_to_t_expr(exprs)?
+                },
+            }
+        },
+        l::NativeOperation::KeyEventsKeyQueueRead { dest_place, index } => {
+            t::NativeOperation::KeyEventsKeyQueueRead {
+                dest_place: try_tr(dest_place, |x| {
+                    Ok(sift_stmt_deps(
+                        &mut stmt_deps,
+                        typecheck_place(x, ident_m, func_m, type_alias_m)?,
+                    ))
+                })?,
+                index: {
+                    let exprs = try_tr(index, |x| {
+                        Ok(sift_stmt_deps(
+                            &mut stmt_deps,
+                            typecheck_expr(x, None, ident_m, func_m, type_alias_m)?,
+                        ))
+                    })?;
+
+                    typecheck_to_t_expr(exprs)?
+                },
+            }
+        },
+        l::NativeOperation::KeyEventsKeyQueueLen { dest_place } => {
+            t::NativeOperation::KeyEventsKeyQueueLen {
+                dest_place: try_tr(dest_place, |x| {
+                    Ok(sift_stmt_deps(
+                        &mut stmt_deps,
+                        typecheck_place(x, ident_m, func_m, type_alias_m)?,
+                    ))
+                })?,
+            }
+        },
+        l::NativeOperation::KeyEventsTimeQueueClear => t::NativeOperation::KeyEventsTimeQueueClear,
+        l::NativeOperation::KeyEventsTimeQueueDelete { index } => {
+            t::NativeOperation::KeyEventsTimeQueueDelete {
+                index: {
+                    let exprs = try_tr(index, |x| {
+                        Ok(sift_stmt_deps(
+                            &mut stmt_deps,
+                            typecheck_expr(x, None, ident_m, func_m, type_alias_m)?,
+                        ))
+                    })?;
+
+                    typecheck_to_t_expr(exprs)?
+                },
+            }
+        },
+        l::NativeOperation::KeyEventsTimeQueueRead { dest_place, index } => {
+            t::NativeOperation::KeyEventsTimeQueueRead {
+                dest_place: try_tr(dest_place, |x| {
+                    Ok(sift_stmt_deps(
+                        &mut stmt_deps,
+                        typecheck_place(x, ident_m, func_m, type_alias_m)?,
+                    ))
+                })?,
+                index: {
+                    let exprs = try_tr(index, |x| {
+                        Ok(sift_stmt_deps(
+                            &mut stmt_deps,
+                            typecheck_expr(x, None, ident_m, func_m, type_alias_m)?,
+                        ))
+                    })?;
+
+                    typecheck_to_t_expr(exprs)?
+                },
+            }
+        },
+        l::NativeOperation::KeyEventsTimeQueueLen { dest_place } => {
+            t::NativeOperation::KeyEventsTimeQueueLen {
+                dest_place: try_tr(dest_place, |x| {
+                    Ok(sift_stmt_deps(
+                        &mut stmt_deps,
+                        typecheck_place(x, ident_m, func_m, type_alias_m)?,
+                    ))
+                })?,
+            }
+        },
         l::NativeOperation::Wait { duration_s } => t::NativeOperation::Wait {
             duration_s: {
                 let exprs = try_tr(duration_s, |x| {

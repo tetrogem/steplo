@@ -46,11 +46,15 @@ pub mod find_addr_expr_used_local_vars {
         match command {
             Command::In => Default::default(),
             Command::ClearStdout => Default::default(),
+            Command::ClearKeyEventsKeyQueue => Default::default(),
+            Command::ClearKeyEventsTimeQueue => Default::default(),
             Command::Out(expr) => expr_find_addr_expr_used_vars(expr),
             Command::WriteStdout { index, val } => {
                 chain!(expr_find_addr_expr_used_vars(index), expr_find_addr_expr_used_vars(val))
                     .collect()
             },
+            Command::DeleteKeyEventsKeyQueue { index } => expr_find_addr_expr_used_vars(index),
+            Command::DeleteKeyEventsTimeQueue { index } => expr_find_addr_expr_used_vars(index),
             Command::SetLoc { loc, val } => {
                 chain!(loc_find_addr_expr_used_vars(loc), expr_find_addr_expr_used_vars(val))
                     .collect()
@@ -65,6 +69,10 @@ pub mod find_addr_expr_used_local_vars {
             Expr::Value(_) => Default::default(),
             Expr::StdoutDeref(expr) => expr_find_addr_expr_used_vars(expr),
             Expr::StdoutLen => Default::default(),
+            Expr::KeyEventsKeyQueueDeref(expr) => expr_find_addr_expr_used_vars(expr),
+            Expr::KeyEventsKeyQueueLen => Default::default(),
+            Expr::KeyEventsTimeQueueDeref(expr) => expr_find_addr_expr_used_vars(expr),
+            Expr::KeyEventsTimeQueueLen => Default::default(),
             Expr::Timer => Default::default(),
             Expr::DaysSince2000 => Default::default(),
             Expr::Add(args) => args_find_addr_expr_used_vars(args),

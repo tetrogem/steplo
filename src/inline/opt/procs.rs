@@ -254,6 +254,8 @@ fn command_replace_stack_addrs(
 ) -> Command {
     match command {
         Command::ClearStdout => Command::ClearStdout,
+        Command::ClearKeyEventsKeyQueue => Command::ClearKeyEventsKeyQueue,
+        Command::ClearKeyEventsTimeQueue => Command::ClearKeyEventsTimeQueue,
         Command::In => Command::In,
         Command::Out(expr) => Command::Out(Arc::new(expr_replace_stack_addrs(
             expr,
@@ -268,6 +270,20 @@ fn command_replace_stack_addrs(
             )),
             val: Arc::new(expr_replace_stack_addrs(
                 val,
+                inlined_arg_to_local,
+                inlined_local_to_local,
+            )),
+        },
+        Command::DeleteKeyEventsKeyQueue { index } => Command::DeleteKeyEventsKeyQueue {
+            index: Arc::new(expr_replace_stack_addrs(
+                index,
+                inlined_arg_to_local,
+                inlined_local_to_local,
+            )),
+        },
+        Command::DeleteKeyEventsTimeQueue { index } => Command::DeleteKeyEventsTimeQueue {
+            index: Arc::new(expr_replace_stack_addrs(
+                index,
                 inlined_arg_to_local,
                 inlined_local_to_local,
             )),
@@ -318,6 +334,14 @@ fn expr_replace_stack_addrs(
             inlined_local_to_local,
         ))),
         Expr::StdoutLen => Expr::StdoutLen,
+        Expr::KeyEventsKeyQueueDeref(expr) => Expr::KeyEventsKeyQueueDeref(Arc::new(
+            expr_replace_stack_addrs(expr, inlined_arg_to_local, inlined_local_to_local),
+        )),
+        Expr::KeyEventsKeyQueueLen => Expr::KeyEventsKeyQueueLen,
+        Expr::KeyEventsTimeQueueDeref(expr) => Expr::KeyEventsTimeQueueDeref(Arc::new(
+            expr_replace_stack_addrs(expr, inlined_arg_to_local, inlined_local_to_local),
+        )),
+        Expr::KeyEventsTimeQueueLen => Expr::KeyEventsTimeQueueLen,
         Expr::Timer => Expr::Timer,
         Expr::DaysSince2000 => Expr::DaysSince2000,
         Expr::Add(args) => Expr::Add(Arc::new(args_replace_stack_addrs(
@@ -430,12 +454,20 @@ fn command_replace_labels(
     match command {
         Command::In => Command::In,
         Command::ClearStdout => Command::ClearStdout,
+        Command::ClearKeyEventsKeyQueue => Command::ClearKeyEventsKeyQueue,
+        Command::ClearKeyEventsTimeQueue => Command::ClearKeyEventsTimeQueue,
         Command::Out(expr) => {
             Command::Out(Arc::new(expr_replace_labels(expr, func_label_to_inlined)))
         },
         Command::WriteStdout { index, val } => Command::WriteStdout {
             index: Arc::new(expr_replace_labels(index, func_label_to_inlined)),
             val: Arc::new(expr_replace_labels(val, func_label_to_inlined)),
+        },
+        Command::DeleteKeyEventsKeyQueue { index } => Command::DeleteKeyEventsKeyQueue {
+            index: Arc::new(expr_replace_labels(index, func_label_to_inlined)),
+        },
+        Command::DeleteKeyEventsTimeQueue { index } => Command::DeleteKeyEventsTimeQueue {
+            index: Arc::new(expr_replace_labels(index, func_label_to_inlined)),
         },
         Command::SetLoc { loc, val } => Command::SetLoc {
             loc: Arc::new(loc_replace_labels(loc, func_label_to_inlined)),
@@ -462,6 +494,14 @@ fn expr_replace_labels(expr: &Expr, func_label_to_inlined: &BTreeMap<Uuid, Uuid>
             Expr::StdoutDeref(Arc::new(expr_replace_labels(expr, func_label_to_inlined)))
         },
         Expr::StdoutLen => Expr::StdoutLen,
+        Expr::KeyEventsKeyQueueDeref(expr) => {
+            Expr::KeyEventsKeyQueueDeref(Arc::new(expr_replace_labels(expr, func_label_to_inlined)))
+        },
+        Expr::KeyEventsKeyQueueLen => Expr::KeyEventsKeyQueueLen,
+        Expr::KeyEventsTimeQueueDeref(expr) => Expr::KeyEventsTimeQueueDeref(Arc::new(
+            expr_replace_labels(expr, func_label_to_inlined),
+        )),
+        Expr::KeyEventsTimeQueueLen => Expr::KeyEventsTimeQueueLen,
         Expr::Timer => Expr::Timer,
         Expr::DaysSince2000 => Expr::DaysSince2000,
         Expr::Add(args) => Expr::Add(Arc::new(args_replace_labels(args, func_label_to_inlined))),
@@ -661,10 +701,14 @@ fn command_find_used_stack_addrs(command: &Command) -> BTreeSet<StackAddr> {
     match command {
         Command::In => Default::default(),
         Command::ClearStdout => Default::default(),
+        Command::ClearKeyEventsKeyQueue => Default::default(),
+        Command::ClearKeyEventsTimeQueue => Default::default(),
         Command::Out(expr) => expr_find_used_stack_addrs(expr),
         Command::WriteStdout { index, val } => {
             chain!(expr_find_used_stack_addrs(index), expr_find_used_stack_addrs(val)).collect()
         },
+        Command::DeleteKeyEventsKeyQueue { index } => expr_find_used_stack_addrs(index),
+        Command::DeleteKeyEventsTimeQueue { index } => expr_find_used_stack_addrs(index),
         Command::SetLoc { loc, val } => {
             chain!(loc_find_used_stack_addrs(loc), expr_find_used_stack_addrs(val)).collect()
         },
@@ -698,6 +742,10 @@ fn expr_find_used_stack_addrs(expr: &Expr) -> BTreeSet<StackAddr> {
         Expr::Value(_) => Default::default(),
         Expr::StdoutDeref(expr) => expr_find_used_stack_addrs(expr),
         Expr::StdoutLen => Default::default(),
+        Expr::KeyEventsKeyQueueDeref(expr) => expr_find_used_stack_addrs(expr),
+        Expr::KeyEventsKeyQueueLen => Default::default(),
+        Expr::KeyEventsTimeQueueDeref(expr) => expr_find_used_stack_addrs(expr),
+        Expr::KeyEventsTimeQueueLen => Default::default(),
         Expr::Timer => Default::default(),
         Expr::DaysSince2000 => Default::default(),
         Expr::Add(args) => args_find_used_stack_addrs(args),
@@ -788,10 +836,14 @@ fn command_find_used_labels(command: &Command) -> BTreeSet<Uuid> {
     match command {
         Command::In => Default::default(),
         Command::ClearStdout => Default::default(),
+        Command::ClearKeyEventsKeyQueue => Default::default(),
+        Command::ClearKeyEventsTimeQueue => Default::default(),
         Command::Out(expr) => expr_find_used_labels(expr),
         Command::WriteStdout { index, val } => {
             chain!(expr_find_used_labels(index), expr_find_used_labels(val)).collect()
         },
+        Command::DeleteKeyEventsKeyQueue { index } => expr_find_used_labels(index),
+        Command::DeleteKeyEventsTimeQueue { index } => expr_find_used_labels(index),
         Command::SetLoc { loc, val } => {
             chain!(loc_find_used_labels(loc), expr_find_used_labels(val)).collect()
         },
@@ -808,6 +860,10 @@ fn expr_find_used_labels(expr: &Expr) -> BTreeSet<Uuid> {
         },
         Expr::StdoutDeref(expr) => expr_find_used_labels(expr),
         Expr::StdoutLen => Default::default(),
+        Expr::KeyEventsKeyQueueDeref(expr) => expr_find_used_labels(expr),
+        Expr::KeyEventsKeyQueueLen => Default::default(),
+        Expr::KeyEventsTimeQueueDeref(expr) => expr_find_used_labels(expr),
+        Expr::KeyEventsTimeQueueLen => Default::default(),
         Expr::Timer => Default::default(),
         Expr::DaysSince2000 => Default::default(),
         Expr::Add(args) => args_find_used_labels(args),

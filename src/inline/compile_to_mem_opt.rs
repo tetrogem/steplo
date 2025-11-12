@@ -296,6 +296,14 @@ fn compile_command(
             index: Arc::new(compile_expr(index, stack_m, proc_kind)?),
             val: Arc::new(compile_expr(val, stack_m, proc_kind)?),
         },
+        a::Command::ClearKeyEventsKeyQueue => o::Command::ClearKeyEventsKeyQueue,
+        a::Command::DeleteKeyEventsKeyQueue { index } => o::Command::DeleteKeyEventsKeyQueue {
+            index: Arc::new(compile_expr(index, stack_m, proc_kind)?),
+        },
+        a::Command::ClearKeyEventsTimeQueue => o::Command::ClearKeyEventsTimeQueue,
+        a::Command::DeleteKeyEventsTimeQueue { index } => o::Command::DeleteKeyEventsTimeQueue {
+            index: Arc::new(compile_expr(index, stack_m, proc_kind)?),
+        },
     })
 }
 
@@ -458,6 +466,12 @@ fn compile_expr(
         a::Expr::StdoutDeref(index) => {
             o::Expr::StdoutDeref(Arc::new(compile_expr(index, stack_m, proc_kind)?))
         },
+        a::Expr::KeyEventsKeyQueueDeref(index) => {
+            o::Expr::KeyEventsKeyQueueDeref(Arc::new(compile_expr(index, stack_m, proc_kind)?))
+        },
+        a::Expr::KeyEventsTimeQueueDeref(index) => {
+            o::Expr::KeyEventsTimeQueueDeref(Arc::new(compile_expr(index, stack_m, proc_kind)?))
+        },
         a::Expr::Value(val) => {
             let val = match val.as_ref() {
                 a::Value::Literal(lit) => o::Value::Literal(lit.clone()),
@@ -480,6 +494,8 @@ fn compile_expr(
         a::Expr::Or(args) => o::Expr::Or(Arc::new(compile_args(args, stack_m, proc_kind)?)),
         a::Expr::Random(args) => o::Expr::Random(Arc::new(compile_args(args, stack_m, proc_kind)?)),
         a::Expr::StdoutLen => o::Expr::StdoutLen,
+        a::Expr::KeyEventsKeyQueueLen => o::Expr::KeyEventsKeyQueueLen,
+        a::Expr::KeyEventsTimeQueueLen => o::Expr::KeyEventsTimeQueueLen,
         a::Expr::Sub(args) => o::Expr::Sub(Arc::new(compile_args(args, stack_m, proc_kind)?)),
         a::Expr::Timer => o::Expr::Timer,
         a::Expr::DaysSince2000 => o::Expr::DaysSince2000,

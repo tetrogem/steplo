@@ -1,7 +1,7 @@
 use itertools::{Itertools, chain};
 use std::{collections::BTreeMap, ops::Not, sync::Arc};
 
-use crate::{Target, ez, mem_opt::ast::UMemLoc};
+use crate::{Target, ez};
 use uuid::Uuid;
 
 use super::{
@@ -42,12 +42,20 @@ fn compile_to_target(
         register_to_variable: Default::default(),
         stack_list: Arc::new(ez::List { uuid: Uuid::new_v4(), name: "stack".into() }),
         stdout_list: Arc::new(ez::List { uuid: Uuid::new_v4(), name: "stdout".into() }),
+        key_events_key_queue_list: Arc::new(ez::List {
+            uuid: Uuid::new_v4(),
+            name: "key_events_key_queue".into(),
+        }),
+        key_events_time_queue_list: Arc::new(ez::List {
+            uuid: Uuid::new_v4(),
+            name: "key_events_time_queue".into(),
+        }),
     };
 
     let proc_stacks =
         procs.iter().flat_map(|proc| compile_proc(&mut compile_m, proc)).collect_vec();
 
-    let stacks = compile_m.target_manager.attach_stacks(proc_stacks);
+    let stacks = compile_m.create_finalized_stacks(proc_stacks);
 
     let stage = ez::Stage {
         variables: Arc::new(compile_m.variables()),
@@ -97,10 +105,12 @@ struct CompileManager<TM: TargetManager> {
     register_to_variable: BTreeMap<Arc<Register>, Arc<ez::Variable>>,
     stack_list: Arc<ez::List>,
     stdout_list: Arc<ez::List>,
+    key_events_key_queue_list: Arc<ez::List>,
+    key_events_time_queue_list: Arc<ez::List>,
 }
 
 trait TargetManager {
-    fn attach_stacks(&self, proc_stacks: Vec<ez::Stack>) -> Vec<Arc<ez::Stack>>;
+    fn attach_runtime_stacks(&self, proc_stacks: Vec<ez::Stack>) -> Vec<Arc<ez::Stack>>;
     fn broadcasts(&self) -> Vec<Arc<ez::Broadcast>>;
     fn create_proc_root(&self, sp_uuid: &Uuid) -> ez::Op;
     fn create_jump(&self, proc_addr_expr: Arc<ez::Expr>) -> ez::Op;
@@ -153,7 +163,7 @@ impl ScratchTargetManager {
 }
 
 impl TargetManager for ScratchTargetManager {
-    fn attach_stacks(&self, proc_stacks: Vec<ez::Stack>) -> Vec<Arc<ez::Stack>> {
+    fn attach_runtime_stacks(&self, proc_stacks: Vec<ez::Stack>) -> Vec<Arc<ez::Stack>> {
         proc_stacks.into_iter().map(Arc::new).collect()
     }
 
@@ -299,7 +309,7 @@ impl TurboWarpTargetManager {
 }
 
 impl TargetManager for TurboWarpTargetManager {
-    fn attach_stacks(&self, proc_stacks: Vec<ez::Stack>) -> Vec<Arc<ez::Stack>> {
+    fn attach_runtime_stacks(&self, proc_stacks: Vec<ez::Stack>) -> Vec<Arc<ez::Stack>> {
         let dyn_stacks = {
             let proc_arg_op = Arc::new(ez::Op::Argument(ez::ArgumentOp::ReporterStringNumber {
                 arg: self.dyn_proc_argument.clone(),
@@ -554,13 +564,155 @@ impl<TM: TargetManager> CompileManager<TM> {
         &self.stdout_list
     }
 
+    pub fn key_events_key_queue_list(&self) -> &Arc<ez::List> {
+        &self.key_events_key_queue_list
+    }
+
+    pub fn key_events_time_queue_list(&self) -> &Arc<ez::List> {
+        &self.key_events_time_queue_list
+    }
+
     pub fn variables(&self) -> Vec<Arc<ez::Variable>> {
         chain!([self.stack_pointer_variable.clone()], self.register_to_variable.values().cloned())
             .collect()
     }
 
     pub fn lists(&self) -> Vec<Arc<ez::List>> {
-        Vec::from([self.stack_list.clone(), self.stdout_list.clone()])
+        Vec::from([
+            self.stack_list.clone(),
+            self.stdout_list.clone(),
+            self.key_events_key_queue_list.clone(),
+            self.key_events_time_queue_list.clone(),
+        ])
+    }
+
+    pub fn create_finalized_stacks(&self, proc_stacks: Vec<ez::Stack>) -> Vec<Arc<ez::Stack>> {
+        let runtime_stacks = self.target_manager.attach_runtime_stacks(proc_stacks);
+        let event_handler_stacks = self.create_event_handler_stacks();
+        chain!(runtime_stacks, event_handler_stacks).collect()
+    }
+
+    fn create_event_handler_stacks(&self) -> Vec<Arc<ez::Stack>> {
+        const KEY_OPTIONS: [ez::KeyOption; 41] = [
+            ez::KeyOption::Space,
+            ez::KeyOption::UpArrow,
+            ez::KeyOption::DownArrow,
+            ez::KeyOption::RightArrow,
+            ez::KeyOption::LeftArrow,
+            ez::KeyOption::A,
+            ez::KeyOption::B,
+            ez::KeyOption::C,
+            ez::KeyOption::D,
+            ez::KeyOption::E,
+            ez::KeyOption::F,
+            ez::KeyOption::G,
+            ez::KeyOption::H,
+            ez::KeyOption::I,
+            ez::KeyOption::J,
+            ez::KeyOption::K,
+            ez::KeyOption::L,
+            ez::KeyOption::M,
+            ez::KeyOption::N,
+            ez::KeyOption::O,
+            ez::KeyOption::P,
+            ez::KeyOption::Q,
+            ez::KeyOption::R,
+            ez::KeyOption::S,
+            ez::KeyOption::T,
+            ez::KeyOption::U,
+            ez::KeyOption::V,
+            ez::KeyOption::W,
+            ez::KeyOption::X,
+            ez::KeyOption::Y,
+            ez::KeyOption::Z,
+            ez::KeyOption::Num0,
+            ez::KeyOption::Num1,
+            ez::KeyOption::Num2,
+            ez::KeyOption::Num3,
+            ez::KeyOption::Num4,
+            ez::KeyOption::Num5,
+            ez::KeyOption::Num6,
+            ez::KeyOption::Num7,
+            ez::KeyOption::Num8,
+            ez::KeyOption::Num9,
+        ];
+
+        KEY_OPTIONS
+            .into_iter()
+            .filter_map(|key_option| {
+                let steplo_enum_discriminant = match key_option {
+                    ez::KeyOption::Space => 0,
+                    ez::KeyOption::UpArrow => 1,
+                    ez::KeyOption::DownArrow => 2,
+                    ez::KeyOption::RightArrow => 3,
+                    ez::KeyOption::LeftArrow => 4,
+                    ez::KeyOption::A => 5,
+                    ez::KeyOption::B => 6,
+                    ez::KeyOption::C => 7,
+                    ez::KeyOption::D => 8,
+                    ez::KeyOption::E => 9,
+                    ez::KeyOption::F => 10,
+                    ez::KeyOption::G => 11,
+                    ez::KeyOption::H => 12,
+                    ez::KeyOption::I => 13,
+                    ez::KeyOption::J => 14,
+                    ez::KeyOption::K => 15,
+                    ez::KeyOption::L => 16,
+                    ez::KeyOption::M => 17,
+                    ez::KeyOption::N => 18,
+                    ez::KeyOption::O => 19,
+                    ez::KeyOption::P => 20,
+                    ez::KeyOption::Q => 21,
+                    ez::KeyOption::R => 22,
+                    ez::KeyOption::S => 23,
+                    ez::KeyOption::T => 24,
+                    ez::KeyOption::U => 25,
+                    ez::KeyOption::V => 26,
+                    ez::KeyOption::W => 27,
+                    ez::KeyOption::X => 28,
+                    ez::KeyOption::Y => 29,
+                    ez::KeyOption::Z => 30,
+                    ez::KeyOption::Num0 => 31,
+                    ez::KeyOption::Num1 => 32,
+                    ez::KeyOption::Num2 => 33,
+                    ez::KeyOption::Num3 => 34,
+                    ez::KeyOption::Num4 => 35,
+                    ez::KeyOption::Num5 => 36,
+                    ez::KeyOption::Num6 => 37,
+                    ez::KeyOption::Num7 => 38,
+                    ez::KeyOption::Num8 => 39,
+                    ez::KeyOption::Num9 => 40,
+                    ez::KeyOption::Any => return None,
+                };
+
+                Some(Arc::new(ez::Stack {
+                    root: Arc::new(ez::Op::Event(ez::EventOp::WhenKeyPressed { key_option })),
+                    rest: Arc::new(Vec::from([
+                        // do the time first so it happens as soon as possible
+                        // thus it's the most accurate to the actual time the key was pressed
+                        Arc::new(ez::Op::Data(ez::DataOp::AddToList {
+                            list: self.key_events_time_queue_list.clone(),
+                            item: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Operator(
+                                ez::OperatorOp::Multiply {
+                                    num_a: Arc::new(ez::Expr::Derived(Arc::new(ez::Op::Sensing(
+                                        ez::SensingOp::DaysSince2000,
+                                    )))),
+                                    num_b: Arc::new(ez::Expr::Literal(Arc::new(
+                                        ez::Literal::PosInt(60 * 60 * 24),
+                                    ))),
+                                },
+                            )))),
+                        })),
+                        Arc::new(ez::Op::Data(ez::DataOp::AddToList {
+                            list: self.key_events_key_queue_list.clone(),
+                            item: Arc::new(ez::Expr::Literal(Arc::new(ez::Literal::PosInt(
+                                steplo_enum_discriminant,
+                            )))),
+                        })),
+                    ])),
+                }))
+            })
+            .collect()
     }
 }
 
@@ -686,6 +838,26 @@ fn compile_command(
                 item: compile_expr(compile_m, val),
             })])
         },
+        Command::ClearKeyEventsKeyQueue => Vec::from([ez::Op::Data(ez::DataOp::DeleteAllOfList {
+            list: compile_m.key_events_key_queue_list().clone(),
+        })]),
+        Command::DeleteKeyEventsKeyQueue { index } => {
+            Vec::from([ez::Op::Data(ez::DataOp::DeleteOfList {
+                list: compile_m.key_events_key_queue_list().clone(),
+                index: compile_expr(compile_m, index),
+            })])
+        },
+        Command::ClearKeyEventsTimeQueue => {
+            Vec::from([ez::Op::Data(ez::DataOp::DeleteAllOfList {
+                list: compile_m.key_events_time_queue_list().clone(),
+            })])
+        },
+        Command::DeleteKeyEventsTimeQueue { index } => {
+            Vec::from([ez::Op::Data(ez::DataOp::DeleteOfList {
+                list: compile_m.key_events_time_queue_list().clone(),
+                index: compile_expr(compile_m, index),
+            })])
+        },
     }
 }
 
@@ -787,6 +959,28 @@ fn compile_expr(
         Expr::StdoutLen => ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::LengthOfList {
             list: compile_m.stdout_list().clone(),
         }))),
+        Expr::KeyEventsKeyQueueDeref(expr) => {
+            ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::ItemOfList {
+                list: compile_m.key_events_key_queue_list().clone(),
+                index: compile_expr(compile_m, expr),
+            })))
+        },
+        Expr::KeyEventsKeyQueueLen => {
+            ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::LengthOfList {
+                list: compile_m.key_events_key_queue_list().clone(),
+            })))
+        },
+        Expr::KeyEventsTimeQueueDeref(expr) => {
+            ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::ItemOfList {
+                list: compile_m.key_events_time_queue_list().clone(),
+                index: compile_expr(compile_m, expr),
+            })))
+        },
+        Expr::KeyEventsTimeQueueLen => {
+            ez::Expr::Derived(Arc::new(ez::Op::Data(ez::DataOp::LengthOfList {
+                list: compile_m.key_events_time_queue_list().clone(),
+            })))
+        },
         Expr::Timer => ez::Expr::Derived(Arc::new(ez::Op::Sensing(ez::SensingOp::Timer))),
         Expr::DaysSince2000 => {
             ez::Expr::Derived(Arc::new(ez::Op::Sensing(ez::SensingOp::DaysSince2000)))

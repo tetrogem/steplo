@@ -219,6 +219,14 @@ pub enum NativeOperation {
     Wait { duration_s: Ref<Expr> },
     TimerGet { dest_place: Ref<Place> },
     DaysSince2000Get { dest_place: Ref<Place> },
+    KeyEventsKeyQueueClear,
+    KeyEventsKeyQueueDelete { index: Ref<Expr> },
+    KeyEventsKeyQueueRead { dest_place: Ref<Place>, index: Ref<Expr> },
+    KeyEventsKeyQueueLen { dest_place: Ref<Place> },
+    KeyEventsTimeQueueClear,
+    KeyEventsTimeQueueDelete { index: Ref<Expr> },
+    KeyEventsTimeQueueRead { dest_place: Ref<Place>, index: Ref<Expr> },
+    KeyEventsTimeQueueLen { dest_place: Ref<Place> },
 }
 
 #[derive(Debug)]

@@ -60,6 +60,10 @@ pub enum Expr {
     Value(Arc<Value>),
     StdoutDeref(Arc<Expr>),
     StdoutLen,
+    KeyEventsKeyQueueDeref(Arc<Expr>),
+    KeyEventsKeyQueueLen,
+    KeyEventsTimeQueueDeref(Arc<Expr>),
+    KeyEventsTimeQueueLen,
     Timer,
     Add(Arc<BinaryArgs>),
     Sub(Arc<BinaryArgs>),
@@ -85,6 +89,10 @@ pub enum Command {
     Out(Arc<Expr>),
     ClearStdout,
     WriteStdout { index: Arc<Expr>, val: Arc<Expr> },
+    ClearKeyEventsKeyQueue,
+    DeleteKeyEventsKeyQueue { index: Arc<Expr> },
+    ClearKeyEventsTimeQueue,
+    DeleteKeyEventsTimeQueue { index: Arc<Expr> },
 }
 
 #[derive(Debug)]

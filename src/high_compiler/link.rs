@@ -60,6 +60,14 @@ pub enum NativeOperation {
     StdoutRead { dest_place: ast::Ref<ast::Place>, index: ast::Ref<ast::Expr> },
     StdoutWrite { val: ast::Ref<ast::Expr>, index: ast::Ref<ast::Expr> },
     StdoutLen { dest_place: ast::Ref<ast::Place> },
+    KeyEventsKeyQueueClear,
+    KeyEventsKeyQueueDelete { index: ast::Ref<ast::Expr> },
+    KeyEventsKeyQueueRead { dest_place: ast::Ref<ast::Place>, index: ast::Ref<ast::Expr> },
+    KeyEventsKeyQueueLen { dest_place: ast::Ref<ast::Place> },
+    KeyEventsTimeQueueClear,
+    KeyEventsTimeQueueDelete { index: ast::Ref<ast::Expr> },
+    KeyEventsTimeQueueRead { dest_place: ast::Ref<ast::Place>, index: ast::Ref<ast::Expr> },
+    KeyEventsTimeQueueLen { dest_place: ast::Ref<ast::Place> },
     TimerGet { dest_place: ast::Ref<ast::Place> },
     DaysSince2000Get { dest_place: ast::Ref<ast::Place> },
 }
@@ -268,6 +276,44 @@ fn create_sub_proc<'a>(
                     ast::NativeOperation::StdoutWrite { val, index } => {
                         other_native!(NativeOperation::StdoutWrite {
                             val: val.clone(),
+                            index: index.clone()
+                        })
+                    },
+                    ast::NativeOperation::KeyEventsKeyQueueClear => {
+                        other_native!(NativeOperation::KeyEventsKeyQueueClear)
+                    },
+                    ast::NativeOperation::KeyEventsKeyQueueLen { dest_place } => {
+                        other_native!(NativeOperation::KeyEventsKeyQueueLen {
+                            dest_place: dest_place.clone()
+                        })
+                    },
+                    ast::NativeOperation::KeyEventsKeyQueueRead { dest_place, index } => {
+                        other_native!(NativeOperation::KeyEventsKeyQueueRead {
+                            dest_place: dest_place.clone(),
+                            index: index.clone()
+                        })
+                    },
+                    ast::NativeOperation::KeyEventsKeyQueueDelete { index } => {
+                        other_native!(NativeOperation::KeyEventsKeyQueueDelete {
+                            index: index.clone()
+                        })
+                    },
+                    ast::NativeOperation::KeyEventsTimeQueueClear => {
+                        other_native!(NativeOperation::KeyEventsTimeQueueClear)
+                    },
+                    ast::NativeOperation::KeyEventsTimeQueueLen { dest_place } => {
+                        other_native!(NativeOperation::KeyEventsTimeQueueLen {
+                            dest_place: dest_place.clone()
+                        })
+                    },
+                    ast::NativeOperation::KeyEventsTimeQueueRead { dest_place, index } => {
+                        other_native!(NativeOperation::KeyEventsTimeQueueRead {
+                            dest_place: dest_place.clone(),
+                            index: index.clone()
+                        })
+                    },
+                    ast::NativeOperation::KeyEventsTimeQueueDelete { index } => {
+                        other_native!(NativeOperation::KeyEventsTimeQueueDelete {
                             index: index.clone()
                         })
                     },

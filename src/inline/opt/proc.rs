@@ -68,9 +68,17 @@ fn optimization_tempify_local_vars(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>
                     let command = match command.as_ref() {
                         Command::In => Command::In,
                         Command::ClearStdout => Command::ClearStdout,
+                        Command::ClearKeyEventsKeyQueue => Command::ClearKeyEventsKeyQueue,
+                        Command::ClearKeyEventsTimeQueue => Command::ClearKeyEventsTimeQueue,
                         Command::Out(expr) => Command::Out(expr!(expr)),
                         Command::WriteStdout { index, val } => {
                             Command::WriteStdout { index: expr!(index), val: expr!(val) }
+                        },
+                        Command::DeleteKeyEventsKeyQueue { index } => {
+                            Command::DeleteKeyEventsKeyQueue { index: expr!(index) }
+                        },
+                        Command::DeleteKeyEventsTimeQueue { index } => {
+                            Command::DeleteKeyEventsTimeQueue { index: expr!(index) }
                         },
                         Command::SetLoc { loc, val } => {
                             // compute val using existing temp
@@ -195,12 +203,20 @@ fn find_read_before_write_local_vars(proc: &Arc<Proc>) -> BTreeSet<Uuid> {
             let (command_written_local_vars, command_read_local_vars) = match command.as_ref() {
                 Command::In => (Default::default(), Default::default()),
                 Command::ClearStdout => (Default::default(), Default::default()),
+                Command::ClearKeyEventsKeyQueue => (Default::default(), Default::default()),
+                Command::ClearKeyEventsTimeQueue => (Default::default(), Default::default()),
                 Command::Out(expr) => (Default::default(), expr_find_read_local_vars(expr)),
                 Command::WriteStdout { index, val } => (
                     Default::default(),
                     chain!(expr_find_read_local_vars(index), expr_find_read_local_vars(val))
                         .collect(),
                 ),
+                Command::DeleteKeyEventsKeyQueue { index } => {
+                    (Default::default(), expr_find_read_local_vars(index))
+                },
+                Command::DeleteKeyEventsTimeQueue { index } => {
+                    (Default::default(), expr_find_read_local_vars(index))
+                },
                 Command::SetLoc { loc, val } => {
                     let val_read_local_vars = expr_find_read_local_vars(val);
                     let loc_written_and_read_local_vars = loc_find_written_and_read_local_vars(loc);
@@ -281,6 +297,16 @@ fn expr_find_written_and_read_local_vars(expr: &Expr) -> WrittenAndReadLocalVars
             read: expr_find_read_local_vars(expr),
         },
         Expr::StdoutLen => Default::default(),
+        Expr::KeyEventsKeyQueueDeref(expr) => WrittenAndReadLocalVars {
+            written: Default::default(),
+            read: expr_find_read_local_vars(expr),
+        },
+        Expr::KeyEventsKeyQueueLen => Default::default(),
+        Expr::KeyEventsTimeQueueDeref(expr) => WrittenAndReadLocalVars {
+            written: Default::default(),
+            read: expr_find_read_local_vars(expr),
+        },
+        Expr::KeyEventsTimeQueueLen => Default::default(),
         Expr::Timer => Default::default(),
         Expr::DaysSince2000 => Default::default(),
         // add and sub can count towards writes for offsets e.g. (stack[local:ab + "2"]) is a write
@@ -352,6 +378,10 @@ fn expr_find_read_local_vars(expr: &Expr) -> BTreeSet<Uuid> {
         Expr::Value(_) => Default::default(),
         Expr::StdoutDeref(expr) => expr_find_read_local_vars(expr),
         Expr::StdoutLen => Default::default(),
+        Expr::KeyEventsKeyQueueDeref(expr) => expr_find_read_local_vars(expr),
+        Expr::KeyEventsKeyQueueLen => Default::default(),
+        Expr::KeyEventsTimeQueueDeref(expr) => expr_find_read_local_vars(expr),
+        Expr::KeyEventsTimeQueueLen => Default::default(),
         Expr::Timer => Default::default(),
         Expr::DaysSince2000 => Default::default(),
         Expr::Add(args) => args_find_read_local_vars(args),
@@ -412,6 +442,14 @@ fn expr_replace_locals_with_temps(
             local_var_uuid_to_temp,
         ))),
         Expr::StdoutLen => Expr::StdoutLen,
+        Expr::KeyEventsKeyQueueDeref(expr) => Expr::KeyEventsKeyQueueDeref(Arc::new(
+            expr_replace_locals_with_temps(expr, local_var_uuid_to_temp),
+        )),
+        Expr::KeyEventsKeyQueueLen => Expr::KeyEventsKeyQueueLen,
+        Expr::KeyEventsTimeQueueDeref(expr) => Expr::KeyEventsTimeQueueDeref(Arc::new(
+            expr_replace_locals_with_temps(expr, local_var_uuid_to_temp),
+        )),
+        Expr::KeyEventsTimeQueueLen => Expr::KeyEventsTimeQueueLen,
         Expr::Timer => Expr::Timer,
         Expr::DaysSince2000 => Expr::DaysSince2000,
         Expr::Add(args) => {
@@ -595,6 +633,14 @@ fn command_uniquify_temps(command: &Command, old_to_new_temp: &OldToNewTemp) -> 
             index: Arc::new(expr_uniquify_temps(index, old_to_new_temp)),
             val: Arc::new(expr_uniquify_temps(val, old_to_new_temp)),
         },
+        Command::ClearKeyEventsKeyQueue => Command::ClearKeyEventsKeyQueue,
+        Command::DeleteKeyEventsKeyQueue { index } => Command::DeleteKeyEventsKeyQueue {
+            index: Arc::new(expr_uniquify_temps(index, old_to_new_temp)),
+        },
+        Command::ClearKeyEventsTimeQueue => Command::ClearKeyEventsTimeQueue,
+        Command::DeleteKeyEventsTimeQueue { index } => Command::DeleteKeyEventsTimeQueue {
+            index: Arc::new(expr_uniquify_temps(index, old_to_new_temp)),
+        },
     }
 }
 
@@ -607,6 +653,14 @@ fn expr_uniquify_temps(expr: &Expr, old_to_new_temp: &OldToNewTemp) -> Expr {
             Expr::StdoutDeref(Arc::new(expr_uniquify_temps(expr, old_to_new_temp)))
         },
         Expr::StdoutLen => Expr::StdoutLen,
+        Expr::KeyEventsKeyQueueDeref(expr) => {
+            Expr::KeyEventsKeyQueueDeref(Arc::new(expr_uniquify_temps(expr, old_to_new_temp)))
+        },
+        Expr::KeyEventsKeyQueueLen => Expr::KeyEventsKeyQueueLen,
+        Expr::KeyEventsTimeQueueDeref(expr) => {
+            Expr::KeyEventsTimeQueueDeref(Arc::new(expr_uniquify_temps(expr, old_to_new_temp)))
+        },
+        Expr::KeyEventsTimeQueueLen => Expr::KeyEventsTimeQueueLen,
         Expr::Timer => Expr::Timer,
         Expr::DaysSince2000 => Expr::DaysSince2000,
         Expr::Add(args) => Expr::Add(Arc::new(args_uniquify_temps(args, old_to_new_temp))),

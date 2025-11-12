@@ -127,6 +127,10 @@ fn is_constant_expr(expr: &Expr) -> bool {
         Expr::Value(_) => true,
         Expr::StdoutDeref(_) => false,
         Expr::StdoutLen => false,
+        Expr::KeyEventsKeyQueueDeref(_) => false,
+        Expr::KeyEventsKeyQueueLen => false,
+        Expr::KeyEventsTimeQueueDeref(_) => false,
+        Expr::KeyEventsTimeQueueLen => false,
         Expr::Timer => false,
         Expr::DaysSince2000 => false,
         Expr::Add(args) => args!(args),
@@ -161,9 +165,17 @@ fn command_inline_temps(
     let command = match command {
         Command::In => Command::In,
         Command::ClearStdout => Command::ClearStdout,
+        Command::ClearKeyEventsKeyQueue => Command::ClearKeyEventsKeyQueue,
+        Command::ClearKeyEventsTimeQueue => Command::ClearKeyEventsTimeQueue,
         Command::Out(expr) => Command::Out(expr!(expr)),
         Command::WriteStdout { index, val } => {
             Command::WriteStdout { index: expr!(index), val: expr!(val) }
+        },
+        Command::DeleteKeyEventsKeyQueue { index } => {
+            Command::DeleteKeyEventsKeyQueue { index: expr!(index) }
+        },
+        Command::DeleteKeyEventsTimeQueue { index } => {
+            Command::DeleteKeyEventsTimeQueue { index: expr!(index) }
         },
         Command::SetLoc { loc, val } => {
             let loc = match loc.as_ref() {
@@ -253,6 +265,10 @@ fn expr_inline_temps(
         Expr::Value(value) => Arc::new(Expr::Value(value.clone())),
         Expr::StdoutDeref(expr) => Arc::new(Expr::StdoutDeref(expr!(expr))),
         Expr::StdoutLen => Arc::new(Expr::StdoutLen),
+        Expr::KeyEventsKeyQueueDeref(expr) => Arc::new(Expr::KeyEventsKeyQueueDeref(expr!(expr))),
+        Expr::KeyEventsKeyQueueLen => Arc::new(Expr::KeyEventsKeyQueueLen),
+        Expr::KeyEventsTimeQueueDeref(expr) => Arc::new(Expr::KeyEventsTimeQueueDeref(expr!(expr))),
+        Expr::KeyEventsTimeQueueLen => Arc::new(Expr::KeyEventsTimeQueueLen),
         Expr::Timer => Arc::new(Expr::Timer),
         Expr::DaysSince2000 => Arc::new(Expr::DaysSince2000),
         Expr::Add(args) => Arc::new(Expr::Add(args!(args))),
@@ -332,10 +348,18 @@ fn command_count_temp_reads(command: &Command, temp_to_reads: &mut BTreeMap<Arc<
     match command {
         Command::In => {},
         Command::ClearStdout => {},
+        Command::ClearKeyEventsKeyQueue => {},
+        Command::ClearKeyEventsTimeQueue => {},
         Command::Out(expr) => expr_count_temp_reads(expr, temp_to_reads),
         Command::WriteStdout { index, val } => {
             expr_count_temp_reads(index, temp_to_reads);
             expr_count_temp_reads(val, temp_to_reads);
+        },
+        Command::DeleteKeyEventsKeyQueue { index } => {
+            expr_count_temp_reads(index, temp_to_reads);
+        },
+        Command::DeleteKeyEventsTimeQueue { index } => {
+            expr_count_temp_reads(index, temp_to_reads);
         },
         Command::SetLoc { loc, val } => {
             match loc.as_ref() {
@@ -377,6 +401,10 @@ fn expr_count_temp_reads(expr: &Expr, temp_to_reads: &mut BTreeMap<Arc<TempVar>,
         Expr::Value(_) => {},
         Expr::StdoutDeref(expr) => expr_count_temp_reads(expr, temp_to_reads),
         Expr::StdoutLen => {},
+        Expr::KeyEventsKeyQueueDeref(expr) => expr_count_temp_reads(expr, temp_to_reads),
+        Expr::KeyEventsKeyQueueLen => {},
+        Expr::KeyEventsTimeQueueDeref(expr) => expr_count_temp_reads(expr, temp_to_reads),
+        Expr::KeyEventsTimeQueueLen => {},
         Expr::Timer => {},
         Expr::DaysSince2000 => {},
         Expr::Add(args) => args_count_temp_reads(args, temp_to_reads),
@@ -472,9 +500,17 @@ fn optimization_inline_constant_trivial_derefs(sp: &Arc<SubProc>) -> MaybeOptimi
             Arc::new(match command.as_ref() {
                 Command::In => Command::In,
                 Command::ClearStdout => Command::ClearStdout,
+                Command::ClearKeyEventsKeyQueue => Command::ClearKeyEventsKeyQueue,
+                Command::ClearKeyEventsTimeQueue => Command::ClearKeyEventsTimeQueue,
                 Command::Out(expr) => Command::Out(expr!(expr)),
                 Command::WriteStdout { index, val } => {
                     Command::WriteStdout { index: expr!(index), val: expr!(val) }
+                },
+                Command::DeleteKeyEventsKeyQueue { index } => {
+                    Command::DeleteKeyEventsKeyQueue { index: expr!(index) }
+                },
+                Command::DeleteKeyEventsTimeQueue { index } => {
+                    Command::DeleteKeyEventsTimeQueue { index: expr!(index) }
                 },
                 Command::SetLoc { loc, val } => {
                     let val = expr!(val);
@@ -571,6 +607,10 @@ fn expr_inline_constant_trivial_derefs(
         Expr::Value(value) => Arc::new(Expr::Value(value.clone())),
         Expr::StdoutDeref(expr) => Arc::new(Expr::StdoutDeref(expr!(expr))),
         Expr::StdoutLen => Arc::new(Expr::StdoutLen),
+        Expr::KeyEventsKeyQueueDeref(expr) => Arc::new(Expr::KeyEventsKeyQueueDeref(expr!(expr))),
+        Expr::KeyEventsKeyQueueLen => Arc::new(Expr::KeyEventsKeyQueueLen),
+        Expr::KeyEventsTimeQueueDeref(expr) => Arc::new(Expr::KeyEventsTimeQueueDeref(expr!(expr))),
+        Expr::KeyEventsTimeQueueLen => Arc::new(Expr::KeyEventsTimeQueueLen),
         Expr::Timer => Arc::new(Expr::Timer),
         Expr::DaysSince2000 => Arc::new(Expr::DaysSince2000),
         Expr::Add(args) => Arc::new(Expr::Add(args!(args))),

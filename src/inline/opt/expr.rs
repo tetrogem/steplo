@@ -43,6 +43,10 @@ pub fn optimize_expr(expr: &Arc<Expr>) -> MaybeOptimized<Arc<Expr>> {
         Expr::Value(value) => Arc::new(Expr::Value(value.clone())),
         Expr::StdoutDeref(expr) => Arc::new(Expr::StdoutDeref(expr!(expr))),
         Expr::StdoutLen => Arc::new(Expr::StdoutLen),
+        Expr::KeyEventsKeyQueueDeref(expr) => Arc::new(Expr::KeyEventsKeyQueueDeref(expr!(expr))),
+        Expr::KeyEventsKeyQueueLen => Arc::new(Expr::KeyEventsKeyQueueLen),
+        Expr::KeyEventsTimeQueueDeref(expr) => Arc::new(Expr::KeyEventsTimeQueueDeref(expr!(expr))),
+        Expr::KeyEventsTimeQueueLen => Arc::new(Expr::KeyEventsTimeQueueLen),
         Expr::Timer => Arc::new(Expr::Timer),
         Expr::DaysSince2000 => Arc::new(Expr::DaysSince2000),
         Expr::Add(args) => Arc::new(Expr::Add(args!(args))),
@@ -247,46 +251,6 @@ fn maybe_const_eval_expr(expr: &Arc<Expr>) -> Option<Arc<Expr>> {
 
         fn neg(self) -> Self::Output {
             Self(-self.0)
-        }
-    }
-
-    #[deprecated]
-    fn is_staticly_comparable(expr: &Expr) -> bool {
-        macro_rules! args {
-            ($args:expr) => {
-                is_staticly_comparable(&$args.left) && is_staticly_comparable(&$args.right)
-            };
-        }
-
-        match expr {
-            Expr::Loc(loc) => match loc.as_ref() {
-                Loc::Temp(_) => true,
-                Loc::Deref(addr) => is_staticly_comparable(addr),
-            },
-            Expr::StackAddr(_) => true,
-            Expr::Value(_) => true,
-            Expr::StdoutDeref(expr) => is_staticly_comparable(expr),
-            Expr::StdoutLen => true,
-
-            // may change between when checked on left and checked on right?
-            // not sure, but better to be safe
-            Expr::Timer => false,
-            Expr::DaysSince2000 => false,
-
-            Expr::Add(args) => args!(args),
-            Expr::Sub(args) => args!(args),
-            Expr::Mul(args) => args!(args),
-            Expr::Div(args) => args!(args),
-            Expr::Mod(args) => args!(args),
-            Expr::Eq(args) => args!(args),
-            Expr::Lt(args) => args!(args),
-            Expr::Gt(args) => args!(args),
-            Expr::Not(expr) => is_staticly_comparable(expr),
-            Expr::Or(args) => args!(args),
-            Expr::And(args) => args!(args),
-            Expr::InAnswer => true,
-            Expr::Join(args) => args!(args),
-            Expr::Random(args) => args!(args),
         }
     }
 

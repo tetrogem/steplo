@@ -167,6 +167,10 @@ pub fn designate_registers(
                     ast::Command::WriteStdout { index, val } => {
                         chain!(index.to_mem_locs(), val.to_mem_locs()).collect()
                     },
+                    ast::Command::ClearKeyEventsKeyQueue => Default::default(),
+                    ast::Command::DeleteKeyEventsKeyQueue { index } => index.to_mem_locs(),
+                    ast::Command::ClearKeyEventsTimeQueue => Default::default(),
+                    ast::Command::DeleteKeyEventsTimeQueue { index } => index.to_mem_locs(),
                 };
 
                 let temps = add(&mem_locs);
@@ -203,6 +207,14 @@ pub fn designate_registers(
                     ast::Command::WriteStdout { index, val } => ast::Command::WriteStdout {
                         index: index.to_rmem(temp_m),
                         val: val.to_rmem(temp_m),
+                    },
+                    ast::Command::ClearKeyEventsKeyQueue => ast::Command::ClearKeyEventsKeyQueue,
+                    ast::Command::DeleteKeyEventsKeyQueue { index } => {
+                        ast::Command::DeleteKeyEventsKeyQueue { index: index.to_rmem(temp_m) }
+                    },
+                    ast::Command::ClearKeyEventsTimeQueue => ast::Command::ClearKeyEventsTimeQueue,
+                    ast::Command::DeleteKeyEventsTimeQueue { index } => {
+                        ast::Command::DeleteKeyEventsTimeQueue { index: index.to_rmem(temp_m) }
                     },
                 };
 
@@ -266,6 +278,10 @@ impl HasMemLocs for ast::Expr<ast::UMemLoc> {
             ast::Expr::StackDeref(expr) => expr.to_mem_locs(),
             ast::Expr::StdoutDeref(expr) => expr.to_mem_locs(),
             ast::Expr::StdoutLen => Default::default(),
+            ast::Expr::KeyEventsKeyQueueDeref(expr) => expr.to_mem_locs(),
+            ast::Expr::KeyEventsKeyQueueLen => Default::default(),
+            ast::Expr::KeyEventsTimeQueueDeref(expr) => expr.to_mem_locs(),
+            ast::Expr::KeyEventsTimeQueueLen => Default::default(),
             ast::Expr::Timer => Default::default(),
             ast::Expr::DaysSince2000 => Default::default(),
             ast::Expr::Add(args) => args.to_mem_locs(),
@@ -292,6 +308,14 @@ impl HasMemLocs for ast::Expr<ast::UMemLoc> {
             ast::Expr::StackDeref(expr) => ast::Expr::StackDeref(expr.to_rmem(temp_m)),
             ast::Expr::StdoutDeref(expr) => ast::Expr::StdoutDeref(expr.to_rmem(temp_m)),
             ast::Expr::StdoutLen => ast::Expr::StdoutLen,
+            ast::Expr::KeyEventsKeyQueueDeref(expr) => {
+                ast::Expr::KeyEventsKeyQueueDeref(expr.to_rmem(temp_m))
+            },
+            ast::Expr::KeyEventsKeyQueueLen => ast::Expr::KeyEventsKeyQueueLen,
+            ast::Expr::KeyEventsTimeQueueDeref(expr) => {
+                ast::Expr::KeyEventsTimeQueueDeref(expr.to_rmem(temp_m))
+            },
+            ast::Expr::KeyEventsTimeQueueLen => ast::Expr::KeyEventsTimeQueueLen,
             ast::Expr::Timer => ast::Expr::Timer,
             ast::Expr::DaysSince2000 => ast::Expr::DaysSince2000,
             ast::Expr::Add(args) => ast::Expr::Add(args.to_rmem(temp_m)),

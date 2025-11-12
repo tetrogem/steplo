@@ -359,6 +359,56 @@ fn compile_statement(
                         val: Arc::new(val),
                     }])
                 },
+                l::NativeOperation::KeyEventsKeyQueueClear => {
+                    Vec::from([o::Command::ClearKeyEventsKeyQueue])
+                },
+                l::NativeOperation::KeyEventsKeyQueueLen { dest_place } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::KeyEventsKeyQueueLen),
+                    }])
+                },
+                l::NativeOperation::KeyEventsKeyQueueRead { dest_place, index } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+                    let index = compile_expr(&index.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::KeyEventsKeyQueueDeref(Arc::new(index))),
+                    }])
+                },
+                l::NativeOperation::KeyEventsKeyQueueDelete { index } => {
+                    let index = compile_expr(&index.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::DeleteKeyEventsKeyQueue { index: Arc::new(index) }])
+                },
+                l::NativeOperation::KeyEventsTimeQueueClear => {
+                    Vec::from([o::Command::ClearKeyEventsTimeQueue])
+                },
+                l::NativeOperation::KeyEventsTimeQueueLen { dest_place } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::KeyEventsTimeQueueLen),
+                    }])
+                },
+                l::NativeOperation::KeyEventsTimeQueueRead { dest_place, index } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+                    let index = compile_expr(&index.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::KeyEventsTimeQueueDeref(Arc::new(index))),
+                    }])
+                },
+                l::NativeOperation::KeyEventsTimeQueueDelete { index } => {
+                    let index = compile_expr(&index.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::DeleteKeyEventsTimeQueue { index: Arc::new(index) }])
+                },
                 l::NativeOperation::TimerGet { dest_place } => {
                     let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
 
