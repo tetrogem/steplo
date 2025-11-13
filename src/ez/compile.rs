@@ -4,7 +4,7 @@ use itertools::Itertools;
 use uuid::Uuid;
 
 use crate::{
-    ez::{Argument, ArgumentOp, CustomBlock, KeyOption, ProcedureOp},
+    ez::{Argument, ArgumentOp, CustomBlock, KeyOption, MathOperator, ProcedureOp},
     ir,
 };
 
@@ -247,6 +247,10 @@ impl Op {
                         operand_a: compile(operand_a),
                         operand_b: compile(operand_b),
                     },
+                    OperatorOp::Round { num } => ir::OperatorOp::Round { num: compile(num) },
+                    OperatorOp::MathOp { operator, num } => {
+                        ir::OperatorOp::MathOp { operator: operator.compile(), num: compile(num) }
+                    },
                 };
 
                 ir::Op::Operator(ir_op)
@@ -445,6 +449,16 @@ impl KeyOption {
             KeyOption::Num7 => ir::KeyOption::Num7,
             KeyOption::Num8 => ir::KeyOption::Num8,
             KeyOption::Num9 => ir::KeyOption::Num9,
+        }
+    }
+}
+
+impl MathOperator {
+    pub fn compile(&self) -> ir::MathOperator {
+        match self {
+            MathOperator::Abs => ir::MathOperator::Abs,
+            MathOperator::Floor => ir::MathOperator::Floor,
+            MathOperator::Ceiling => ir::MathOperator::Ceiling,
         }
     }
 }

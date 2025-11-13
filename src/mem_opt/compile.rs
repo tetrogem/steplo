@@ -1045,6 +1045,23 @@ fn compile_expr(
                 to: compile_expr(compile_m, &args.right),
             })))
         },
+        Expr::Round(expr) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::Round {
+            num: compile_expr(compile_m, expr),
+        }))),
+        Expr::Floor(expr) => {
+            ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::MathOp {
+                operator: ez::MathOperator::Floor,
+                num: compile_expr(compile_m, expr),
+            })))
+        },
+        Expr::Ceil(expr) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::MathOp {
+            operator: ez::MathOperator::Ceiling,
+            num: compile_expr(compile_m, expr),
+        }))),
+        Expr::Abs(expr) => ez::Expr::Derived(Arc::new(ez::Op::Operator(ez::OperatorOp::MathOp {
+            operator: ez::MathOperator::Abs,
+            num: compile_expr(compile_m, expr),
+        }))),
     };
 
     Arc::new(compiled_expr)

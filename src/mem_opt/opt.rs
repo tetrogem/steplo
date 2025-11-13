@@ -281,6 +281,10 @@ fn optimize_expr(mut expr: Arc<Expr<UMemLoc>>) -> OptimizationReport<Arc<Expr<UM
             Expr::InAnswer => Expr::InAnswer,
             Expr::Join(args) => Expr::Join(tracker.record(optimize_binary_args(args.clone()))),
             Expr::Random(args) => Expr::Random(tracker.record(optimize_binary_args(args.clone()))),
+            Expr::Round(expr) => Expr::Round(tracker.record(optimize_expr(expr.clone()))),
+            Expr::Floor(expr) => Expr::Floor(tracker.record(optimize_expr(expr.clone()))),
+            Expr::Ceil(expr) => Expr::Ceil(tracker.record(optimize_expr(expr.clone()))),
+            Expr::Abs(expr) => Expr::Abs(tracker.record(optimize_expr(expr.clone()))),
         });
 
         expr = tracker.record(optimizer.optimize(expr));
@@ -528,6 +532,14 @@ fn optimization_inline_assignments(
             Expr::Timer => Arc::new(Expr::Timer),
             Expr::DaysSince2000 => Arc::new(Expr::DaysSince2000),
             Expr::Value(value) => Arc::new(Expr::Value(value.clone())),
+            Expr::Round(expr) => {
+                Arc::new(Expr::Round(expr_inline_loc(expr, loc_to_val, optimized)))
+            },
+            Expr::Floor(expr) => {
+                Arc::new(Expr::Floor(expr_inline_loc(expr, loc_to_val, optimized)))
+            },
+            Expr::Ceil(expr) => Arc::new(Expr::Ceil(expr_inline_loc(expr, loc_to_val, optimized))),
+            Expr::Abs(expr) => Arc::new(Expr::Abs(expr_inline_loc(expr, loc_to_val, optimized))),
         }
     }
 
@@ -552,30 +564,37 @@ fn optimization_inline_assignments(
     fn expr_contains_mem_loc(expr: &Expr<UMemLoc>, mem_loc: &UMemLoc) -> bool {
         match expr {
             Expr::MemLoc(ml) => ml.as_ref() == mem_loc,
-            Expr::Add(args) => args_contains_mem_loc(args, mem_loc),
-            Expr::And(args) => args_contains_mem_loc(args, mem_loc),
-            Expr::Div(args) => args_contains_mem_loc(args, mem_loc),
-            Expr::Eq(args) => args_contains_mem_loc(args, mem_loc),
-            Expr::Gt(args) => args_contains_mem_loc(args, mem_loc),
-            Expr::InAnswer => false,
-            Expr::Join(args) => args_contains_mem_loc(args, mem_loc),
-            Expr::Lt(args) => args_contains_mem_loc(args, mem_loc),
-            Expr::Mod(args) => args_contains_mem_loc(args, mem_loc),
-            Expr::Mul(args) => args_contains_mem_loc(args, mem_loc),
-            Expr::Not(expr) => expr_contains_mem_loc(expr, mem_loc),
-            Expr::Or(args) => args_contains_mem_loc(args, mem_loc),
-            Expr::Random(args) => args_contains_mem_loc(args, mem_loc),
-            Expr::StackDeref(expr) => expr_contains_mem_loc(expr, mem_loc),
-            Expr::StdoutDeref(expr) => expr_contains_mem_loc(expr, mem_loc),
-            Expr::StdoutLen => false,
-            Expr::KeyEventsKeyQueueDeref(expr) => expr_contains_mem_loc(expr, mem_loc),
-            Expr::KeyEventsKeyQueueLen => false,
-            Expr::KeyEventsTimeQueueDeref(expr) => expr_contains_mem_loc(expr, mem_loc),
-            Expr::KeyEventsTimeQueueLen => false,
-            Expr::Sub(args) => args_contains_mem_loc(args, mem_loc),
-            Expr::Timer => false,
-            Expr::DaysSince2000 => false,
-            Expr::Value(_) => false,
+
+            Expr::InAnswer
+            | Expr::StdoutLen
+            | Expr::KeyEventsKeyQueueLen
+            | Expr::KeyEventsTimeQueueLen
+            | Expr::Timer
+            | Expr::DaysSince2000
+            | Expr::Value(_) => false,
+
+            Expr::Add(args)
+            | Expr::And(args)
+            | Expr::Div(args)
+            | Expr::Eq(args)
+            | Expr::Gt(args)
+            | Expr::Join(args)
+            | Expr::Lt(args)
+            | Expr::Mod(args)
+            | Expr::Mul(args)
+            | Expr::Or(args)
+            | Expr::Random(args)
+            | Expr::Sub(args) => args_contains_mem_loc(args, mem_loc),
+
+            Expr::Not(expr)
+            | Expr::StackDeref(expr)
+            | Expr::StdoutDeref(expr)
+            | Expr::KeyEventsKeyQueueDeref(expr)
+            | Expr::KeyEventsTimeQueueDeref(expr)
+            | Expr::Round(expr)
+            | Expr::Floor(expr)
+            | Expr::Ceil(expr)
+            | Expr::Abs(expr) => expr_contains_mem_loc(expr, mem_loc),
         }
     }
 
@@ -597,30 +616,37 @@ fn optimization_inline_assignments(
             Expr::StackDeref(expr) => {
                 expr.as_ref() == deref_addr || expr_contains_stack_deref(expr, deref_addr)
             },
-            Expr::MemLoc(_) => false,
-            Expr::Add(args) => args_contains_stack_deref(args, deref_addr),
-            Expr::And(args) => args_contains_stack_deref(args, deref_addr),
-            Expr::Div(args) => args_contains_stack_deref(args, deref_addr),
-            Expr::Eq(args) => args_contains_stack_deref(args, deref_addr),
-            Expr::Gt(args) => args_contains_stack_deref(args, deref_addr),
-            Expr::InAnswer => false,
-            Expr::Join(args) => args_contains_stack_deref(args, deref_addr),
-            Expr::Lt(args) => args_contains_stack_deref(args, deref_addr),
-            Expr::Mod(args) => args_contains_stack_deref(args, deref_addr),
-            Expr::Mul(args) => args_contains_stack_deref(args, deref_addr),
-            Expr::Not(expr) => expr_contains_stack_deref(expr, deref_addr),
-            Expr::Or(args) => args_contains_stack_deref(args, deref_addr),
-            Expr::Random(args) => args_contains_stack_deref(args, deref_addr),
-            Expr::StdoutDeref(expr) => expr_contains_stack_deref(expr, deref_addr),
-            Expr::StdoutLen => false,
-            Expr::KeyEventsKeyQueueDeref(expr) => expr_contains_stack_deref(expr, deref_addr),
-            Expr::KeyEventsKeyQueueLen => false,
-            Expr::KeyEventsTimeQueueDeref(expr) => expr_contains_stack_deref(expr, deref_addr),
-            Expr::KeyEventsTimeQueueLen => false,
-            Expr::Sub(args) => args_contains_stack_deref(args, deref_addr),
-            Expr::Timer => false,
-            Expr::DaysSince2000 => false,
-            Expr::Value(_) => false,
+
+            Expr::MemLoc(_)
+            | Expr::InAnswer
+            | Expr::StdoutLen
+            | Expr::KeyEventsKeyQueueLen
+            | Expr::KeyEventsTimeQueueLen
+            | Expr::Timer
+            | Expr::DaysSince2000
+            | Expr::Value(_) => false,
+
+            Expr::Add(args)
+            | Expr::And(args)
+            | Expr::Div(args)
+            | Expr::Eq(args)
+            | Expr::Gt(args)
+            | Expr::Join(args)
+            | Expr::Lt(args)
+            | Expr::Mod(args)
+            | Expr::Mul(args)
+            | Expr::Or(args)
+            | Expr::Random(args)
+            | Expr::Sub(args) => args_contains_stack_deref(args, deref_addr),
+
+            Expr::Not(expr)
+            | Expr::StdoutDeref(expr)
+            | Expr::KeyEventsKeyQueueDeref(expr)
+            | Expr::KeyEventsTimeQueueDeref(expr)
+            | Expr::Round(expr)
+            | Expr::Floor(expr)
+            | Expr::Ceil(expr)
+            | Expr::Abs(expr) => expr_contains_stack_deref(expr, deref_addr),
         }
     }
 
@@ -919,6 +945,18 @@ fn optimization_inline_pure_redirect_labels(
                 rlabel_to_tlabel,
                 args,
             )),
+            Expr::Round(expr) => {
+                Expr::Round(expr_replace_pure_redirect_labels(optimized, rlabel_to_tlabel, expr))
+            },
+            Expr::Floor(expr) => {
+                Expr::Floor(expr_replace_pure_redirect_labels(optimized, rlabel_to_tlabel, expr))
+            },
+            Expr::Ceil(expr) => {
+                Expr::Ceil(expr_replace_pure_redirect_labels(optimized, rlabel_to_tlabel, expr))
+            },
+            Expr::Abs(expr) => {
+                Expr::Abs(expr_replace_pure_redirect_labels(optimized, rlabel_to_tlabel, expr))
+            },
         };
 
         Arc::new(expr)
@@ -1196,34 +1234,41 @@ fn optimization_remove_unused_sub_procs(
 
     fn expr_find_used_labels(expr: &Expr<UMemLoc>) -> BTreeSet<Uuid> {
         match expr {
-            Expr::MemLoc(_) => Default::default(),
             Expr::Value(value) => match value.as_ref() {
                 Value::Literal(_) => Default::default(),
                 Value::Label(label) => BTreeSet::from([*label]),
             },
-            Expr::StackDeref(expr) => expr_find_used_labels(expr),
-            Expr::StdoutDeref(expr) => expr_find_used_labels(expr),
-            Expr::StdoutLen => Default::default(),
-            Expr::KeyEventsKeyQueueDeref(expr) => expr_find_used_labels(expr),
-            Expr::KeyEventsKeyQueueLen => Default::default(),
-            Expr::KeyEventsTimeQueueDeref(expr) => expr_find_used_labels(expr),
-            Expr::KeyEventsTimeQueueLen => Default::default(),
-            Expr::Timer => Default::default(),
-            Expr::DaysSince2000 => Default::default(),
-            Expr::Add(args) => binary_args_find_used_labels(args),
-            Expr::Sub(args) => binary_args_find_used_labels(args),
-            Expr::Mul(args) => binary_args_find_used_labels(args),
-            Expr::Div(args) => binary_args_find_used_labels(args),
-            Expr::Mod(args) => binary_args_find_used_labels(args),
-            Expr::Eq(args) => binary_args_find_used_labels(args),
-            Expr::Gt(args) => binary_args_find_used_labels(args),
-            Expr::Lt(args) => binary_args_find_used_labels(args),
-            Expr::Not(expr) => expr_find_used_labels(expr),
-            Expr::Or(args) => binary_args_find_used_labels(args),
-            Expr::And(args) => binary_args_find_used_labels(args),
-            Expr::InAnswer => Default::default(),
-            Expr::Join(args) => binary_args_find_used_labels(args),
-            Expr::Random(args) => binary_args_find_used_labels(args),
+
+            Expr::MemLoc(_)
+            | Expr::StdoutLen
+            | Expr::KeyEventsKeyQueueLen
+            | Expr::KeyEventsTimeQueueLen
+            | Expr::Timer
+            | Expr::DaysSince2000
+            | Expr::InAnswer => Default::default(),
+
+            Expr::StackDeref(expr)
+            | Expr::StdoutDeref(expr)
+            | Expr::KeyEventsKeyQueueDeref(expr)
+            | Expr::KeyEventsTimeQueueDeref(expr)
+            | Expr::Not(expr)
+            | Expr::Round(expr)
+            | Expr::Floor(expr)
+            | Expr::Ceil(expr)
+            | Expr::Abs(expr) => expr_find_used_labels(expr),
+
+            Expr::Add(args)
+            | Expr::Sub(args)
+            | Expr::Mul(args)
+            | Expr::Div(args)
+            | Expr::Mod(args)
+            | Expr::Eq(args)
+            | Expr::Gt(args)
+            | Expr::Lt(args)
+            | Expr::Or(args)
+            | Expr::And(args)
+            | Expr::Join(args)
+            | Expr::Random(args) => binary_args_find_used_labels(args),
         }
     }
 
@@ -1784,6 +1829,18 @@ fn expr_replace_trivial_temps(
         Expr::Random(args) => {
             Arc::new(Expr::Random(binary_args_replace_trivial_temps(args, trivial_temp_to_expr)))
         },
+        Expr::Round(expr) => {
+            Arc::new(Expr::Round(expr_replace_trivial_temps(expr, trivial_temp_to_expr)))
+        },
+        Expr::Floor(expr) => {
+            Arc::new(Expr::Floor(expr_replace_trivial_temps(expr, trivial_temp_to_expr)))
+        },
+        Expr::Ceil(expr) => {
+            Arc::new(Expr::Ceil(expr_replace_trivial_temps(expr, trivial_temp_to_expr)))
+        },
+        Expr::Abs(expr) => {
+            Arc::new(Expr::Abs(expr_replace_trivial_temps(expr, trivial_temp_to_expr)))
+        },
     }
 }
 
@@ -1855,30 +1912,37 @@ fn expr_get_used_temps(expr: &Expr<UMemLoc>) -> BTreeSet<Arc<TempVar>> {
             UMemLoc::StackPointer => Default::default(),
             UMemLoc::Temp(temp) => BTreeSet::from([temp.clone()]),
         },
-        Expr::Value(_) => Default::default(),
-        Expr::StackDeref(expr) => expr_get_used_temps(expr),
-        Expr::StdoutDeref(expr) => expr_get_used_temps(expr),
-        Expr::StdoutLen => Default::default(),
-        Expr::KeyEventsKeyQueueDeref(expr) => expr_get_used_temps(expr),
-        Expr::KeyEventsKeyQueueLen => Default::default(),
-        Expr::KeyEventsTimeQueueDeref(expr) => expr_get_used_temps(expr),
-        Expr::KeyEventsTimeQueueLen => Default::default(),
-        Expr::Timer => Default::default(),
-        Expr::DaysSince2000 => Default::default(),
-        Expr::Add(args) => binary_args_get_used_temps(args),
-        Expr::Sub(args) => binary_args_get_used_temps(args),
-        Expr::Mul(args) => binary_args_get_used_temps(args),
-        Expr::Div(args) => binary_args_get_used_temps(args),
-        Expr::Mod(args) => binary_args_get_used_temps(args),
-        Expr::Eq(args) => binary_args_get_used_temps(args),
-        Expr::Gt(args) => binary_args_get_used_temps(args),
-        Expr::Lt(args) => binary_args_get_used_temps(args),
-        Expr::Not(expr) => expr_get_used_temps(expr),
-        Expr::Or(args) => binary_args_get_used_temps(args),
-        Expr::And(args) => binary_args_get_used_temps(args),
-        Expr::InAnswer => Default::default(),
-        Expr::Join(args) => binary_args_get_used_temps(args),
-        Expr::Random(args) => binary_args_get_used_temps(args),
+
+        Expr::Value(_)
+        | Expr::StdoutLen
+        | Expr::KeyEventsKeyQueueLen
+        | Expr::KeyEventsTimeQueueLen
+        | Expr::Timer
+        | Expr::DaysSince2000
+        | Expr::InAnswer => Default::default(),
+
+        Expr::StackDeref(expr)
+        | Expr::StdoutDeref(expr)
+        | Expr::KeyEventsKeyQueueDeref(expr)
+        | Expr::KeyEventsTimeQueueDeref(expr)
+        | Expr::Not(expr)
+        | Expr::Round(expr)
+        | Expr::Floor(expr)
+        | Expr::Ceil(expr)
+        | Expr::Abs(expr) => expr_get_used_temps(expr),
+
+        Expr::Add(args)
+        | Expr::Sub(args)
+        | Expr::Mul(args)
+        | Expr::Div(args)
+        | Expr::Mod(args)
+        | Expr::Eq(args)
+        | Expr::Gt(args)
+        | Expr::Lt(args)
+        | Expr::Or(args)
+        | Expr::And(args)
+        | Expr::Join(args)
+        | Expr::Random(args) => binary_args_get_used_temps(args),
     }
 }
 

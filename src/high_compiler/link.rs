@@ -70,6 +70,10 @@ pub enum NativeOperation {
     KeyEventsTimeQueueLen { dest_place: ast::Ref<ast::Place> },
     TimerGet { dest_place: ast::Ref<ast::Place> },
     DaysSince2000Get { dest_place: ast::Ref<ast::Place> },
+    Round { dest_place: ast::Ref<ast::Place>, num: ast::Ref<ast::Expr> },
+    Floor { dest_place: ast::Ref<ast::Place>, num: ast::Ref<ast::Expr> },
+    Ceil { dest_place: ast::Ref<ast::Place>, num: ast::Ref<ast::Expr> },
+    Abs { dest_place: ast::Ref<ast::Place>, num: ast::Ref<ast::Expr> },
 }
 
 #[derive(Debug, Clone)]
@@ -323,6 +327,30 @@ fn create_sub_proc<'a>(
                     ast::NativeOperation::DaysSince2000Get { dest_place } => {
                         other_native!(NativeOperation::DaysSince2000Get {
                             dest_place: dest_place.clone()
+                        })
+                    },
+                    ast::NativeOperation::Round { dest_place, num } => {
+                        other_native!(NativeOperation::Round {
+                            dest_place: dest_place.clone(),
+                            num: num.clone()
+                        })
+                    },
+                    ast::NativeOperation::Floor { dest_place, num } => {
+                        other_native!(NativeOperation::Floor {
+                            dest_place: dest_place.clone(),
+                            num: num.clone()
+                        })
+                    },
+                    ast::NativeOperation::Ceil { dest_place, num } => {
+                        other_native!(NativeOperation::Ceil {
+                            dest_place: dest_place.clone(),
+                            num: num.clone()
+                        })
+                    },
+                    ast::NativeOperation::Abs { dest_place, num } => {
+                        other_native!(NativeOperation::Abs {
+                            dest_place: dest_place.clone(),
+                            num: num.clone()
                         })
                     },
                 }

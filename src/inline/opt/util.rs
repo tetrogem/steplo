@@ -65,30 +65,38 @@ pub mod find_addr_expr_used_local_vars {
     pub fn expr_find_addr_expr_used_vars(expr: &Expr) -> BTreeSet<StackAddr> {
         match expr {
             Expr::Loc(loc) => loc_find_addr_expr_used_vars(loc),
+
             Expr::StackAddr(addr) => BTreeSet::from([*addr.as_ref()]),
-            Expr::Value(_) => Default::default(),
-            Expr::StdoutDeref(expr) => expr_find_addr_expr_used_vars(expr),
-            Expr::StdoutLen => Default::default(),
-            Expr::KeyEventsKeyQueueDeref(expr) => expr_find_addr_expr_used_vars(expr),
-            Expr::KeyEventsKeyQueueLen => Default::default(),
-            Expr::KeyEventsTimeQueueDeref(expr) => expr_find_addr_expr_used_vars(expr),
-            Expr::KeyEventsTimeQueueLen => Default::default(),
-            Expr::Timer => Default::default(),
-            Expr::DaysSince2000 => Default::default(),
-            Expr::Add(args) => args_find_addr_expr_used_vars(args),
-            Expr::Sub(args) => args_find_addr_expr_used_vars(args),
-            Expr::Mul(args) => args_find_addr_expr_used_vars(args),
-            Expr::Div(args) => args_find_addr_expr_used_vars(args),
-            Expr::Mod(args) => args_find_addr_expr_used_vars(args),
-            Expr::Eq(args) => args_find_addr_expr_used_vars(args),
-            Expr::Lt(args) => args_find_addr_expr_used_vars(args),
-            Expr::Gt(args) => args_find_addr_expr_used_vars(args),
-            Expr::Not(expr) => expr_find_addr_expr_used_vars(expr),
-            Expr::Or(args) => args_find_addr_expr_used_vars(args),
-            Expr::And(args) => args_find_addr_expr_used_vars(args),
-            Expr::InAnswer => Default::default(),
-            Expr::Join(args) => args_find_addr_expr_used_vars(args),
-            Expr::Random(args) => args_find_addr_expr_used_vars(args),
+
+            Expr::Value(_)
+            | Expr::StdoutLen
+            | Expr::KeyEventsKeyQueueLen
+            | Expr::KeyEventsTimeQueueLen
+            | Expr::Timer
+            | Expr::DaysSince2000
+            | Expr::InAnswer => Default::default(),
+
+            Expr::StdoutDeref(expr)
+            | Expr::KeyEventsKeyQueueDeref(expr)
+            | Expr::KeyEventsTimeQueueDeref(expr)
+            | Expr::Not(expr)
+            | Expr::Round(expr)
+            | Expr::Floor(expr)
+            | Expr::Ceil(expr)
+            | Expr::Abs(expr) => expr_find_addr_expr_used_vars(expr),
+
+            Expr::Add(args)
+            | Expr::Sub(args)
+            | Expr::Mul(args)
+            | Expr::Div(args)
+            | Expr::Mod(args)
+            | Expr::Eq(args)
+            | Expr::Lt(args)
+            | Expr::Gt(args)
+            | Expr::Or(args)
+            | Expr::And(args)
+            | Expr::Join(args)
+            | Expr::Random(args) => args_find_addr_expr_used_vars(args),
         }
     }
 

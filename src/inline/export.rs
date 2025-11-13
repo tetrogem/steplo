@@ -193,6 +193,10 @@ fn export_expr(name_m: &mut NameManager, expr: &Expr) -> String {
         Expr::InAnswer => "answer".into(),
         Expr::Join(args) => export_binary_op_expr(name_m, args, "~"),
         Expr::Random(args) => export_binary_op_expr(name_m, args, "<random>"),
+        Expr::Round(expr) => format!("(<round> {})", export_expr(name_m, expr)),
+        Expr::Floor(expr) => format!("(<floor> {})", export_expr(name_m, expr)),
+        Expr::Ceil(expr) => format!("(<ceil> {})", export_expr(name_m, expr)),
+        Expr::Abs(expr) => format!("(<abs> {})", export_expr(name_m, expr)),
     }
 }
 

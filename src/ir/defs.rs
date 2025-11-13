@@ -176,6 +176,15 @@ pub enum OperatorOp {
     LessThan { operand_a: Arc<Expr>, operand_b: Arc<Expr> },
     And { operand_a: Arc<Expr>, operand_b: Arc<Expr> },
     Or { operand_a: Arc<Expr>, operand_b: Arc<Expr> },
+    Round { num: Arc<Expr> },
+    MathOp { operator: MathOperator, num: Arc<Expr> },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MathOperator {
+    Abs,
+    Floor,
+    Ceiling,
 }
 
 #[derive(Debug)]

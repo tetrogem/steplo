@@ -63,6 +63,10 @@ pub fn optimize_expr(expr: &Arc<Expr>) -> MaybeOptimized<Arc<Expr>> {
         Expr::InAnswer => Arc::new(Expr::InAnswer),
         Expr::Join(args) => Arc::new(Expr::Join(args!(args))),
         Expr::Random(args) => Arc::new(Expr::Random(args!(args))),
+        Expr::Round(expr) => Arc::new(Expr::Round(expr!(expr))),
+        Expr::Floor(expr) => Arc::new(Expr::Floor(expr!(expr))),
+        Expr::Ceil(expr) => Arc::new(Expr::Ceil(expr!(expr))),
+        Expr::Abs(expr) => Arc::new(Expr::Abs(expr!(expr))),
     };
 
     const OPTIMIZATIONS: [OptimizationFn<Arc<Expr>>; 1] = [optimization_const_evaluate_exprs];

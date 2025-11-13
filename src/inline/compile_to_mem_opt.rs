@@ -499,6 +499,10 @@ fn compile_expr(
         a::Expr::Sub(args) => o::Expr::Sub(Arc::new(compile_args(args, stack_m, proc_kind)?)),
         a::Expr::Timer => o::Expr::Timer,
         a::Expr::DaysSince2000 => o::Expr::DaysSince2000,
+        a::Expr::Round(expr) => o::Expr::Round(Arc::new(compile_expr(expr, stack_m, proc_kind)?)),
+        a::Expr::Floor(expr) => o::Expr::Floor(Arc::new(compile_expr(expr, stack_m, proc_kind)?)),
+        a::Expr::Ceil(expr) => o::Expr::Ceil(Arc::new(compile_expr(expr, stack_m, proc_kind)?)),
+        a::Expr::Abs(expr) => o::Expr::Abs(Arc::new(compile_expr(expr, stack_m, proc_kind)?)),
     })
 }
 

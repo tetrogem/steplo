@@ -80,6 +80,10 @@ pub enum Expr {
     Join(Arc<BinaryArgs>),
     Random(Arc<BinaryArgs>),
     DaysSince2000,
+    Round(Arc<Expr>),
+    Floor(Arc<Expr>),
+    Ceil(Arc<Expr>),
+    Abs(Arc<Expr>),
 }
 
 #[derive(Debug)]

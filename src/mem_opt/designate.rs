@@ -274,30 +274,37 @@ impl HasMemLocs for ast::Expr<ast::UMemLoc> {
     fn to_mem_locs(&self) -> BTreeSet<Arc<ast::UMemLoc>> {
         match self {
             ast::Expr::MemLoc(mem_loc) => BTreeSet::from([mem_loc.clone()]),
-            ast::Expr::Value(_) => Default::default(),
-            ast::Expr::StackDeref(expr) => expr.to_mem_locs(),
-            ast::Expr::StdoutDeref(expr) => expr.to_mem_locs(),
-            ast::Expr::StdoutLen => Default::default(),
-            ast::Expr::KeyEventsKeyQueueDeref(expr) => expr.to_mem_locs(),
-            ast::Expr::KeyEventsKeyQueueLen => Default::default(),
-            ast::Expr::KeyEventsTimeQueueDeref(expr) => expr.to_mem_locs(),
-            ast::Expr::KeyEventsTimeQueueLen => Default::default(),
-            ast::Expr::Timer => Default::default(),
-            ast::Expr::DaysSince2000 => Default::default(),
-            ast::Expr::Add(args) => args.to_mem_locs(),
-            ast::Expr::Sub(args) => args.to_mem_locs(),
-            ast::Expr::Mul(args) => args.to_mem_locs(),
-            ast::Expr::Div(args) => args.to_mem_locs(),
-            ast::Expr::Mod(args) => args.to_mem_locs(),
-            ast::Expr::Eq(args) => args.to_mem_locs(),
-            ast::Expr::Gt(args) => args.to_mem_locs(),
-            ast::Expr::Lt(args) => args.to_mem_locs(),
-            ast::Expr::Not(expr) => expr.to_mem_locs(),
-            ast::Expr::Or(args) => args.to_mem_locs(),
-            ast::Expr::And(args) => args.to_mem_locs(),
-            ast::Expr::InAnswer => Default::default(),
-            ast::Expr::Join(args) => args.to_mem_locs(),
-            ast::Expr::Random(args) => args.to_mem_locs(),
+
+            ast::Expr::Value(_)
+            | ast::Expr::StdoutLen
+            | ast::Expr::KeyEventsKeyQueueLen
+            | ast::Expr::KeyEventsTimeQueueLen
+            | ast::Expr::Timer
+            | ast::Expr::DaysSince2000
+            | ast::Expr::InAnswer => Default::default(),
+
+            ast::Expr::StackDeref(expr)
+            | ast::Expr::StdoutDeref(expr)
+            | ast::Expr::KeyEventsKeyQueueDeref(expr)
+            | ast::Expr::KeyEventsTimeQueueDeref(expr)
+            | ast::Expr::Not(expr)
+            | ast::Expr::Round(expr)
+            | ast::Expr::Floor(expr)
+            | ast::Expr::Ceil(expr)
+            | ast::Expr::Abs(expr) => expr.to_mem_locs(),
+
+            ast::Expr::Add(args)
+            | ast::Expr::Sub(args)
+            | ast::Expr::Mul(args)
+            | ast::Expr::Div(args)
+            | ast::Expr::Mod(args)
+            | ast::Expr::Eq(args)
+            | ast::Expr::Gt(args)
+            | ast::Expr::Lt(args)
+            | ast::Expr::Or(args)
+            | ast::Expr::And(args)
+            | ast::Expr::Join(args)
+            | ast::Expr::Random(args) => args.to_mem_locs(),
         }
     }
 
@@ -332,6 +339,10 @@ impl HasMemLocs for ast::Expr<ast::UMemLoc> {
             ast::Expr::InAnswer => ast::Expr::InAnswer,
             ast::Expr::Join(args) => ast::Expr::Join(args.to_rmem(temp_m)),
             ast::Expr::Random(args) => ast::Expr::Random(args.to_rmem(temp_m)),
+            ast::Expr::Round(expr) => ast::Expr::Round(expr.to_rmem(temp_m)),
+            ast::Expr::Floor(expr) => ast::Expr::Floor(expr.to_rmem(temp_m)),
+            ast::Expr::Ceil(expr) => ast::Expr::Ceil(expr.to_rmem(temp_m)),
+            ast::Expr::Abs(expr) => ast::Expr::Abs(expr.to_rmem(temp_m)),
         };
 
         Arc::new(expr)

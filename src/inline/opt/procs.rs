@@ -410,6 +410,26 @@ fn expr_replace_stack_addrs(
             inlined_arg_to_local,
             inlined_local_to_local,
         ))),
+        Expr::Round(expr) => Expr::Round(Arc::new(expr_replace_stack_addrs(
+            expr,
+            inlined_arg_to_local,
+            inlined_local_to_local,
+        ))),
+        Expr::Floor(expr) => Expr::Floor(Arc::new(expr_replace_stack_addrs(
+            expr,
+            inlined_arg_to_local,
+            inlined_local_to_local,
+        ))),
+        Expr::Ceil(expr) => Expr::Ceil(Arc::new(expr_replace_stack_addrs(
+            expr,
+            inlined_arg_to_local,
+            inlined_local_to_local,
+        ))),
+        Expr::Abs(expr) => Expr::Abs(Arc::new(expr_replace_stack_addrs(
+            expr,
+            inlined_arg_to_local,
+            inlined_local_to_local,
+        ))),
     }
 }
 
@@ -520,6 +540,14 @@ fn expr_replace_labels(expr: &Expr, func_label_to_inlined: &BTreeMap<Uuid, Uuid>
         Expr::Random(args) => {
             Expr::Random(Arc::new(args_replace_labels(args, func_label_to_inlined)))
         },
+        Expr::Round(expr) => {
+            Expr::Round(Arc::new(expr_replace_labels(expr, func_label_to_inlined)))
+        },
+        Expr::Floor(expr) => {
+            Expr::Floor(Arc::new(expr_replace_labels(expr, func_label_to_inlined)))
+        },
+        Expr::Ceil(expr) => Expr::Ceil(Arc::new(expr_replace_labels(expr, func_label_to_inlined))),
+        Expr::Abs(expr) => Expr::Abs(Arc::new(expr_replace_labels(expr, func_label_to_inlined))),
     }
 }
 
@@ -738,30 +766,38 @@ fn call_find_used_stack_addrs(call: &Call) -> BTreeSet<StackAddr> {
 fn expr_find_used_stack_addrs(expr: &Expr) -> BTreeSet<StackAddr> {
     match expr {
         Expr::Loc(loc) => loc_find_used_stack_addrs(loc),
+
         Expr::StackAddr(addr) => BTreeSet::from([*addr.as_ref()]),
-        Expr::Value(_) => Default::default(),
-        Expr::StdoutDeref(expr) => expr_find_used_stack_addrs(expr),
-        Expr::StdoutLen => Default::default(),
-        Expr::KeyEventsKeyQueueDeref(expr) => expr_find_used_stack_addrs(expr),
-        Expr::KeyEventsKeyQueueLen => Default::default(),
-        Expr::KeyEventsTimeQueueDeref(expr) => expr_find_used_stack_addrs(expr),
-        Expr::KeyEventsTimeQueueLen => Default::default(),
-        Expr::Timer => Default::default(),
-        Expr::DaysSince2000 => Default::default(),
-        Expr::Add(args) => args_find_used_stack_addrs(args),
-        Expr::Sub(args) => args_find_used_stack_addrs(args),
-        Expr::Mul(args) => args_find_used_stack_addrs(args),
-        Expr::Div(args) => args_find_used_stack_addrs(args),
-        Expr::Mod(args) => args_find_used_stack_addrs(args),
-        Expr::Eq(args) => args_find_used_stack_addrs(args),
-        Expr::Lt(args) => args_find_used_stack_addrs(args),
-        Expr::Gt(args) => args_find_used_stack_addrs(args),
-        Expr::Not(expr) => expr_find_used_stack_addrs(expr),
-        Expr::Or(args) => args_find_used_stack_addrs(args),
-        Expr::And(args) => args_find_used_stack_addrs(args),
-        Expr::InAnswer => Default::default(),
-        Expr::Join(args) => args_find_used_stack_addrs(args),
-        Expr::Random(args) => args_find_used_stack_addrs(args),
+
+        Expr::Value(_)
+        | Expr::StdoutLen
+        | Expr::KeyEventsKeyQueueLen
+        | Expr::KeyEventsTimeQueueLen
+        | Expr::Timer
+        | Expr::DaysSince2000
+        | Expr::InAnswer => Default::default(),
+
+        Expr::StdoutDeref(expr)
+        | Expr::KeyEventsKeyQueueDeref(expr)
+        | Expr::KeyEventsTimeQueueDeref(expr)
+        | Expr::Not(expr)
+        | Expr::Round(expr)
+        | Expr::Floor(expr)
+        | Expr::Ceil(expr)
+        | Expr::Abs(expr) => expr_find_used_stack_addrs(expr),
+
+        Expr::Add(args)
+        | Expr::Sub(args)
+        | Expr::Mul(args)
+        | Expr::Div(args)
+        | Expr::Mod(args)
+        | Expr::Eq(args)
+        | Expr::Lt(args)
+        | Expr::Gt(args)
+        | Expr::Or(args)
+        | Expr::And(args)
+        | Expr::Join(args)
+        | Expr::Random(args) => args_find_used_stack_addrs(args),
     }
 }
 
@@ -853,33 +889,40 @@ fn command_find_used_labels(command: &Command) -> BTreeSet<Uuid> {
 fn expr_find_used_labels(expr: &Expr) -> BTreeSet<Uuid> {
     match expr {
         Expr::Loc(loc) => loc_find_used_labels(loc),
-        Expr::StackAddr(_) => Default::default(),
         Expr::Value(value) => match value.as_ref() {
             Value::Literal(_) => Default::default(),
             Value::Label(label) => BTreeSet::from([*label]),
         },
-        Expr::StdoutDeref(expr) => expr_find_used_labels(expr),
-        Expr::StdoutLen => Default::default(),
-        Expr::KeyEventsKeyQueueDeref(expr) => expr_find_used_labels(expr),
-        Expr::KeyEventsKeyQueueLen => Default::default(),
-        Expr::KeyEventsTimeQueueDeref(expr) => expr_find_used_labels(expr),
-        Expr::KeyEventsTimeQueueLen => Default::default(),
-        Expr::Timer => Default::default(),
-        Expr::DaysSince2000 => Default::default(),
-        Expr::Add(args) => args_find_used_labels(args),
-        Expr::Sub(args) => args_find_used_labels(args),
-        Expr::Mul(args) => args_find_used_labels(args),
-        Expr::Div(args) => args_find_used_labels(args),
-        Expr::Mod(args) => args_find_used_labels(args),
-        Expr::Eq(args) => args_find_used_labels(args),
-        Expr::Lt(args) => args_find_used_labels(args),
-        Expr::Gt(args) => args_find_used_labels(args),
-        Expr::Not(expr) => expr_find_used_labels(expr),
-        Expr::Or(args) => args_find_used_labels(args),
-        Expr::And(args) => args_find_used_labels(args),
-        Expr::InAnswer => Default::default(),
-        Expr::Join(args) => args_find_used_labels(args),
-        Expr::Random(args) => args_find_used_labels(args),
+
+        Expr::StackAddr(_)
+        | Expr::StdoutLen
+        | Expr::KeyEventsKeyQueueLen
+        | Expr::KeyEventsTimeQueueLen
+        | Expr::Timer
+        | Expr::DaysSince2000
+        | Expr::InAnswer => Default::default(),
+
+        Expr::StdoutDeref(expr)
+        | Expr::KeyEventsKeyQueueDeref(expr)
+        | Expr::KeyEventsTimeQueueDeref(expr)
+        | Expr::Not(expr)
+        | Expr::Round(expr)
+        | Expr::Floor(expr)
+        | Expr::Ceil(expr)
+        | Expr::Abs(expr) => expr_find_used_labels(expr),
+
+        Expr::Add(args)
+        | Expr::Sub(args)
+        | Expr::Mul(args)
+        | Expr::Div(args)
+        | Expr::Mod(args)
+        | Expr::Eq(args)
+        | Expr::Lt(args)
+        | Expr::Gt(args)
+        | Expr::Or(args)
+        | Expr::And(args)
+        | Expr::Join(args)
+        | Expr::Random(args) => args_find_used_labels(args),
     }
 }
 

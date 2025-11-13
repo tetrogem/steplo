@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::high_compiler::{
     logic_ast::{
         BOOL_TYPE, INTEGER_TYPE, NUM_TYPE, STR_TYPE, Type, TypeHint, UINTEGER_TYPE, UNIT_TYPE,
-        VAL_TYPE, unit_type_hint,
+        VAL_TYPE, bool_type_hint, unit_type_hint,
     },
     srced::{SrcRange, Srced},
     typecheck::ident_manager::IdentManager,
@@ -980,24 +980,90 @@ fn typecheck_while(
         ));
     }
 
+    // the condition expr of t::WhileItem will be "constant", as in it will just be the final expr
+    // so we need to add code to rerun the condition after each loop so that
+    // it works how you would expect
+    let condition_ident = tr(&item.val.condition, |x| l::Ident::Internal {
+        name: tr(x, |_| l::Name { str: "condition".into() }),
+        uuid: Uuid::new_v4(),
+    });
+
+    let condition_ident_info = ident_m.reg_let(tr(item, |x| l::IdentDef {
+        ident: condition_ident.clone(),
+        ty: tr(x, |x| bool_type_hint(x.range)),
+    }));
+
     let mut stmt_deps = Vec::new();
+
+    // let exprs = try_tr(&item.val.condition, |x| {
+    //     Ok(sift_stmt_deps(&mut stmt_deps, typecheck_expr(x, None, ident_m, func_m, type_alias_m)?))
+    // })?;
+
+    // let condition_expr = typecheck_to_t_expr(exprs)?;
+
+    let define_condition_stmt = tr(&item.val.condition, |x| {
+        l::Expr::Statement(tr(x, |x| {
+            l::Statement::Let(tr(x, |x| l::Let {
+                ident_init: tr(x, |x| l::IdentInit {
+                    def: tr(x, |x| l::IdentDef {
+                        ident: condition_ident.clone(),
+                        ty: tr(x, |x| bool_type_hint(x.range)),
+                    }),
+                    expr: item.val.condition.clone(),
+                }),
+            }))
+        }))
+    });
+
+    sift_stmt_deps(
+        &mut stmt_deps,
+        typecheck_expr(&define_condition_stmt, Some(&UNIT_TYPE), ident_m, func_m, type_alias_m)?,
+    );
+
+    let update_condition_stmt = tr(&item.val.condition, |x| {
+        l::Expr::Statement(tr(x, |x| {
+            l::Statement::Assign(tr(x, |x| l::Assign {
+                place: tr(x, |x| l::Place {
+                    head: tr(x, |_| l::PlaceHead::Ident(condition_ident.clone())),
+                    index_chain: tr(x, |_| Vec::new()),
+                }),
+                expr: item.val.condition.clone(),
+            }))
+        }))
+    });
 
     let while_item = t::WhileItem {
         condition: {
             let exprs = try_tr(&item.val.condition, |x| {
                 Ok(sift_stmt_deps(
                     &mut stmt_deps,
-                    typecheck_expr(x, None, ident_m, func_m, type_alias_m)?,
+                    typecheck_expr(
+                        &tr(x, |x| {
+                            l::Expr::Place(tr(x, |x| l::Place {
+                                head: tr(x, |_| l::PlaceHead::Ident(condition_ident.clone())),
+                                index_chain: tr(x, |_| Vec::new()),
+                            }))
+                        }),
+                        Some(&BOOL_TYPE),
+                        ident_m,
+                        func_m,
+                        type_alias_m,
+                    )?,
                 ))
             })?;
 
             typecheck_to_t_expr(exprs)?
         },
         body: {
-            let exprs =
+            let body_exprs =
                 typecheck_expr(&item.val.body, expected_type, ident_m, func_m, type_alias_m)?;
 
-            tr(&item.val.body, |x| t::Body { items: tr(x, |_| exprs.stmt_deps) })
+            let loop_exprs =
+                typecheck_expr(&update_condition_stmt, None, ident_m, func_m, type_alias_m)?;
+
+            tr(&item.val.body, |x| t::Body {
+                items: tr(x, |_| chain!(body_exprs.stmt_deps, loop_exprs.stmt_deps).collect()),
+            })
         },
     };
 
@@ -1492,6 +1558,78 @@ fn typecheck_native_op(
                     ))
                 })?,
             }
+        },
+        l::NativeOperation::Round { dest_place, num } => t::NativeOperation::Round {
+            dest_place: try_tr(dest_place, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_place(x, ident_m, func_m, type_alias_m)?,
+                ))
+            })?,
+            num: {
+                let exprs = try_tr(num, |x| {
+                    Ok(sift_stmt_deps(
+                        &mut stmt_deps,
+                        typecheck_expr(x, None, ident_m, func_m, type_alias_m)?,
+                    ))
+                })?;
+
+                typecheck_to_t_expr(exprs)?
+            },
+        },
+        l::NativeOperation::Floor { dest_place, num } => t::NativeOperation::Floor {
+            dest_place: try_tr(dest_place, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_place(x, ident_m, func_m, type_alias_m)?,
+                ))
+            })?,
+            num: {
+                let exprs = try_tr(num, |x| {
+                    Ok(sift_stmt_deps(
+                        &mut stmt_deps,
+                        typecheck_expr(x, None, ident_m, func_m, type_alias_m)?,
+                    ))
+                })?;
+
+                typecheck_to_t_expr(exprs)?
+            },
+        },
+        l::NativeOperation::Ceil { dest_place, num } => t::NativeOperation::Ceil {
+            dest_place: try_tr(dest_place, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_place(x, ident_m, func_m, type_alias_m)?,
+                ))
+            })?,
+            num: {
+                let exprs = try_tr(num, |x| {
+                    Ok(sift_stmt_deps(
+                        &mut stmt_deps,
+                        typecheck_expr(x, None, ident_m, func_m, type_alias_m)?,
+                    ))
+                })?;
+
+                typecheck_to_t_expr(exprs)?
+            },
+        },
+        l::NativeOperation::Abs { dest_place, num } => t::NativeOperation::Abs {
+            dest_place: try_tr(dest_place, |x| {
+                Ok(sift_stmt_deps(
+                    &mut stmt_deps,
+                    typecheck_place(x, ident_m, func_m, type_alias_m)?,
+                ))
+            })?,
+            num: {
+                let exprs = try_tr(num, |x| {
+                    Ok(sift_stmt_deps(
+                        &mut stmt_deps,
+                        typecheck_expr(x, None, ident_m, func_m, type_alias_m)?,
+                    ))
+                })?;
+
+                typecheck_to_t_expr(exprs)?
+            },
         },
     };
 

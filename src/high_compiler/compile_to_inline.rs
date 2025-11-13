@@ -425,6 +425,42 @@ fn compile_statement(
                         val: Arc::new(o::Expr::DaysSince2000),
                     }])
                 },
+                l::NativeOperation::Round { dest_place, num } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+                    let num = compile_expr(&num.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::Round(Arc::new(num))),
+                    }])
+                },
+                l::NativeOperation::Floor { dest_place, num } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+                    let num = compile_expr(&num.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::Floor(Arc::new(num))),
+                    }])
+                },
+                l::NativeOperation::Ceil { dest_place, num } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+                    let num = compile_expr(&num.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::Ceil(Arc::new(num))),
+                    }])
+                },
+                l::NativeOperation::Abs { dest_place, num } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+                    let num = compile_expr(&num.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::Abs(Arc::new(num))),
+                    }])
+                },
             };
 
             Ok(commands.into_iter().map(Arc::new).collect())

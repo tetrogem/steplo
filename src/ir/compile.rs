@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::ir::{
     ArgumentOp, Block, Broadcast, ControlOp, DataOp, EventOp, Expr, KeyOption, List, Literal,
-    Monitor, Op, OperatorOp, ProcedureOp, Program, SensingOp, Stage, Variable,
+    MathOperator, Monitor, Op, OperatorOp, ProcedureOp, Program, SensingOp, Stage, Variable,
 };
 
 impl Program {
@@ -423,6 +423,18 @@ impl Op {
                     fields: JsMap::new(),
                     mutation: None,
                 },
+                OperatorOp::Round { num } => ExprMetadata {
+                    opcode: "operator_round",
+                    inputs: obj([("NUM", compile(num))]),
+                    fields: JsMap::new(),
+                    mutation: None,
+                },
+                OperatorOp::MathOp { operator, num } => ExprMetadata {
+                    opcode: "operator_mathop",
+                    inputs: obj([("NUM", compile(num))]),
+                    fields: obj([("OPERATOR", math_operator_ref(*operator))]),
+                    mutation: None,
+                },
             },
             Self::Procedure(op) => match op {
                 ProcedureOp::Definition { prototype_stack } => ExprMetadata {
@@ -607,6 +619,16 @@ fn key_option_ref(key_option: KeyOption) -> JsVal {
         KeyOption::Num7 => "7",
         KeyOption::Num8 => "8",
         KeyOption::Num9 => "9",
+    };
+
+    json!([name, null])
+}
+
+fn math_operator_ref(math_operator: MathOperator) -> JsVal {
+    let name = match math_operator {
+        MathOperator::Abs => "abs",
+        MathOperator::Floor => "floor",
+        MathOperator::Ceiling => "celing",
     };
 
     json!([name, null])

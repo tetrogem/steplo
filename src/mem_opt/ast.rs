@@ -60,6 +60,10 @@ pub enum Expr<MemLoc> {
     Join(Arc<BinaryArgs<MemLoc>>),
     Random(Arc<BinaryArgs<MemLoc>>),
     DaysSince2000,
+    Round(Arc<Expr<MemLoc>>),
+    Floor(Arc<Expr<MemLoc>>),
+    Ceil(Arc<Expr<MemLoc>>),
+    Abs(Arc<Expr<MemLoc>>),
 }
 
 #[derive(Debug)]

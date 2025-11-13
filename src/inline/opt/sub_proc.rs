@@ -123,30 +123,37 @@ fn is_constant_expr(expr: &Expr) -> bool {
             // the value a stack addr points to can change if it is set at a different time
             Loc::Deref(_) => false,
         },
-        Expr::StackAddr(_) => true,
-        Expr::Value(_) => true,
-        Expr::StdoutDeref(_) => false,
-        Expr::StdoutLen => false,
-        Expr::KeyEventsKeyQueueDeref(_) => false,
-        Expr::KeyEventsKeyQueueLen => false,
-        Expr::KeyEventsTimeQueueDeref(_) => false,
-        Expr::KeyEventsTimeQueueLen => false,
-        Expr::Timer => false,
-        Expr::DaysSince2000 => false,
-        Expr::Add(args) => args!(args),
-        Expr::Sub(args) => args!(args),
-        Expr::Mul(args) => args!(args),
-        Expr::Div(args) => args!(args),
-        Expr::Mod(args) => args!(args),
-        Expr::Eq(args) => args!(args),
-        Expr::Lt(args) => args!(args),
-        Expr::Gt(args) => args!(args),
-        Expr::Not(expr) => is_constant_expr(expr),
-        Expr::Or(args) => args!(args),
-        Expr::And(args) => args!(args),
-        Expr::InAnswer => false,
-        Expr::Join(args) => args!(args),
-        Expr::Random(_) => false,
+
+        Expr::StackAddr(_) | Expr::Value(_) => true,
+
+        Expr::StdoutDeref(_)
+        | Expr::StdoutLen
+        | Expr::KeyEventsKeyQueueDeref(_)
+        | Expr::KeyEventsKeyQueueLen
+        | Expr::KeyEventsTimeQueueDeref(_)
+        | Expr::KeyEventsTimeQueueLen
+        | Expr::Timer
+        | Expr::DaysSince2000
+        | Expr::InAnswer
+        | Expr::Random(_) => false,
+
+        Expr::Add(args)
+        | Expr::Sub(args)
+        | Expr::Mul(args)
+        | Expr::Div(args)
+        | Expr::Mod(args)
+        | Expr::Eq(args)
+        | Expr::Lt(args)
+        | Expr::Gt(args)
+        | Expr::Or(args)
+        | Expr::And(args)
+        | Expr::Join(args) => args!(args),
+
+        Expr::Not(expr)
+        | Expr::Round(expr)
+        | Expr::Floor(expr)
+        | Expr::Ceil(expr)
+        | Expr::Abs(expr) => is_constant_expr(expr),
     }
 }
 
@@ -285,6 +292,10 @@ fn expr_inline_temps(
         Expr::InAnswer => Arc::new(Expr::InAnswer),
         Expr::Join(args) => Arc::new(Expr::Join(args!(args))),
         Expr::Random(args) => Arc::new(Expr::Random(args!(args))),
+        Expr::Round(expr) => Arc::new(Expr::Round(expr!(expr))),
+        Expr::Floor(expr) => Arc::new(Expr::Floor(expr!(expr))),
+        Expr::Ceil(expr) => Arc::new(Expr::Ceil(expr!(expr))),
+        Expr::Abs(expr) => Arc::new(Expr::Abs(expr!(expr))),
     };
 
     MaybeOptimized { optimized, val: expr }
@@ -397,30 +408,37 @@ fn call_count_temp_reads(call: &Call, temp_to_reads: &mut BTreeMap<Arc<TempVar>,
 fn expr_count_temp_reads(expr: &Expr, temp_to_reads: &mut BTreeMap<Arc<TempVar>, u32>) {
     match expr {
         Expr::Loc(loc) => loc_count_temp_reads(loc, temp_to_reads),
-        Expr::StackAddr(_) => {},
-        Expr::Value(_) => {},
-        Expr::StdoutDeref(expr) => expr_count_temp_reads(expr, temp_to_reads),
-        Expr::StdoutLen => {},
-        Expr::KeyEventsKeyQueueDeref(expr) => expr_count_temp_reads(expr, temp_to_reads),
-        Expr::KeyEventsKeyQueueLen => {},
-        Expr::KeyEventsTimeQueueDeref(expr) => expr_count_temp_reads(expr, temp_to_reads),
-        Expr::KeyEventsTimeQueueLen => {},
-        Expr::Timer => {},
-        Expr::DaysSince2000 => {},
-        Expr::Add(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Sub(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Mul(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Div(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Mod(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Eq(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Lt(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Gt(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Not(expr) => expr_count_temp_reads(expr, temp_to_reads),
-        Expr::Or(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::And(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::InAnswer => {},
-        Expr::Join(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Random(args) => args_count_temp_reads(args, temp_to_reads),
+
+        Expr::StackAddr(_)
+        | Expr::Value(_)
+        | Expr::StdoutLen
+        | Expr::KeyEventsKeyQueueLen
+        | Expr::KeyEventsTimeQueueLen
+        | Expr::Timer
+        | Expr::DaysSince2000
+        | Expr::InAnswer => {},
+
+        Expr::StdoutDeref(expr)
+        | Expr::KeyEventsKeyQueueDeref(expr)
+        | Expr::KeyEventsTimeQueueDeref(expr)
+        | Expr::Not(expr)
+        | Expr::Round(expr)
+        | Expr::Floor(expr)
+        | Expr::Ceil(expr)
+        | Expr::Abs(expr) => expr_count_temp_reads(expr, temp_to_reads),
+
+        Expr::Add(args)
+        | Expr::Sub(args)
+        | Expr::Mul(args)
+        | Expr::Div(args)
+        | Expr::Mod(args)
+        | Expr::Eq(args)
+        | Expr::Lt(args)
+        | Expr::Gt(args)
+        | Expr::Or(args)
+        | Expr::And(args)
+        | Expr::Join(args)
+        | Expr::Random(args) => args_count_temp_reads(args, temp_to_reads),
     }
 }
 
@@ -627,6 +645,10 @@ fn expr_inline_constant_trivial_derefs(
         Expr::InAnswer => Arc::new(Expr::InAnswer),
         Expr::Join(args) => Arc::new(Expr::Join(args!(args))),
         Expr::Random(args) => Arc::new(Expr::Random(args!(args))),
+        Expr::Round(expr) => Arc::new(Expr::Round(expr!(expr))),
+        Expr::Floor(expr) => Arc::new(Expr::Floor(expr!(expr))),
+        Expr::Ceil(expr) => Arc::new(Expr::Ceil(expr!(expr))),
+        Expr::Abs(expr) => Arc::new(Expr::Abs(expr!(expr))),
     };
 
     MaybeOptimized { optimized, val: expr }

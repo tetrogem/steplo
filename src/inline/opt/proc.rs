@@ -283,6 +283,7 @@ fn expr_find_written_and_read_local_vars(expr: &Expr) -> WrittenAndReadLocalVars
             written: Default::default(),
             read: loc_find_read_local_vars(loc),
         },
+
         Expr::StackAddr(addr) => match addr.as_ref() {
             StackAddr::Arg { .. } => Default::default(),
             StackAddr::Static { .. } => Default::default(),
@@ -291,73 +292,45 @@ fn expr_find_written_and_read_local_vars(expr: &Expr) -> WrittenAndReadLocalVars
                 read: Default::default(),
             },
         },
-        Expr::Value(_) => Default::default(),
-        Expr::StdoutDeref(expr) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: expr_find_read_local_vars(expr),
-        },
-        Expr::StdoutLen => Default::default(),
-        Expr::KeyEventsKeyQueueDeref(expr) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: expr_find_read_local_vars(expr),
-        },
-        Expr::KeyEventsKeyQueueLen => Default::default(),
-        Expr::KeyEventsTimeQueueDeref(expr) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: expr_find_read_local_vars(expr),
-        },
-        Expr::KeyEventsTimeQueueLen => Default::default(),
-        Expr::Timer => Default::default(),
-        Expr::DaysSince2000 => Default::default(),
+
         // add and sub can count towards writes for offsets e.g. (stack[local:ab + "2"]) is a write
         // but stack[stack[local:ab]] and stack[local:ab * 2] are not
         Expr::Add(args) => args_find_written_and_read_local_vars(args),
         Expr::Sub(args) => args_find_written_and_read_local_vars(args),
-        Expr::Mul(args) => WrittenAndReadLocalVars {
+
+        Expr::Mul(args)
+        | Expr::Div(args)
+        | Expr::Mod(args)
+        | Expr::Eq(args)
+        | Expr::Lt(args)
+        | Expr::Gt(args)
+        | Expr::Or(args)
+        | Expr::And(args)
+        | Expr::Join(args)
+        | Expr::Random(args) => WrittenAndReadLocalVars {
             written: Default::default(),
             read: args_find_read_local_vars(args),
         },
-        Expr::Div(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
-        Expr::Mod(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
-        Expr::Eq(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
-        Expr::Lt(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
-        Expr::Gt(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
-        Expr::Not(expr) => WrittenAndReadLocalVars {
+
+        Expr::StdoutDeref(expr)
+        | Expr::KeyEventsKeyQueueDeref(expr)
+        | Expr::KeyEventsTimeQueueDeref(expr)
+        | Expr::Round(expr)
+        | Expr::Floor(expr)
+        | Expr::Ceil(expr)
+        | Expr::Abs(expr)
+        | Expr::Not(expr) => WrittenAndReadLocalVars {
             written: Default::default(),
             read: expr_find_read_local_vars(expr),
         },
-        Expr::Or(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
-        Expr::And(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
-        Expr::InAnswer => Default::default(),
-        Expr::Join(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
-        Expr::Random(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
+
+        Expr::Value(_)
+        | Expr::StdoutLen
+        | Expr::KeyEventsKeyQueueLen
+        | Expr::KeyEventsTimeQueueLen
+        | Expr::Timer
+        | Expr::DaysSince2000
+        | Expr::InAnswer => Default::default(),
     }
 }
 
@@ -374,30 +347,37 @@ fn args_find_written_and_read_local_vars(args: &BinaryArgs) -> WrittenAndReadLoc
 fn expr_find_read_local_vars(expr: &Expr) -> BTreeSet<Uuid> {
     match expr {
         Expr::Loc(loc) => loc_find_read_local_vars(loc),
-        Expr::StackAddr(_) => Default::default(),
-        Expr::Value(_) => Default::default(),
-        Expr::StdoutDeref(expr) => expr_find_read_local_vars(expr),
-        Expr::StdoutLen => Default::default(),
-        Expr::KeyEventsKeyQueueDeref(expr) => expr_find_read_local_vars(expr),
-        Expr::KeyEventsKeyQueueLen => Default::default(),
-        Expr::KeyEventsTimeQueueDeref(expr) => expr_find_read_local_vars(expr),
-        Expr::KeyEventsTimeQueueLen => Default::default(),
-        Expr::Timer => Default::default(),
-        Expr::DaysSince2000 => Default::default(),
-        Expr::Add(args) => args_find_read_local_vars(args),
-        Expr::Sub(args) => args_find_read_local_vars(args),
-        Expr::Mul(args) => args_find_read_local_vars(args),
-        Expr::Div(args) => args_find_read_local_vars(args),
-        Expr::Mod(args) => args_find_read_local_vars(args),
-        Expr::Eq(args) => args_find_read_local_vars(args),
-        Expr::Lt(args) => args_find_read_local_vars(args),
-        Expr::Gt(args) => args_find_read_local_vars(args),
-        Expr::Not(expr) => expr_find_read_local_vars(expr),
-        Expr::Or(args) => args_find_read_local_vars(args),
-        Expr::And(args) => args_find_read_local_vars(args),
-        Expr::InAnswer => Default::default(),
-        Expr::Join(args) => args_find_read_local_vars(args),
-        Expr::Random(args) => args_find_read_local_vars(args),
+
+        Expr::Value(_)
+        | Expr::StackAddr(_)
+        | Expr::StdoutLen
+        | Expr::KeyEventsKeyQueueLen
+        | Expr::KeyEventsTimeQueueLen
+        | Expr::Timer
+        | Expr::DaysSince2000
+        | Expr::InAnswer => Default::default(),
+
+        Expr::Add(args)
+        | Expr::Sub(args)
+        | Expr::Mul(args)
+        | Expr::Div(args)
+        | Expr::Mod(args)
+        | Expr::Eq(args)
+        | Expr::Lt(args)
+        | Expr::Gt(args)
+        | Expr::Or(args)
+        | Expr::And(args)
+        | Expr::Join(args)
+        | Expr::Random(args) => args_find_read_local_vars(args),
+
+        Expr::StdoutDeref(expr)
+        | Expr::KeyEventsKeyQueueDeref(expr)
+        | Expr::KeyEventsTimeQueueDeref(expr)
+        | Expr::Not(expr)
+        | Expr::Round(expr)
+        | Expr::Floor(expr)
+        | Expr::Ceil(expr)
+        | Expr::Abs(expr) => expr_find_read_local_vars(expr),
     }
 }
 
@@ -491,6 +471,18 @@ fn expr_replace_locals_with_temps(
         },
         Expr::Random(args) => {
             Expr::Random(Arc::new(args_replace_locals_with_temps(args, local_var_uuid_to_temp)))
+        },
+        Expr::Round(expr) => {
+            Expr::Round(Arc::new(expr_replace_locals_with_temps(expr, local_var_uuid_to_temp)))
+        },
+        Expr::Floor(expr) => {
+            Expr::Floor(Arc::new(expr_replace_locals_with_temps(expr, local_var_uuid_to_temp)))
+        },
+        Expr::Ceil(expr) => {
+            Expr::Ceil(Arc::new(expr_replace_locals_with_temps(expr, local_var_uuid_to_temp)))
+        },
+        Expr::Abs(expr) => {
+            Expr::Abs(Arc::new(expr_replace_locals_with_temps(expr, local_var_uuid_to_temp)))
         },
     }
 }
@@ -677,6 +669,10 @@ fn expr_uniquify_temps(expr: &Expr, old_to_new_temp: &OldToNewTemp) -> Expr {
         Expr::InAnswer => Expr::InAnswer,
         Expr::Join(args) => Expr::Join(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
         Expr::Random(args) => Expr::Random(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Round(expr) => Expr::Round(Arc::new(expr_uniquify_temps(expr, old_to_new_temp))),
+        Expr::Floor(expr) => Expr::Floor(Arc::new(expr_uniquify_temps(expr, old_to_new_temp))),
+        Expr::Ceil(expr) => Expr::Ceil(Arc::new(expr_uniquify_temps(expr, old_to_new_temp))),
+        Expr::Abs(expr) => Expr::Abs(Arc::new(expr_uniquify_temps(expr, old_to_new_temp))),
     }
 }
 

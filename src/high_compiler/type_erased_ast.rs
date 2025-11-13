@@ -227,6 +227,10 @@ pub enum NativeOperation {
     KeyEventsTimeQueueDelete { index: Ref<Expr> },
     KeyEventsTimeQueueRead { dest_place: Ref<Place>, index: Ref<Expr> },
     KeyEventsTimeQueueLen { dest_place: Ref<Place> },
+    Round { dest_place: Ref<Place>, num: Ref<Expr> },
+    Floor { dest_place: Ref<Place>, num: Ref<Expr> },
+    Ceil { dest_place: Ref<Place>, num: Ref<Expr> },
+    Abs { dest_place: Ref<Place>, num: Ref<Expr> },
 }
 
 #[derive(Debug)]
