@@ -416,7 +416,7 @@ impl CollapsedCompileError {
                     TokenKind::Dash => TokenString::Punctuation("-"),
                     TokenKind::Else => TokenString::Keyword("else"),
                     TokenKind::Eq => TokenString::Punctuation("="),
-                    TokenKind::Func => TokenString::Keyword("func"),
+                    TokenKind::Fn => TokenString::Keyword("fn"),
                     TokenKind::If => TokenString::Keyword("if"),
                     TokenKind::LeftAngle => TokenString::Punctuation("<"),
                     TokenKind::LeftBrace => TokenString::Punctuation("{"),

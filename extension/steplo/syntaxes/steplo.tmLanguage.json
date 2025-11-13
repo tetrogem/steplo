@@ -2,55 +2,27 @@
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
   "name": "Steplo",
   "patterns": [
-    {
-      "include": "#comments"
-    },
-    {
-      "include": "#typeAlias"
-    },
-    {
-      "include": "#enums"
-    },
-    {
-      "include": "#stackVars"
-    },
-    {
-      "include": "#casts"
-    },
-    {
-      "include": "#keywords"
-    },
-    {
-      "include": "#punctuation"
-    },
-    {
-      "include": "#operators"
-    },
-    {
-      "include": "#variants"
-    },
-    {
-      "include": "#strings"
-    },
-    {
-      "include": "#numbers"
-    },
-    {
-      "include": "#booleans"
-    },
-    {
-      "include": "#functions"
-    },
-    {
-      "include": "#variables"
-    }
+    { "include": "#comments" },
+    { "include": "#typeAlias" },
+    { "include": "#enums" },
+    { "include": "#varInits" },
+    { "include": "#casts" },
+    { "include": "#keywords" },
+    { "include": "#punctuation" },
+    { "include": "#operators" },
+    { "include": "#variants" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#booleans" },
+    { "include": "#functions" },
+    { "include": "#variables" }
   ],
   "repository": {
     "keywords": {
       "patterns": [
         {
           "name": "keyword.steplo",
-          "match": "\\b(main|func|if|else|while|slice|type|enum|match|let|undefined)\\b"
+          "match": "\\b(main|fn|if|else|while|slice|type|enum|match|let|undefined|static)\\b"
         }
       ]
     },
@@ -226,6 +198,7 @@
       "patterns": [
         { "include": "#typeHints" },
         { "include": "#casts" },
+        { "include": "#functions" },
         { "include": "#variables" },
         { "include": "#punctuation" },
         { "include": "#operators" },
@@ -246,8 +219,8 @@
         }
       ]
     },
-    "stackVars": {
-      "begin": "(let)",
+    "varInits": {
+      "begin": "(let|static)",
       "beginCaptures": {
         "1": { "name": "keyword.operator.steplo" }
       },

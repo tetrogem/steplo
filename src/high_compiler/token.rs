@@ -17,7 +17,7 @@ pub enum Token {
     Comma,
     String(String),
     Main,
-    Func,
+    Fn,
     If,
     Else,
     While,
@@ -113,7 +113,7 @@ fn consume_word(
 
     let token = match word.as_str() {
         "main" => Token::Main,
-        "func" => Token::Func,
+        "fn" => Token::Fn,
         "if" => Token::If,
         "else" => Token::Else,
         "while" => Token::While,

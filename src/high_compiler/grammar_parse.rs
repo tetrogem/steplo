@@ -204,7 +204,7 @@ impl AstParse for Func {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_struct! {
             parse tokens;
-            [match _ = Token::Func => (); as [TokenKind::Func]];
+            [match _ = Token::Fn => (); as [TokenKind::Fn]];
             [struct name];
             [match _ = Token::LeftParen => (); as [TokenKind::LeftParen]];
             [struct params];

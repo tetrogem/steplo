@@ -66,7 +66,7 @@ type Game = {
     error_time_days: num,
 };
 
-func Game_display_menu(self: &Game) {
+fn Game_display_menu(self: &Game) {
     let i: uint = 0;
     while (i < MenuOption_ALL_LEN) {
         let option: MenuOption = MenuOption_ALL[i];
@@ -84,7 +84,7 @@ func Game_display_menu(self: &Game) {
     stdout_write((*self).error_msg, 9);
 }
 
-func Game_perform_action(self: &Game) {
+fn Game_perform_action(self: &Game) {
     match (*self).selected_menu_option {
         #Bakery -> {
             (*self).username = in();
@@ -104,7 +104,7 @@ func Game_perform_action(self: &Game) {
     }
 }
 
-func Game_try_purchase_building(self: &Game, building: Building) {
+fn Game_try_purchase_building(self: &Game, building: Building) {
     let building_info: BuildingInfo = BuildingToInfo_get(building);
     let building_count: &uint = BuildingToCount_get_mut(&(*self).building_to_count, building);
 
@@ -118,13 +118,13 @@ func Game_try_purchase_building(self: &Game, building: Building) {
     }
 }
 
-func Game_current_building_cost(self: &Game, building: Building) -> num {
+fn Game_current_building_cost(self: &Game, building: Building) -> num {
     let info: BuildingInfo = BuildingToInfo_get(building);
     let count: uint = *BuildingToCount_get_mut(&(*self).building_to_count, building);
     BuildingInfo_calc_cost(info, count)
 }
 
-func Game_display_building_info(self: &Game, building: Building) -> str {
+fn Game_display_building_info(self: &Game, building: Building) -> str {
     let info: BuildingInfo = BuildingToInfo_get(building);
     let count: uint = *BuildingToCount_get_mut(&(*self).building_to_count, building);
     let cost: num = BuildingInfo_calc_cost(info, count);
@@ -146,7 +146,7 @@ func Game_display_building_info(self: &Game, building: Building) -> str {
     res
 }
 
-func Game_building_tooltip(self: &Game, building: Building) -> str {
+fn Game_building_tooltip(self: &Game, building: Building) -> str {
     let info: BuildingInfo = BuildingToInfo_get(building);
 
     let res: str = "";
@@ -159,7 +159,7 @@ func Game_building_tooltip(self: &Game, building: Building) -> str {
     res
 }
 
-func Game_calc_cps(self: &Game) -> num {
+fn Game_calc_cps(self: &Game) -> num {
     let cps: num = 0;
 
     let i: uint = 0;
@@ -182,13 +182,13 @@ type BuildingToCount = {
     farm: uint,
 };
 
-func BuildingToCount_default() -> BuildingToCount {
+fn BuildingToCount_default() -> BuildingToCount {
     cursor: 0,
     grandma: 0,
     farm: 0,
 }
 
-func BuildingToCount_get_mut(self: &BuildingToCount, building: Building) -> &uint match building {
+fn BuildingToCount_get_mut(self: &BuildingToCount, building: Building) -> &uint match building {
     #Cursor -> &(*self).cursor
     #Grandma -> &(*self).grandma
     #Farm -> &(*self).farm
@@ -237,13 +237,13 @@ static BUILDING_TO_INFO: BuildingToInfo = {
     },
 };
 
-func BuildingToInfo_get(building: Building) -> BuildingInfo match building {
+fn BuildingToInfo_get(building: Building) -> BuildingInfo match building {
     #Cursor -> BUILDING_TO_INFO.cursor
     #Grandma -> BUILDING_TO_INFO.grandma
     #Farm -> BUILDING_TO_INFO.farm
 }
 
-func BuildingInfo_calc_cost(self: BuildingInfo, count: uint) -> num {
+fn BuildingInfo_calc_cost(self: BuildingInfo, count: uint) -> num {
     let i: uint = 0;
     let cost: num = self.initial_cost;
     while (i < count) {
@@ -259,7 +259,7 @@ enum MenuOption { Bakery | Cookie | Cursor | Grandma | Farm }
 static MenuOption_ALL: [MenuOption; 5] = [#Bakery, #Cookie, #Cursor, #Grandma, #Farm];
 static MenuOption_ALL_LEN: uint = 5;
 
-func MenuOption_display(self: MenuOption, game: &Game) -> str {
+fn MenuOption_display(self: MenuOption, game: &Game) -> str {
     match self {
         #Bakery -> {
             let fixed_cps: num = (num_round((Game_calc_cps(game) * 100)) / 100);
@@ -272,7 +272,7 @@ func MenuOption_display(self: MenuOption, game: &Game) -> str {
     }
 }
 
-func MenuOption_tooltip(self: MenuOption, game: &Game) -> str match self {
+fn MenuOption_tooltip(self: MenuOption, game: &Game) -> str match self {
     #Bakery -> "Interact to change your bakery's name!"
     #Cookie -> "Interact to click the cookie!"
     #Cursor -> Game_building_tooltip(game, #Cursor)
@@ -280,7 +280,7 @@ func MenuOption_tooltip(self: MenuOption, game: &Game) -> str match self {
     #Farm -> Game_building_tooltip(game, #Farm)
 }
 
-func MenuOption_previous(self: MenuOption) -> MenuOption match self {
+fn MenuOption_previous(self: MenuOption) -> MenuOption match self {
     #Bakery -> #Bakery
     #Cookie -> #Bakery
     #Cursor -> #Cookie
@@ -288,7 +288,7 @@ func MenuOption_previous(self: MenuOption) -> MenuOption match self {
     #Farm -> #Grandma
 }
 
-func MenuOption_next(self: MenuOption) -> MenuOption match self {
+fn MenuOption_next(self: MenuOption) -> MenuOption match self {
     #Bakery -> #Cookie
     #Cookie -> #Cursor
     #Cursor -> #Grandma
@@ -296,5 +296,5 @@ func MenuOption_next(self: MenuOption) -> MenuOption match self {
     #Farm -> #Farm
 }
 
-func s_to_days(s: num) -> num (((s / 60) / 60) / 24)
-func days_to_s(days: num) -> num (((days * 24) * 60) * 60)
+fn s_to_days(s: num) -> num (((s / 60) / 60) / 24)
+fn days_to_s(days: num) -> num (((days * 24) * 60) * 60)
