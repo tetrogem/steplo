@@ -4,8 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::bail;
-use itertools::{Itertools, chain};
+use itertools::chain;
 use uuid::Uuid;
 
 use crate::inline::{

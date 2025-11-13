@@ -14,6 +14,7 @@ pub fn nominal_type_hint(range: SrcRange, name: &str) -> TypeHint {
     TypeHint::Nominal(Arc::new(Srced { range, val: Name { str: name.into() } }))
 }
 
+#[expect(unused)]
 pub static ANY_TYPE: LazyLock<Arc<Type>> = LazyLock::new(|| Arc::new(Type::Any));
 
 pub fn any_type_hint(range: SrcRange) -> TypeHint {

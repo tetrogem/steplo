@@ -93,6 +93,7 @@ mod loc_manager {
             bail!("Loc name not found locally or statically: {}", loc_name);
         }
 
+        #[expect(unused)]
         pub fn get_static(&self, static_name: &Arc<str>) -> anyhow::Result<o::VarInfo> {
             let Some(info) = self.static_name_to_info.get(static_name) else {
                 bail!("Static name not found statically: {}", static_name)
@@ -194,6 +195,7 @@ mod loc_manager {
             self.return_label_arg_info
         }
 
+        #[expect(unused)]
         pub fn ordered_local_names(&self) -> &Vec<Arc<str>> {
             &self.ordered_local_names
         }

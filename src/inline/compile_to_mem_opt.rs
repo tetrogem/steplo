@@ -4,11 +4,11 @@ use itertools::chain;
 
 use crate::inline::ast as a;
 use crate::inline::compile_to_mem_opt::func_manager::FuncManager;
-use crate::inline::compile_to_mem_opt::stack_manager::{LetInfo, ProcKind, StackManager, VarInfo};
+use crate::inline::compile_to_mem_opt::stack_manager::{ProcKind, StackManager, VarInfo};
 use crate::mem_opt::ast as o;
 
 pub fn compile(program: &a::Program) -> anyhow::Result<Vec<Arc<o::Proc<o::UMemLoc>>>> {
-    let stack_m = StackManager::new(&program);
+    let stack_m = StackManager::new(program);
     let func_m = FuncManager::new(&program.procs);
 
     program

@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashSet, fmt::Display, ops::Not, path::Path, sync::Arc};
+use std::{cmp::Ordering, collections::HashSet, ops::Not, path::Path, sync::Arc};
 
 use colored::Colorize;
 use itertools::Itertools;
@@ -89,9 +89,6 @@ pub(crate) enum TypeError {
     IndexInvalidField {
         struct_type: Arc<VagueType>,
         field_name: Arc<str>,
-    },
-    AssignCellExprToCompoundPlace {
-        place_size: u32,
     },
     StructLiteralMissingField {
         field_type: Arc<VagueType>,
@@ -309,9 +306,6 @@ enum CollapsedTypeError {
     IndexInvalidField {
         struct_type: Arc<VagueType>,
         field_name: Arc<str>,
-    },
-    AssignCellExprToCompoundPlace {
-        place_size: u32,
     },
     StructLiteralMissingField {
         field_name: Arc<str>,
@@ -621,9 +615,6 @@ impl CollapsedCompileError {
                         struct_type.to_display().display()
                     )
                 },
-                CollapsedTypeError::AssignCellExprToCompoundPlace { place_size } => {
-                    format!("Cannot assign cell expression to place with size {place_size}")
-                },
                 CollapsedTypeError::StructLiteralMissingField { field_name, field_type } => {
                     format!(
                         "Struct literal is missing field `{field_name}` with type {}",
@@ -709,9 +700,6 @@ impl From<CompileError> for CollapsedCompileError {
                 TypeError::UnknownAlias { name } => CollapsedTypeError::UnknownType { name },
                 TypeError::IndexInvalidField { struct_type, field_name } => {
                     CollapsedTypeError::IndexInvalidField { struct_type, field_name }
-                },
-                TypeError::AssignCellExprToCompoundPlace { place_size } => {
-                    CollapsedTypeError::AssignCellExprToCompoundPlace { place_size }
                 },
                 TypeError::StructLiteralMissingField { field_name, field_type } => {
                     CollapsedTypeError::StructLiteralMissingField { field_name, field_type }

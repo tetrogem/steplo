@@ -64,10 +64,19 @@ pub enum Op {
 #[derive(Debug)]
 pub enum EventOp {
     WhenFlagClicked,
-    WhenBroadcastReceived { broadcast: Arc<Broadcast> },
-    BroadcastAndWait { input: Arc<Expr> },
-    Broadcast { input: Arc<Expr> },
-    WhenKeyPressed { key_option: KeyOption },
+    WhenBroadcastReceived {
+        broadcast: Arc<Broadcast>,
+    },
+    BroadcastAndWait {
+        input: Arc<Expr>,
+    },
+    #[expect(unused)]
+    Broadcast {
+        input: Arc<Expr>,
+    },
+    WhenKeyPressed {
+        key_option: KeyOption,
+    },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -77,6 +86,7 @@ pub enum KeyOption {
     DownArrow,
     RightArrow,
     LeftArrow,
+    #[expect(unused)]
     Any,
     A,
     B,
@@ -138,6 +148,7 @@ pub enum ControlOp {
         then_substack: Option<Arc<Expr>>,
         else_substack: Option<Arc<Expr>>,
     },
+    #[expect(unused)]
     Wait {
         duration_s: Arc<Expr>,
     },
@@ -217,11 +228,18 @@ pub enum Expr {
 #[derive(Debug)]
 pub enum Literal {
     Num(f64),
+    #[expect(unused)]
     PosNum(f64),
     PosInt(u32),
     Int(i32),
+    #[expect(unused)]
     Angle(f64),
-    Color { r: u8, g: u8, b: u8 },
+    #[expect(unused)]
+    Color {
+        r: u8,
+        g: u8,
+        b: u8,
+    },
     String(Arc<str>),
 }
 

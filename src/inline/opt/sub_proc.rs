@@ -6,7 +6,6 @@ use std::{
 
 use crate::inline::{
     ast::{ArgAssignment, BinaryArgs, Call, Command, Expr, Loc, SubProc, TempVar},
-    export,
     opt::{
         MaybeOptimized, OptimizationFn,
         call::optimize_call,

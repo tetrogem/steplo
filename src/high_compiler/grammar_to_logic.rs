@@ -3,8 +3,6 @@ use std::ops::Not;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use itertools::Itertools;
-
 use crate::compile_error::CompileError;
 use crate::compile_error::CompileErrorSet;
 use crate::compile_error::LogicError;

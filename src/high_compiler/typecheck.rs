@@ -1,8 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
-    mem,
     ops::Not,
-    sync::{Arc, LazyLock},
+    sync::Arc,
 };
 
 use itertools::{Itertools, chain};
@@ -988,7 +987,7 @@ fn typecheck_while(
         uuid: Uuid::new_v4(),
     });
 
-    let condition_ident_info = ident_m.reg_let(tr(item, |x| l::IdentDef {
+    let _condition_ident_info = ident_m.reg_let(tr(item, |x| l::IdentDef {
         ident: condition_ident.clone(),
         ty: tr(x, |x| bool_type_hint(x.range)),
     }));
@@ -1692,7 +1691,7 @@ fn typecheck_call(
     let expr_ident_ty = func_m.return_ty(func_name)?;
     let expr_ident_ty = Arc::new(type_alias_m.resolve(expr_ident_ty)?);
 
-    let expr_ident_info = ident_m.reg_let(tr(item, |x| l::IdentDef {
+    let _expr_ident_info = ident_m.reg_let(tr(item, |x| l::IdentDef {
         ident: expr_ident.clone(),
         ty: tr(x, |x| compute_expr_ty_hint(Some(&expr_ident_ty), x.range)),
     }));

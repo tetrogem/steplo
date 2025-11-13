@@ -1,9 +1,9 @@
-use anyhow::{Context, bail};
+use anyhow::bail;
 use itertools::{Itertools, chain};
 use uuid::Uuid;
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet},
     mem,
     ops::{Add, Div, Mul, Neg, Not, Rem, Sub},
     str::FromStr,
@@ -110,7 +110,6 @@ fn optimize_sub_proc(mut sp: Arc<SubProc<UMemLoc>>) -> OptimizationReport<Arc<Su
         optimizations: Vec::from([
             Optimization { f: optimization_inline_trivial_temps, name: "inline_trivial_temps" },
             Optimization { f: optimization_remove_unused_temps, name: "remove_unused_temps" },
-            // Optimization { f: optimization_inline_assignments, name: "inline_assignments" },
         ]),
     };
 
@@ -467,288 +466,6 @@ fn optimization_remove_unused_temps(
     }
 }
 
-#[deprecated]
-fn optimization_inline_assignments(
-    sp: Arc<SubProc<UMemLoc>>,
-) -> OptimizationReport<Arc<SubProc<UMemLoc>>> {
-    let mut optimized = false;
-
-    #[derive(PartialEq, Eq, PartialOrd, Ord)]
-    enum Loc {
-        Temp { loc: Arc<UMemLoc> },
-        Stack { addr: Arc<Expr<UMemLoc>> },
-    }
-
-    let mut loc_to_val: BTreeMap<Loc, Arc<Expr<UMemLoc>>> = Default::default();
-
-    fn expr_inline_loc(
-        expr: &Expr<UMemLoc>,
-        loc_to_val: &BTreeMap<Loc, Arc<Expr<UMemLoc>>>,
-        optimized: &mut bool,
-    ) -> Arc<Expr<UMemLoc>> {
-        match expr {
-            Expr::MemLoc(mem_loc) => match loc_to_val.get(&Loc::Temp { loc: mem_loc.clone() }) {
-                Some(val) => {
-                    *optimized = true;
-                    val.clone()
-                },
-                None => Arc::new(Expr::MemLoc(mem_loc.clone())),
-            },
-            Expr::StackDeref(addr) => match loc_to_val.get(&Loc::Stack { addr: addr.clone() }) {
-                Some(val) => {
-                    *optimized = true;
-                    val.clone()
-                },
-                None => Arc::new(Expr::StackDeref(expr_inline_loc(addr, loc_to_val, optimized))),
-            },
-            Expr::Add(args) => Arc::new(Expr::Add(args_inline_locs(args, loc_to_val, optimized))),
-            Expr::And(args) => Arc::new(Expr::And(args_inline_locs(args, loc_to_val, optimized))),
-            Expr::Div(args) => Arc::new(Expr::Div(args_inline_locs(args, loc_to_val, optimized))),
-            Expr::Eq(args) => Arc::new(Expr::Eq(args_inline_locs(args, loc_to_val, optimized))),
-            Expr::Gt(args) => Arc::new(Expr::Gt(args_inline_locs(args, loc_to_val, optimized))),
-            Expr::InAnswer => Arc::new(Expr::InAnswer),
-            Expr::Join(args) => Arc::new(Expr::Join(args_inline_locs(args, loc_to_val, optimized))),
-            Expr::Lt(args) => Arc::new(Expr::Lt(args_inline_locs(args, loc_to_val, optimized))),
-            Expr::Mod(args) => Arc::new(Expr::Mod(args_inline_locs(args, loc_to_val, optimized))),
-            Expr::Mul(args) => Arc::new(Expr::Mul(args_inline_locs(args, loc_to_val, optimized))),
-            Expr::Not(expr) => Arc::new(Expr::Not(expr_inline_loc(expr, loc_to_val, optimized))),
-            Expr::Or(args) => Arc::new(Expr::Or(args_inline_locs(args, loc_to_val, optimized))),
-            Expr::Random(args) => {
-                Arc::new(Expr::Random(args_inline_locs(args, loc_to_val, optimized)))
-            },
-            Expr::StdoutDeref(addr) => {
-                Arc::new(Expr::StdoutDeref(expr_inline_loc(addr, loc_to_val, optimized)))
-            },
-            Expr::StdoutLen => Arc::new(Expr::StdoutLen),
-            Expr::KeyEventsKeyQueueDeref(addr) => {
-                Arc::new(Expr::KeyEventsKeyQueueDeref(expr_inline_loc(addr, loc_to_val, optimized)))
-            },
-            Expr::KeyEventsKeyQueueLen => Arc::new(Expr::KeyEventsKeyQueueLen),
-            Expr::KeyEventsTimeQueueDeref(addr) => Arc::new(Expr::KeyEventsTimeQueueDeref(
-                expr_inline_loc(addr, loc_to_val, optimized),
-            )),
-            Expr::KeyEventsTimeQueueLen => Arc::new(Expr::KeyEventsTimeQueueLen),
-            Expr::Sub(args) => Arc::new(Expr::Sub(args_inline_locs(args, loc_to_val, optimized))),
-            Expr::Timer => Arc::new(Expr::Timer),
-            Expr::DaysSince2000 => Arc::new(Expr::DaysSince2000),
-            Expr::Value(value) => Arc::new(Expr::Value(value.clone())),
-            Expr::Round(expr) => {
-                Arc::new(Expr::Round(expr_inline_loc(expr, loc_to_val, optimized)))
-            },
-            Expr::Floor(expr) => {
-                Arc::new(Expr::Floor(expr_inline_loc(expr, loc_to_val, optimized)))
-            },
-            Expr::Ceil(expr) => Arc::new(Expr::Ceil(expr_inline_loc(expr, loc_to_val, optimized))),
-            Expr::Abs(expr) => Arc::new(Expr::Abs(expr_inline_loc(expr, loc_to_val, optimized))),
-        }
-    }
-
-    fn args_inline_locs(
-        args: &BinaryArgs<UMemLoc>,
-        loc_to_val: &BTreeMap<Loc, Arc<Expr<UMemLoc>>>,
-        optimized: &mut bool,
-    ) -> Arc<BinaryArgs<UMemLoc>> {
-        Arc::new(BinaryArgs {
-            left: expr_inline_loc(&args.left, loc_to_val, optimized),
-            right: expr_inline_loc(&args.right, loc_to_val, optimized),
-        })
-    }
-
-    fn loc_contains_mem_loc(loc: &Loc, mem_loc: &UMemLoc) -> bool {
-        match loc {
-            Loc::Temp { loc } => loc.as_ref() == mem_loc,
-            Loc::Stack { addr } => expr_contains_mem_loc(addr, mem_loc),
-        }
-    }
-
-    fn expr_contains_mem_loc(expr: &Expr<UMemLoc>, mem_loc: &UMemLoc) -> bool {
-        match expr {
-            Expr::MemLoc(ml) => ml.as_ref() == mem_loc,
-
-            Expr::InAnswer
-            | Expr::StdoutLen
-            | Expr::KeyEventsKeyQueueLen
-            | Expr::KeyEventsTimeQueueLen
-            | Expr::Timer
-            | Expr::DaysSince2000
-            | Expr::Value(_) => false,
-
-            Expr::Add(args)
-            | Expr::And(args)
-            | Expr::Div(args)
-            | Expr::Eq(args)
-            | Expr::Gt(args)
-            | Expr::Join(args)
-            | Expr::Lt(args)
-            | Expr::Mod(args)
-            | Expr::Mul(args)
-            | Expr::Or(args)
-            | Expr::Random(args)
-            | Expr::Sub(args) => args_contains_mem_loc(args, mem_loc),
-
-            Expr::Not(expr)
-            | Expr::StackDeref(expr)
-            | Expr::StdoutDeref(expr)
-            | Expr::KeyEventsKeyQueueDeref(expr)
-            | Expr::KeyEventsTimeQueueDeref(expr)
-            | Expr::Round(expr)
-            | Expr::Floor(expr)
-            | Expr::Ceil(expr)
-            | Expr::Abs(expr) => expr_contains_mem_loc(expr, mem_loc),
-        }
-    }
-
-    fn args_contains_mem_loc(args: &BinaryArgs<UMemLoc>, mem_loc: &UMemLoc) -> bool {
-        expr_contains_mem_loc(&args.left, mem_loc) || expr_contains_mem_loc(&args.right, mem_loc)
-    }
-
-    fn loc_contains_stack_deref(loc: &Loc, deref_addr: &Expr<UMemLoc>) -> bool {
-        match loc {
-            Loc::Temp { .. } => false,
-            Loc::Stack { addr } => {
-                addr.as_ref() == deref_addr || expr_contains_stack_deref(addr, deref_addr)
-            },
-        }
-    }
-
-    fn expr_contains_stack_deref(expr: &Expr<UMemLoc>, deref_addr: &Expr<UMemLoc>) -> bool {
-        match expr {
-            Expr::StackDeref(expr) => {
-                expr.as_ref() == deref_addr || expr_contains_stack_deref(expr, deref_addr)
-            },
-
-            Expr::MemLoc(_)
-            | Expr::InAnswer
-            | Expr::StdoutLen
-            | Expr::KeyEventsKeyQueueLen
-            | Expr::KeyEventsTimeQueueLen
-            | Expr::Timer
-            | Expr::DaysSince2000
-            | Expr::Value(_) => false,
-
-            Expr::Add(args)
-            | Expr::And(args)
-            | Expr::Div(args)
-            | Expr::Eq(args)
-            | Expr::Gt(args)
-            | Expr::Join(args)
-            | Expr::Lt(args)
-            | Expr::Mod(args)
-            | Expr::Mul(args)
-            | Expr::Or(args)
-            | Expr::Random(args)
-            | Expr::Sub(args) => args_contains_stack_deref(args, deref_addr),
-
-            Expr::Not(expr)
-            | Expr::StdoutDeref(expr)
-            | Expr::KeyEventsKeyQueueDeref(expr)
-            | Expr::KeyEventsTimeQueueDeref(expr)
-            | Expr::Round(expr)
-            | Expr::Floor(expr)
-            | Expr::Ceil(expr)
-            | Expr::Abs(expr) => expr_contains_stack_deref(expr, deref_addr),
-        }
-    }
-
-    fn args_contains_stack_deref(args: &BinaryArgs<UMemLoc>, deref_addr: &Expr<UMemLoc>) -> bool {
-        expr_contains_stack_deref(&args.left, deref_addr)
-            || expr_contains_stack_deref(&args.right, deref_addr)
-    }
-
-    fn is_inlineable_val(val: &Expr<UMemLoc>) -> bool {
-        match val {
-            Expr::Value(_) => true,
-            _ => false,
-        }
-    }
-
-    let sub_proc = Arc::new(SubProc {
-        uuid: sp.uuid,
-        commands: Arc::new(
-            sp.commands
-                .iter()
-                .map(|command| {
-                    let inlined_command = match command.as_ref() {
-                        Command::In => Command::In,
-                        Command::ClearStdout => Command::ClearStdout,
-                        Command::ClearKeyEventsKeyQueue => Command::ClearKeyEventsKeyQueue,
-                        Command::ClearKeyEventsTimeQueue => Command::ClearKeyEventsTimeQueue,
-                        Command::Out(expr) => {
-                            Command::Out(expr_inline_loc(expr, &loc_to_val, &mut optimized))
-                        },
-                        Command::WriteStdout { index, val } => Command::WriteStdout {
-                            index: expr_inline_loc(index, &loc_to_val, &mut optimized),
-                            val: expr_inline_loc(val, &loc_to_val, &mut optimized),
-                        },
-                        Command::DeleteKeyEventsKeyQueue { index } => {
-                            Command::DeleteKeyEventsKeyQueue {
-                                index: expr_inline_loc(index, &loc_to_val, &mut optimized),
-                            }
-                        },
-                        Command::DeleteKeyEventsTimeQueue { index } => {
-                            Command::DeleteKeyEventsTimeQueue {
-                                index: expr_inline_loc(index, &loc_to_val, &mut optimized),
-                            }
-                        },
-                        Command::SetMemLoc { mem_loc, val } => Command::SetMemLoc {
-                            mem_loc: mem_loc.clone(),
-                            val: expr_inline_loc(val, &loc_to_val, &mut optimized),
-                        },
-                        Command::SetStack { addr, val } => Command::SetStack {
-                            addr: expr_inline_loc(addr, &loc_to_val, &mut optimized),
-                            val: expr_inline_loc(val, &loc_to_val, &mut optimized),
-                        },
-                    };
-
-                    match &inlined_command {
-                        Command::In => {},
-                        Command::ClearStdout => {},
-                        Command::ClearKeyEventsKeyQueue => {},
-                        Command::ClearKeyEventsTimeQueue => {},
-                        Command::Out(_expr) => {},
-                        Command::WriteStdout { index: _, val: _ } => {},
-                        Command::DeleteKeyEventsKeyQueue { index: _ } => {},
-                        Command::DeleteKeyEventsTimeQueue { index: _ } => {},
-                        Command::SetMemLoc { mem_loc, val } => {
-                            // remove all cached locs dependent on this mem_loc
-                            loc_to_val.retain(|loc, _| loc_contains_mem_loc(loc, mem_loc).not());
-
-                            if is_inlineable_val(val) {
-                                loc_to_val.insert(Loc::Temp { loc: mem_loc.clone() }, val.clone());
-                            }
-                        },
-                        Command::SetStack { addr, val } => {
-                            // remove all cached locs dependent on this mem_loc
-                            loc_to_val.retain(|loc, _| loc_contains_stack_deref(loc, addr).not());
-
-                            if is_inlineable_val(val) {
-                                loc_to_val.insert(Loc::Stack { addr: addr.clone() }, val.clone());
-                            }
-                        },
-                    }
-
-                    Arc::new(inlined_command)
-                })
-                .collect(),
-        ),
-        call: Arc::new(match sp.call.as_ref() {
-            Call::Exit => Call::Exit,
-            Call::Jump(expr) => Call::Jump(expr_inline_loc(expr, &loc_to_val, &mut optimized)),
-            Call::Branch { cond, then_to, else_to } => Call::Branch {
-                cond: expr_inline_loc(cond, &loc_to_val, &mut optimized),
-                then_to: expr_inline_loc(then_to, &loc_to_val, &mut optimized),
-                else_to: expr_inline_loc(else_to, &loc_to_val, &mut optimized),
-            },
-            Call::Sleep { duration_s, to } => Call::Sleep {
-                duration_s: expr_inline_loc(duration_s, &loc_to_val, &mut optimized),
-                to: expr_inline_loc(to, &loc_to_val, &mut optimized),
-            },
-        }),
-    });
-
-    OptimizationReport { optimized, val: sub_proc }
-}
-
 fn optimization_inline_pure_redirect_calls(
     procs: Vec<Arc<Proc<UMemLoc>>>,
 ) -> OptimizationReport<Vec<Arc<Proc<UMemLoc>>>> {
@@ -837,7 +554,7 @@ fn optimization_inline_pure_redirect_labels(
                 let Value::Label(to_label) = value.as_ref() else { return None };
                 Some((redirect_label, *to_label))
             },
-            Call::Sleep { duration_s, to } => None,
+            Call::Sleep { duration_s: _, to: _ } => None,
         })
         .collect::<BTreeMap<_, _>>();
 
@@ -1393,10 +1110,12 @@ fn optimization_eval_well_known_exprs(
                 make_str_literal(lit)
             }
 
+            #[expect(unused)]
             pub fn and(self, rhs: Self) -> Self {
                 Self(self.0 && rhs.0)
             }
 
+            #[expect(unused)]
             pub fn or(self, rhs: Self) -> Self {
                 Self(self.0 || rhs.0)
             }

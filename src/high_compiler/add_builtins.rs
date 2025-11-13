@@ -40,13 +40,6 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         })
     }
 
-    fn deref(addr: l::Ref<l::Expr>) -> l::Ref<l::Place> {
-        rf(l::Place {
-            head: rf(l::PlaceHead::Deref(rf(l::Deref { addr }))),
-            index_chain: rf(Vec::new()),
-        })
-    }
-
     fn name(name: &str) -> l::Ref<l::Name> {
         rf(l::Name { str: name.into() })
     }
@@ -57,6 +50,7 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
 
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     enum BodyTrailing {
+        #[expect(unused)]
         True,
         False,
     }
@@ -79,10 +73,6 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
 
     fn func(func: l::Func) -> l::Ref<l::TopItem> {
         rf(l::TopItem::Exe(rf(l::ExeItem::Func(rf(func)))))
-    }
-
-    fn ref_ty(ty: l::TypeHint) -> l::TypeHint {
-        l::TypeHint::Ref(rf(ty))
     }
 
     // add built-in native functions

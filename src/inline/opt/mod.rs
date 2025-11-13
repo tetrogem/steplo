@@ -10,10 +10,7 @@ use std::{ops::Not, sync::Arc};
 
 use itertools::Itertools;
 
-use crate::inline::{
-    ast::{Proc, Program},
-    opt::procs::optimize_procs,
-};
+use crate::inline::{ast::Program, opt::procs::optimize_procs};
 
 pub fn optimize(program: &Program) -> Program {
     let procs = exhaust_optimizations(program.procs.iter().cloned().collect_vec(), |procs| {

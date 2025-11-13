@@ -125,7 +125,7 @@ pub mod find_addr_expr_used_local_vars {
 pub mod is_definitely_not_runtime_equal {
     use crate::inline::ast::Expr;
 
-    pub fn expr_is_definitely_not_runtime_equal(left: &Expr, right: &Expr) -> bool {
+    pub fn expr_is_definitely_not_runtime_equal(_left: &Expr, _right: &Expr) -> bool {
         false
     }
 }

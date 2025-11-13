@@ -176,7 +176,7 @@ pub struct Block {
 #[derive(Debug)]
 pub enum ExprOrSemi {
     Expr(Ref<FreeTrailExpr>),
-    Semi(Ref<Semi>),
+    Semi(#[expect(unused)] Ref<Semi>),
 }
 
 #[derive(Debug)]
@@ -264,7 +264,7 @@ pub enum ContainedExpr {
     Block(Ref<Block>),
     Array(Ref<ArrayAssign>),
     Struct(Ref<StructAssign>),
-    Undefined(Ref<Undefined>),
+    Undefined(#[expect(unused)] Ref<Undefined>),
     Call(Ref<FunctionCall>),
 }
 

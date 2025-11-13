@@ -498,6 +498,7 @@ fn lr_sides_filter_map<T>(
     Some((left, right))
 }
 
+#[expect(unused)]
 fn ab_sides_filter_map<A, B>(
     args: &BinaryArgs,
     filter_map_a: impl Fn(&Arc<Expr>) -> Option<A>,
