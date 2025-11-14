@@ -15,8 +15,8 @@ main {
     out(foo);
 }
 
-func print_static() out(foo)
-func mutate_static(val: str) foo = val
+fn print_static() out(foo)
+fn mutate_static(val: str) foo = val
 
 // Expected stdout:
 // Static!

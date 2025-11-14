@@ -2,7 +2,7 @@ main {
     test();
 }
 
-func test() {
+fn test() {
     let sum: num = 0;
     let i: uint = 10;
     while (i < 0) {

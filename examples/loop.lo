@@ -3,7 +3,7 @@ main {
     iterate(&i);
 }
 
-func iterate(i_r: &uint) {
+fn iterate(i_r: &uint) {
     let i: uint = *i_r;
 
     if (i != 0) {
@@ -13,7 +13,7 @@ func iterate(i_r: &uint) {
     }
 }
 
-func greet() {
+fn greet() {
     out("Hello!");
 }
 

@@ -7,7 +7,7 @@ main {
     print_xy(&xy);
 }
 
-func print_xy(xy: &{ x: num, y: num }) {
+fn print_xy(xy: &{ x: num, y: num }) {
     let str: str = "(";
     str = (str ~ (*xy).x);
     str = (str ~ ", ");

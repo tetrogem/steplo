@@ -1,8 +1,7 @@
 main {
     out("Enter how many iterations to perform:");
 
-    let iters: uint = 0;
-    in(<<&str>>&iters);
+    let iters: uint = <<uint>>in();
 
     let i: uint = 1;
     while (i <= iters) {

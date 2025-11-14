@@ -32,9 +32,9 @@ type Heap = {
     len: uint,
 };
 
-func Heap_new() -> Heap { open: undefined, books_mem: undefined, cap: 1000, len: 0 }
+fn Heap_new() -> Heap { open: undefined, books_mem: undefined, cap: 1000, len: 0 }
 
-func Heap_books_find_open(self: &Heap, size: uint) -> uint {
+fn Heap_books_find_open(self: &Heap, size: uint) -> uint {
     let i: uint = 0;
     let addr: uint = 0;
     let loop: bool = true;
@@ -59,23 +59,23 @@ func Heap_books_find_open(self: &Heap, size: uint) -> uint {
     addr
 }
 
-func Heap_books_vec(self: &Heap) -> _Vec {
+fn Heap_books_vec(self: &Heap) -> _Vec {
     arr: <<&any>>&(*self).books_mem,
     cap: &(*self).cap,
     len: &(*self).len,
 }
 
-func Heap_report_books(self: &Heap) {
+fn Heap_report_books(self: &Heap) {
     let books: _Vec = Heap_books_vec(self);
     out(_Vec_to_str(&books));
 }
 
-func malloc(heap: &Heap, size: uint) -> &any {
+fn malloc(heap: &Heap, size: uint) -> &any {
     let addr: uint = Heap_books_find_open(heap, size);
     <<&any>>&(*heap).open[addr]
 }
 
-func free(heap: &Heap, ptr: &any) {
+fn free(heap: &Heap, ptr: &any) {
     let addr: uint = <<uint>>(<uint>ptr - <uint>&(*heap).open);
     let i: uint = 0;
     let books: _Vec = Heap_books_vec(heap);
@@ -102,22 +102,22 @@ type _Vec = {
     len: &uint,
 };
 
-func _Vec_get_mut(self: &_Vec, i: uint) -> &any <<&any>>(<uint>(*self).arr + i)
-func _Vec_get(self: &_Vec, i: uint) -> any *_Vec_get_mut(self, i)
+fn _Vec_get_mut(self: &_Vec, i: uint) -> &any <<&any>>(<uint>(*self).arr + i)
+fn _Vec_get(self: &_Vec, i: uint) -> any *_Vec_get_mut(self, i)
 
-func _Vec_push(self: &_Vec, val: any) {
+fn _Vec_push(self: &_Vec, val: any) {
     let entry: &any = _Vec_get_mut(self, *(*self).len);
     *entry = val;
     *(*self).len = (*(*self).len + 1);
 }
 
-func _Vec_pop(self: &_Vec) -> any {
+fn _Vec_pop(self: &_Vec) -> any {
     let val: any = _Vec_get(self, <<uint>>(*(*self).len - 1));
     *(*self).len = <<uint>>(*(*self).len - 1);
     val
 }
 
-func _Vec_insert(self: &_Vec, val: any, index: uint) {
+fn _Vec_insert(self: &_Vec, val: any, index: uint) {
     let i: uint = *(*self).len;
     _Vec_push(self, 0);
 
@@ -134,7 +134,7 @@ func _Vec_insert(self: &_Vec, val: any, index: uint) {
     *entry = val;
 }
 
-func _Vec_remove(self: &_Vec, index: uint) -> any {
+fn _Vec_remove(self: &_Vec, index: uint) -> any {
     let ret: any = _Vec_get(self, index);
     let i: uint = index;
     *(*self).len = <<uint>>(*(*self).len - 1);
@@ -150,11 +150,11 @@ func _Vec_remove(self: &_Vec, index: uint) -> any {
     ret
 }
 
-func _Vec_clear(self: &_Vec) {
+fn _Vec_clear(self: &_Vec) {
     *(*self).len = 0;
 }
 
-func _Vec_to_str(self: &_Vec) -> str {
+fn _Vec_to_str(self: &_Vec) -> str {
     let str: str = "[";
     let i: uint = 0;
 

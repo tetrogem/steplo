@@ -11,7 +11,7 @@ enum Sign { Pos | Neg }
 enum Parity { Even | Odd }
 type NumCheck = { sign: Sign, parity: Parity };
 
-func check_num(num: num) -> NumCheck {
+fn check_num(num: num) -> NumCheck {
     if ((num % 2) == 0) {
         if (num >= 0) { sign: #Pos, parity: #Even }
         else { sign: #Neg, parity: #Even }
@@ -21,7 +21,7 @@ func check_num(num: num) -> NumCheck {
     }
 }
 
-func test_num(num: num) {
+fn test_num(num: num) {
     let check: NumCheck = check_num(num);
 
     let sign_str: str = Sign_to_str(check.sign);
@@ -30,12 +30,12 @@ func test_num(num: num) {
     out((num ~ (": " ~ ((sign_str ~ " & ") ~ parity_str))));
 }
 
-func Sign_to_str(self: Sign) -> str match self {
+fn Sign_to_str(self: Sign) -> str match self {
     #Pos -> "Pos"
     #Neg -> "Neg"
 }
 
-func Parity_to_str(self: Parity) -> str match self {
+fn Parity_to_str(self: Parity) -> str match self {
     #Even -> "Even"
     #Odd -> "Odd"
 }

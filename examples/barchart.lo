@@ -5,8 +5,7 @@ main {
 
     let loop: bool = true;
     while loop {
-        let input: str = "";
-        in(&input);
+        let input: str = in();
 
         if (input == "quit") {
             loop = false;
@@ -15,14 +14,13 @@ main {
             stdout_write("Error: input is outside of range", 10);
         } else {
             stdout_write("", 10);
-            let line: str = "";
-            stdout_read(&line, <<uint>>(<<uint>>input - 1));
+            let line: str = stdout_read(<<uint>>(<<uint>>input - 1));
             stdout_write((line ~ "x"), <<uint>>(<<uint>>input - 1));
         }
     }
 }
 
-func print_blank_chart() {
+fn print_blank_chart() {
     let i: uint = 1;
     while (i <= 9) {
         out("");

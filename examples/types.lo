@@ -2,7 +2,7 @@ main {
     let a: str = "Hello!";
     let b: &str = &a;
     let c: &&str = &b;
-    in(b);
+    *b = in();
 
     let val: val = "Hello world!";
     val = 0;

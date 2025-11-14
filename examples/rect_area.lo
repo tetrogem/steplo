@@ -13,11 +13,11 @@ type Rect = {
     height: num,
 };
 
-func Rect_new(width: num, height: num) -> Rect { width: width, height: height }
-func Rect_area(self: &Rect) -> num ((*self).width * (*self).height)
-func Rect_perimeter(self: &Rect) -> num (((*self).width + (*self).height) * 2)
+fn Rect_new(width: num, height: num) -> Rect { width: width, height: height }
+fn Rect_area(self: &Rect) -> num ((*self).width * (*self).height)
+fn Rect_perimeter(self: &Rect) -> num (((*self).width + (*self).height) * 2)
 
-func Rect_print_info(self: &Rect, name: str) {
+fn Rect_print_info(self: &Rect, name: str) {
     let str: str = name;
     str = (str ~ " dimensions: ");
     str = (str ~ (*self).width);

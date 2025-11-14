@@ -2,19 +2,19 @@ main {
     structs();
 }
 
-func structs() {
+fn structs() {
     let bar: { a: num, b: num } = { a: 10, b: 20 };
     let foo: { a: val, b: val } = bar;
     let qux: { a: val, b: num } = bar;
     foo = qux;
 }
 
-func arrays() {
+fn arrays() {
     let bar: [num; 2] = [10, 20];
     let foo: [val; 2] = bar;
 }
 
-func struct_refs() {
+fn struct_refs() {
     let bar: { a: num, b: num } = { a: 10, b: 20 };
     let foo: { a: val, b: val } = bar;
     let bar_ref: &{ a: num, b: num } = &bar;

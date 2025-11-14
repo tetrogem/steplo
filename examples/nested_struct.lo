@@ -32,7 +32,7 @@ main {
     print_links(&msg.content.links);
 }
 
-func print_links(links: &[Link; 2]) {
+fn print_links(links: &[Link; 2]) {
     let i: uint = 0;
     while (i < 2) {
         let link: &Link = &(*links)[i];

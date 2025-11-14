@@ -9,20 +9,19 @@ main {
     }
 }
 
-func game_loop(world: &World) {
+fn game_loop(world: &World) {
     print_world(world);
     *world = gen_next_world(world);
 }
 
-func gen_random_world() -> World {
+fn gen_random_world() -> World {
     let world: World = [[false...]...];
 
     let x: uint = 0;
     while (x < 18) {
         let y: uint = 0;
         while (y < 9) {
-            let rand: num = 0;
-            random_num(&rand, 0, 1);
+            let rand: num = num_random(0, 1);
             world[y][x] = (rand < 0.33);
             y = (y + 1);
         }
@@ -33,7 +32,7 @@ func gen_random_world() -> World {
     world
 }
 
-func print_world(world: &World) {
+fn print_world(world: &World) {
     let y: uint = 0;
     while (y < 9) {
         let x: uint = 0;
@@ -49,7 +48,7 @@ func print_world(world: &World) {
     }
 }
 
-func gen_next_world(curr: &World) -> World {
+fn gen_next_world(curr: &World) -> World {
     let next: World = [[false...]...];
 
     let x: uint = 0;
@@ -68,7 +67,7 @@ func gen_next_world(curr: &World) -> World {
     next
 }
 
-func count_neighbors(world: &World, x: uint, y: uint) -> uint {
+fn count_neighbors(world: &World, x: uint, y: uint) -> uint {
     let count: uint = 0;
 
     let dx: int = -1;

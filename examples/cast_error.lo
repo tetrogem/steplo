@@ -8,11 +8,11 @@ main {
 // but... we also could've assigned any *other* type assignable to `any`
 // so that type may not be a `val`.
 // thus, &val cannot be assigned to &any.
-func mutate_ref(ref: &any) {
+fn mutate_ref(ref: &any) {
     *ref = 1;
 }
 
-func needs_val(val: val) {
+fn needs_val(val: val) {
     out(val);
 }
 

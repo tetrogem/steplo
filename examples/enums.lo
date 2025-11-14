@@ -5,8 +5,7 @@ main {
     State_print(state);
     out("Press enter to load...");
 
-    let input: str = "";
-    in(&input);
+    let input: str = in();
 
     state = #Loading;
     State_print(state);
@@ -16,7 +15,7 @@ main {
     State_print(state);
 }
 
-func State_print(state: State) match state {
+fn State_print(state: State) match state {
     #None -> out("None")
     #Loading -> out("Loading")
     #Loaded -> out("Loaded")

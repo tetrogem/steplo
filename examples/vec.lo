@@ -42,31 +42,31 @@ main {
     out(Vec_to_str(&vec));
 }
 
-func Vec_new(arr: &any, cap: uint) -> Vec {
+fn Vec_new(arr: &any, cap: uint) -> Vec {
     { arr: arr, cap: cap, len: 0 }
 }
 
-func Vec_get_mut(self: &Vec, i: uint) -> &any {
+fn Vec_get_mut(self: &Vec, i: uint) -> &any {
     <<&any>>(<uint>(*self).arr + i)
 }
 
-func Vec_get(self: &Vec, i: uint) -> any {
+fn Vec_get(self: &Vec, i: uint) -> any {
     *Vec_get_mut(self, i)
 }
 
-func Vec_push(self: &Vec, val: any) {
+fn Vec_push(self: &Vec, val: any) {
     let entry: &any = Vec_get_mut(self, (*self).len);
     *entry = val;
     (*self).len = ((*self).len + 1);
 }
 
-func Vec_pop(self: &Vec) -> any {
+fn Vec_pop(self: &Vec) -> any {
     let val: any = Vec_get(self, <<uint>>((*self).len - 1));
     (*self).len = <<uint>>((*self).len - 1);
     val
 }
 
-func Vec_insert(self: &Vec, val: any, index: uint) {
+fn Vec_insert(self: &Vec, val: any, index: uint) {
     let i: uint = (*self).len;
     Vec_push(self, 0);
 
@@ -78,7 +78,7 @@ func Vec_insert(self: &Vec, val: any, index: uint) {
     *Vec_get_mut(self, index) = val;
 }
 
-func Vec_remove(self: &Vec, index: uint) -> any {
+fn Vec_remove(self: &Vec, index: uint) -> any {
     let val: any = Vec_get(self, index);
     let i: uint = index;
     (*self).len = <<uint>>((*self).len - 1);
@@ -91,11 +91,11 @@ func Vec_remove(self: &Vec, index: uint) -> any {
     val
 }
 
-func Vec_clear(self: &Vec) {
+fn Vec_clear(self: &Vec) {
     (*self).len = 0;
 }
 
-func Vec_to_str(self: &Vec) -> str {
+fn Vec_to_str(self: &Vec) -> str {
     let str: str = "[";
     let i: uint = 0;
 

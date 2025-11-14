@@ -3,23 +3,19 @@ main {
     out("2");
     out("3");
 
-    let null: str = "";
-    in(&null);
+    in();
 
     stdout_clear();
     out("4");
     out("5");
     out("6");
 
-    let line: str = "";
-    stdout_read(&line, 2);
+    let line: str = stdout_read(2);
     line = (line ~ "Hello!");
     stdout_write(line, 2);
     stdout_write(line, 10);
 
-    let len: uint = 0;
-    stdout_len(&len);
-    out(("stdout line count: " ~ len));
+    out(("stdout line count: " ~ stdout_len()));
 }
 
 // Interactive

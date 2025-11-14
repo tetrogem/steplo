@@ -8,11 +8,11 @@ main {
     needs_val(<<val>>foo);
 }
 
-func mutate_ref(ref: &any) {
+fn mutate_ref(ref: &any) {
     *ref = 1;
 }
 
-func needs_val(val: val) {
+fn needs_val(val: val) {
     out(val);
 }
 

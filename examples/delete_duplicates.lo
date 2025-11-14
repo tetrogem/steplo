@@ -14,7 +14,7 @@ main {
     print_arr(&arr, new_len);
 }
 
-func delete_duplicates(ret_new_len: &uint, arr: &[num; 11]) {
+fn delete_duplicates(ret_new_len: &uint, arr: &[num; 11]) {
     let i: uint = 0;
     let new_len: uint = 11;
     let last: num = 0;
@@ -37,7 +37,7 @@ func delete_duplicates(ret_new_len: &uint, arr: &[num; 11]) {
     *ret_new_len = new_len;
 }
 
-func delete_index(arr: &[num; 11], index: uint) {
+fn delete_index(arr: &[num; 11], index: uint) {
     let i: uint = 0;
     while (i < 11) {
         if (i > index) {
@@ -48,7 +48,7 @@ func delete_index(arr: &[num; 11], index: uint) {
     }
 }
 
-func print_arr(arr: &[num; 11], len: uint) {
+fn print_arr(arr: &[num; 11], len: uint) {
     let str: str = "[";
     let i: uint = 0;
     while (i < len) {

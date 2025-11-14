@@ -1,12 +1,7 @@
 main {
-    let num: num = 0;
-    random_num(&num, -10, 20);
-
-    let int: int = 0;
-    random_int(&int, -10, 20);
-
-    let uint: uint = 0;
-    random_uint(&uint, 10, 20);
+    let num: num = num_random(-10, 20);
+    let int: int = int_random(-10, 20);
+    let uint: uint = uint_random(10, 20);
 
     out(num);
     out(int);

@@ -1,8 +1,7 @@
 main {
     out("Enter how many iterations to do:");
 
-    let i: int = 0;
-    in(<<&str>>&i);
+    let i: int = <<int>>in();
 
     out("Start!");
 

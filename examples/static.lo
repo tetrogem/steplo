@@ -16,15 +16,15 @@ main {
     out(SESSION.counter);
 }
 
-func Session_greet() {
+fn Session_greet() {
     out((("Hello " ~ SESSION.username) ~ "!"));
 }
 
-func Session_change_username(username: str) {
+fn Session_change_username(username: str) {
     SESSION.username = username;
 }
 
-func Session_inc_counter() {
+fn Session_inc_counter() {
     SESSION.counter = (SESSION.counter + 1);
 }
 

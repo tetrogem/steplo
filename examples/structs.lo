@@ -8,7 +8,7 @@ type User = {
     name: val,
 };
 
-func test_user() {
+fn test_user() {
     let user1: User = { name: "Steplo", id: 1234 };
     out(user1.id);
     out(user1.name);
@@ -23,15 +23,15 @@ func test_user() {
     User_print(User_new(9999, "Steplo3"));
 }
 
-func User_new(id: uint, name: val) -> User { id: id, name: name }
+fn User_new(id: uint, name: val) -> User { id: id, name: name }
 
-func User_print(user: User) {
+fn User_print(user: User) {
     out((((user.name ~ " (ID: ") ~ user.id) ~ ")"));
 }
 
 type Coords = { x: num, y: num };
 
-func test_cast() {
+fn test_cast() {
     let coords: Coords = { x: 5.5, y: -0.9 };
     let nums2: [num; 2] = <[num; 2]>coords;
     coords = <Coords>nums2;
