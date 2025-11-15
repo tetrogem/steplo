@@ -628,7 +628,7 @@ fn math_operator_ref(math_operator: MathOperator) -> JsVal {
     let name = match math_operator {
         MathOperator::Abs => "abs",
         MathOperator::Floor => "floor",
-        MathOperator::Ceiling => "celing",
+        MathOperator::Ceiling => "ceiling",
     };
 
     json!([name, null])
