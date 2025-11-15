@@ -1,6 +1,5 @@
-// this file should NOT compile
-
-main |foo: val| {
+main {
+    let foo: val = "hello";
     mutate_ref(&foo);
     needs_val(foo);
 }
@@ -9,10 +8,19 @@ main |foo: val| {
 // but... we also could've assigned any *other* type assignable to `any`
 // so that type may not be a `val`.
 // thus, &val cannot be assigned to &any.
-func mutate_ref(ref: &any) || {
+fn mutate_ref(ref: &any) {
     *ref = 1;
 }
 
-func needs_val(val: val) || {
+fn needs_val(val: val) {
     out(val);
 }
+
+// Shouldn't compile
+// Error!
+// type @ examples/cast_error.lo:5:16 --> Expected `&any`; Found `&val`
+//    |
+//  3 |  main {
+//  4 |      let foo: val = "hello";
+//  5 |      mutate_ref(&foo);
+//    |                 ^^^^

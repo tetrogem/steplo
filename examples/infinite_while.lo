@@ -1,5 +1,8 @@
-main || {
+main {
     while true {
         out("Hello!");
     }
 }
+
+// Expected stdout: (infinite loop)
+// Hello!

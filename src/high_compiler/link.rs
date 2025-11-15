@@ -3,19 +3,24 @@ use std::{iter::Peekable, sync::Arc};
 use itertools::Itertools;
 use uuid::Uuid;
 
-use super::{srced::Srced, type_resolved_ast as ast};
+use super::{srced::Srced, type_erased_ast as ast};
+
+pub struct Program {
+    pub procs: Arc<Vec<ast::Ref<Proc>>>,
+    pub statics: Arc<Vec<ast::Ref<ast::IdentDef>>>,
+}
 
 #[derive(Debug, Clone)]
 pub struct Proc {
     pub kind: ProcKind,
-    pub idents: ast::Ref<Vec<ast::Ref<ast::IdentDeclaration>>>,
+    pub idents: Arc<Vec<ast::Ref<ast::IdentDef>>>,
     pub sub_procs: ast::Ref<Vec<ast::Ref<SubProc>>>,
 }
 
 #[derive(Debug, Clone)]
 pub enum ProcKind {
     Main,
-    Func { name: ast::Ref<ast::Name>, params: ast::Ref<Vec<ast::Ref<ast::IdentDeclaration>>> },
+    Func { name: ast::Ref<ast::Name>, params: ast::Ref<Vec<ast::Ref<ast::IdentDef>>> },
 }
 
 #[derive(Debug, Clone)]
@@ -55,7 +60,20 @@ pub enum NativeOperation {
     StdoutRead { dest_place: ast::Ref<ast::Place>, index: ast::Ref<ast::Expr> },
     StdoutWrite { val: ast::Ref<ast::Expr>, index: ast::Ref<ast::Expr> },
     StdoutLen { dest_place: ast::Ref<ast::Place> },
+    KeyEventsKeyQueueClear,
+    KeyEventsKeyQueueDelete { index: ast::Ref<ast::Expr> },
+    KeyEventsKeyQueueRead { dest_place: ast::Ref<ast::Place>, index: ast::Ref<ast::Expr> },
+    KeyEventsKeyQueueLen { dest_place: ast::Ref<ast::Place> },
+    KeyEventsTimeQueueClear,
+    KeyEventsTimeQueueDelete { index: ast::Ref<ast::Expr> },
+    KeyEventsTimeQueueRead { dest_place: ast::Ref<ast::Place>, index: ast::Ref<ast::Expr> },
+    KeyEventsTimeQueueLen { dest_place: ast::Ref<ast::Place> },
     TimerGet { dest_place: ast::Ref<ast::Place> },
+    DaysSince2000Get { dest_place: ast::Ref<ast::Place> },
+    Round { dest_place: ast::Ref<ast::Place>, num: ast::Ref<ast::Expr> },
+    Floor { dest_place: ast::Ref<ast::Place>, num: ast::Ref<ast::Expr> },
+    Ceil { dest_place: ast::Ref<ast::Place>, num: ast::Ref<ast::Expr> },
+    Abs { dest_place: ast::Ref<ast::Place>, num: ast::Ref<ast::Expr> },
 }
 
 #[derive(Debug, Clone)]
@@ -64,8 +82,8 @@ pub enum Statement {
     Native(ast::Ref<NativeOperation>),
 }
 
-pub fn link(ast: &ast::Ref<ast::Program>) -> Vec<ast::Ref<Proc>> {
-    let exe_items = ast.val.items.val.iter().cloned().collect_vec();
+pub fn link(ast: &ast::Ref<ast::Program>) -> Program {
+    let exe_items = ast.val.items.iter().cloned().collect_vec();
 
     // parse user top items
     let mut procs = Vec::<ast::Ref<Proc>>::new();
@@ -101,13 +119,10 @@ pub fn link(ast: &ast::Ref<ast::Program>) -> Vec<ast::Ref<Proc>> {
             }),
         };
 
-        procs.push(Arc::new(Srced {
-            range: proc.idents.range.merge(proc.sub_procs.range),
-            val: proc,
-        }));
+        procs.push(Arc::new(Srced { range: proc.sub_procs.range, val: proc }));
     }
 
-    procs
+    Program { procs: Arc::new(procs), statics: ast.val.statics.clone() }
 }
 
 struct CreateSubProcRes {
@@ -116,7 +131,7 @@ struct CreateSubProcRes {
 }
 
 fn create_sub_proc<'a>(
-    body_items: &mut Peekable<impl Iterator<Item = &'a ast::Ref<ast::BodyItem>>>,
+    body_items: &mut Peekable<impl Iterator<Item = &'a ast::Ref<ast::Statement>>>,
     main: bool,
     pop_sub_proc: Option<Uuid>,
 ) -> CreateSubProcRes {
@@ -140,7 +155,7 @@ fn create_sub_proc<'a>(
 
     while let Some(body_item) = body_items.next() {
         match &body_item.val {
-            ast::BodyItem::If(if_item) => {
+            ast::Statement::If(if_item) => {
                 let pop_sp = next_sp!(body_items, pop_sub_proc);
 
                 let then_sp = next_sp!(
@@ -170,7 +185,7 @@ fn create_sub_proc<'a>(
 
                 next_call = Some(call);
             },
-            ast::BodyItem::While(while_item) => {
+            ast::Statement::While(while_item) => {
                 // where to go after exiting the loop
                 let pop_sp = next_sp!(body_items, pop_sub_proc);
 
@@ -206,86 +221,148 @@ fn create_sub_proc<'a>(
                 // finish!
                 next_call = Some(call);
             },
-            ast::BodyItem::Statement(statement) => match &statement.val {
-                ast::Statement::Assign(assign) => {
-                    statements.push(Arc::new(Srced {
-                        val: Statement::Assign(Arc::clone(assign)),
-                        range: assign.range,
-                    }));
-                },
-                ast::Statement::Native(native) => {
-                    macro_rules! other_native {
-                        ($native:expr) => {{
-                            statements.push(Arc::new(Srced {
-                                val: Statement::Native(Arc::new(Srced {
-                                    range: native.range,
-                                    val: $native,
-                                })),
+
+            ast::Statement::Assign(assign) => {
+                statements.push(Arc::new(Srced {
+                    val: Statement::Assign(Arc::clone(assign)),
+                    range: assign.range,
+                }));
+            },
+            ast::Statement::Native(native) => {
+                macro_rules! other_native {
+                    ($native:expr) => {{
+                        statements.push(Arc::new(Srced {
+                            val: Statement::Native(Arc::new(Srced {
                                 range: native.range,
-                            }));
-                        }};
-                    }
+                                val: $native,
+                            })),
+                            range: native.range,
+                        }));
+                    }};
+                }
 
-                    match &native.val {
-                        ast::NativeOperation::Wait { duration_s } => {
-                            let then_sp = next_sp!(body_items, pop_sub_proc);
+                match &native.val {
+                    ast::NativeOperation::Wait { duration_s } => {
+                        let then_sp = next_sp!(body_items, pop_sub_proc);
 
-                            let call = Call::Sleep {
-                                duration_s: duration_s.clone(),
-                                then_sub_proc: then_sp.val.uuid,
-                            };
+                        let call = Call::Sleep {
+                            duration_s: duration_s.clone(),
+                            then_sub_proc: then_sp.val.uuid,
+                        };
 
-                            next_call = Some(call);
-                        },
-                        ast::NativeOperation::In { dest_place } => {
-                            other_native!(NativeOperation::In { dest_place: dest_place.clone() })
-                        },
-                        ast::NativeOperation::Out { val } => {
-                            other_native!(NativeOperation::Out { val: val.clone() })
-                        },
-                        ast::NativeOperation::Random { dest_place, min, max } => {
-                            other_native!(NativeOperation::Random {
-                                dest_place: dest_place.clone(),
-                                min: min.clone(),
-                                max: max.clone()
-                            })
-                        },
-                        ast::NativeOperation::StdoutClear => {
-                            other_native!(NativeOperation::StdoutClear)
-                        },
-                        ast::NativeOperation::StdoutLen { dest_place } => {
-                            other_native!(NativeOperation::StdoutLen {
-                                dest_place: dest_place.clone()
-                            })
-                        },
-                        ast::NativeOperation::StdoutRead { dest_place, index } => {
-                            other_native!(NativeOperation::StdoutRead {
-                                dest_place: dest_place.clone(),
-                                index: index.clone()
-                            })
-                        },
-                        ast::NativeOperation::StdoutWrite { val, index } => {
-                            other_native!(NativeOperation::StdoutWrite {
-                                val: val.clone(),
-                                index: index.clone()
-                            })
-                        },
-                        ast::NativeOperation::TimerGet { dest_place } => {
-                            other_native!(NativeOperation::TimerGet {
-                                dest_place: dest_place.clone()
-                            })
-                        },
-                    }
-                },
-                ast::Statement::Call(call) => {
-                    let return_sp = next_sp!(body_items, pop_sub_proc);
+                        next_call = Some(call);
+                    },
+                    ast::NativeOperation::In { dest_place } => {
+                        other_native!(NativeOperation::In { dest_place: dest_place.clone() })
+                    },
+                    ast::NativeOperation::Out { val } => {
+                        other_native!(NativeOperation::Out { val: val.clone() })
+                    },
+                    ast::NativeOperation::Random { dest_place, min, max } => {
+                        other_native!(NativeOperation::Random {
+                            dest_place: dest_place.clone(),
+                            min: min.clone(),
+                            max: max.clone()
+                        })
+                    },
+                    ast::NativeOperation::StdoutClear => {
+                        other_native!(NativeOperation::StdoutClear)
+                    },
+                    ast::NativeOperation::StdoutLen { dest_place } => {
+                        other_native!(NativeOperation::StdoutLen { dest_place: dest_place.clone() })
+                    },
+                    ast::NativeOperation::StdoutRead { dest_place, index } => {
+                        other_native!(NativeOperation::StdoutRead {
+                            dest_place: dest_place.clone(),
+                            index: index.clone()
+                        })
+                    },
+                    ast::NativeOperation::StdoutWrite { val, index } => {
+                        other_native!(NativeOperation::StdoutWrite {
+                            val: val.clone(),
+                            index: index.clone()
+                        })
+                    },
+                    ast::NativeOperation::KeyEventsKeyQueueClear => {
+                        other_native!(NativeOperation::KeyEventsKeyQueueClear)
+                    },
+                    ast::NativeOperation::KeyEventsKeyQueueLen { dest_place } => {
+                        other_native!(NativeOperation::KeyEventsKeyQueueLen {
+                            dest_place: dest_place.clone()
+                        })
+                    },
+                    ast::NativeOperation::KeyEventsKeyQueueRead { dest_place, index } => {
+                        other_native!(NativeOperation::KeyEventsKeyQueueRead {
+                            dest_place: dest_place.clone(),
+                            index: index.clone()
+                        })
+                    },
+                    ast::NativeOperation::KeyEventsKeyQueueDelete { index } => {
+                        other_native!(NativeOperation::KeyEventsKeyQueueDelete {
+                            index: index.clone()
+                        })
+                    },
+                    ast::NativeOperation::KeyEventsTimeQueueClear => {
+                        other_native!(NativeOperation::KeyEventsTimeQueueClear)
+                    },
+                    ast::NativeOperation::KeyEventsTimeQueueLen { dest_place } => {
+                        other_native!(NativeOperation::KeyEventsTimeQueueLen {
+                            dest_place: dest_place.clone()
+                        })
+                    },
+                    ast::NativeOperation::KeyEventsTimeQueueRead { dest_place, index } => {
+                        other_native!(NativeOperation::KeyEventsTimeQueueRead {
+                            dest_place: dest_place.clone(),
+                            index: index.clone()
+                        })
+                    },
+                    ast::NativeOperation::KeyEventsTimeQueueDelete { index } => {
+                        other_native!(NativeOperation::KeyEventsTimeQueueDelete {
+                            index: index.clone()
+                        })
+                    },
+                    ast::NativeOperation::TimerGet { dest_place } => {
+                        other_native!(NativeOperation::TimerGet { dest_place: dest_place.clone() })
+                    },
+                    ast::NativeOperation::DaysSince2000Get { dest_place } => {
+                        other_native!(NativeOperation::DaysSince2000Get {
+                            dest_place: dest_place.clone()
+                        })
+                    },
+                    ast::NativeOperation::Round { dest_place, num } => {
+                        other_native!(NativeOperation::Round {
+                            dest_place: dest_place.clone(),
+                            num: num.clone()
+                        })
+                    },
+                    ast::NativeOperation::Floor { dest_place, num } => {
+                        other_native!(NativeOperation::Floor {
+                            dest_place: dest_place.clone(),
+                            num: num.clone()
+                        })
+                    },
+                    ast::NativeOperation::Ceil { dest_place, num } => {
+                        other_native!(NativeOperation::Ceil {
+                            dest_place: dest_place.clone(),
+                            num: num.clone()
+                        })
+                    },
+                    ast::NativeOperation::Abs { dest_place, num } => {
+                        other_native!(NativeOperation::Abs {
+                            dest_place: dest_place.clone(),
+                            num: num.clone()
+                        })
+                    },
+                }
+            },
+            ast::Statement::Call(call) => {
+                let return_sp = next_sp!(body_items, pop_sub_proc);
 
-                    next_call = Some(Call::Func {
-                        name: Arc::clone(&call.val.func_name),
-                        param_exprs: Arc::clone(&call.val.param_exprs),
-                        return_sub_proc: return_sp.val.uuid,
-                    });
-                },
+                next_call = Some(Call::Func {
+                    name: Arc::clone(&call.val.func_name),
+                    param_exprs: Arc::clone(&call.val.param_exprs),
+                    return_sub_proc: return_sp.val.uuid,
+                });
             },
         }
     }

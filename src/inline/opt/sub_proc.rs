@@ -1,10 +1,20 @@
-use std::{collections::BTreeMap, ops::Not, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    ops::Not,
+    sync::Arc,
+};
 
 use crate::inline::{
     ast::{ArgAssignment, BinaryArgs, Call, Command, Expr, Loc, SubProc, TempVar},
     opt::{
-        MaybeOptimized, OptimizationFn, call::optimize_call, command::optimize_command,
+        MaybeOptimized, OptimizationFn,
+        call::optimize_call,
+        command::optimize_command,
         track_optimize, tracked_exhaust_optimize,
+        util::{
+            find_addr_expr_used_local_vars::expr_find_addr_expr_used_vars,
+            is_definitely_not_runtime_equal::expr_is_definitely_not_runtime_equal,
+        },
     },
 };
 
@@ -112,25 +122,37 @@ fn is_constant_expr(expr: &Expr) -> bool {
             // the value a stack addr points to can change if it is set at a different time
             Loc::Deref(_) => false,
         },
-        Expr::StackAddr(_) => true,
-        Expr::Value(_) => true,
-        Expr::StdoutDeref(_) => false,
-        Expr::StdoutLen => false,
-        Expr::Timer => false,
-        Expr::Add(args) => args!(args),
-        Expr::Sub(args) => args!(args),
-        Expr::Mul(args) => args!(args),
-        Expr::Div(args) => args!(args),
-        Expr::Mod(args) => args!(args),
-        Expr::Eq(args) => args!(args),
-        Expr::Lt(args) => args!(args),
-        Expr::Gt(args) => args!(args),
-        Expr::Not(expr) => is_constant_expr(expr),
-        Expr::Or(args) => args!(args),
-        Expr::And(args) => args!(args),
-        Expr::InAnswer => false,
-        Expr::Join(args) => args!(args),
-        Expr::Random(_) => false,
+
+        Expr::StackAddr(_) | Expr::Value(_) => true,
+
+        Expr::StdoutDeref(_)
+        | Expr::StdoutLen
+        | Expr::KeyEventsKeyQueueDeref(_)
+        | Expr::KeyEventsKeyQueueLen
+        | Expr::KeyEventsTimeQueueDeref(_)
+        | Expr::KeyEventsTimeQueueLen
+        | Expr::Timer
+        | Expr::DaysSince2000
+        | Expr::InAnswer
+        | Expr::Random(_) => false,
+
+        Expr::Add(args)
+        | Expr::Sub(args)
+        | Expr::Mul(args)
+        | Expr::Div(args)
+        | Expr::Mod(args)
+        | Expr::Eq(args)
+        | Expr::Lt(args)
+        | Expr::Gt(args)
+        | Expr::Or(args)
+        | Expr::And(args)
+        | Expr::Join(args) => args!(args),
+
+        Expr::Not(expr)
+        | Expr::Round(expr)
+        | Expr::Floor(expr)
+        | Expr::Ceil(expr)
+        | Expr::Abs(expr) => is_constant_expr(expr),
     }
 }
 
@@ -149,9 +171,17 @@ fn command_inline_temps(
     let command = match command {
         Command::In => Command::In,
         Command::ClearStdout => Command::ClearStdout,
+        Command::ClearKeyEventsKeyQueue => Command::ClearKeyEventsKeyQueue,
+        Command::ClearKeyEventsTimeQueue => Command::ClearKeyEventsTimeQueue,
         Command::Out(expr) => Command::Out(expr!(expr)),
         Command::WriteStdout { index, val } => {
             Command::WriteStdout { index: expr!(index), val: expr!(val) }
+        },
+        Command::DeleteKeyEventsKeyQueue { index } => {
+            Command::DeleteKeyEventsKeyQueue { index: expr!(index) }
+        },
+        Command::DeleteKeyEventsTimeQueue { index } => {
+            Command::DeleteKeyEventsTimeQueue { index: expr!(index) }
         },
         Command::SetLoc { loc, val } => {
             let loc = match loc.as_ref() {
@@ -196,10 +226,12 @@ fn call_inline_temps(
             arg_assignments: Arc::new(
                 arg_assignments
                     .iter()
-                    .map(|aa| ArgAssignment {
-                        arg_uuid: aa.arg_uuid,
-                        arg_offset: aa.arg_offset,
-                        expr: expr!(&aa.expr),
+                    .map(|aa| {
+                        Arc::new(ArgAssignment {
+                            arg_uuid: aa.arg_uuid,
+                            arg_offset: aa.arg_offset,
+                            expr: expr!(&aa.expr),
+                        })
                     })
                     .collect(),
             ),
@@ -239,7 +271,12 @@ fn expr_inline_temps(
         Expr::Value(value) => Arc::new(Expr::Value(value.clone())),
         Expr::StdoutDeref(expr) => Arc::new(Expr::StdoutDeref(expr!(expr))),
         Expr::StdoutLen => Arc::new(Expr::StdoutLen),
+        Expr::KeyEventsKeyQueueDeref(expr) => Arc::new(Expr::KeyEventsKeyQueueDeref(expr!(expr))),
+        Expr::KeyEventsKeyQueueLen => Arc::new(Expr::KeyEventsKeyQueueLen),
+        Expr::KeyEventsTimeQueueDeref(expr) => Arc::new(Expr::KeyEventsTimeQueueDeref(expr!(expr))),
+        Expr::KeyEventsTimeQueueLen => Arc::new(Expr::KeyEventsTimeQueueLen),
         Expr::Timer => Arc::new(Expr::Timer),
+        Expr::DaysSince2000 => Arc::new(Expr::DaysSince2000),
         Expr::Add(args) => Arc::new(Expr::Add(args!(args))),
         Expr::Sub(args) => Arc::new(Expr::Sub(args!(args))),
         Expr::Mul(args) => Arc::new(Expr::Mul(args!(args))),
@@ -254,6 +291,10 @@ fn expr_inline_temps(
         Expr::InAnswer => Arc::new(Expr::InAnswer),
         Expr::Join(args) => Arc::new(Expr::Join(args!(args))),
         Expr::Random(args) => Arc::new(Expr::Random(args!(args))),
+        Expr::Round(expr) => Arc::new(Expr::Round(expr!(expr))),
+        Expr::Floor(expr) => Arc::new(Expr::Floor(expr!(expr))),
+        Expr::Ceil(expr) => Arc::new(Expr::Ceil(expr!(expr))),
+        Expr::Abs(expr) => Arc::new(Expr::Abs(expr!(expr))),
     };
 
     MaybeOptimized { optimized, val: expr }
@@ -317,10 +358,18 @@ fn command_count_temp_reads(command: &Command, temp_to_reads: &mut BTreeMap<Arc<
     match command {
         Command::In => {},
         Command::ClearStdout => {},
+        Command::ClearKeyEventsKeyQueue => {},
+        Command::ClearKeyEventsTimeQueue => {},
         Command::Out(expr) => expr_count_temp_reads(expr, temp_to_reads),
         Command::WriteStdout { index, val } => {
             expr_count_temp_reads(index, temp_to_reads);
             expr_count_temp_reads(val, temp_to_reads);
+        },
+        Command::DeleteKeyEventsKeyQueue { index } => {
+            expr_count_temp_reads(index, temp_to_reads);
+        },
+        Command::DeleteKeyEventsTimeQueue { index } => {
+            expr_count_temp_reads(index, temp_to_reads);
         },
         Command::SetLoc { loc, val } => {
             match loc.as_ref() {
@@ -358,25 +407,37 @@ fn call_count_temp_reads(call: &Call, temp_to_reads: &mut BTreeMap<Arc<TempVar>,
 fn expr_count_temp_reads(expr: &Expr, temp_to_reads: &mut BTreeMap<Arc<TempVar>, u32>) {
     match expr {
         Expr::Loc(loc) => loc_count_temp_reads(loc, temp_to_reads),
-        Expr::StackAddr(_) => {},
-        Expr::Value(_) => {},
-        Expr::StdoutDeref(expr) => expr_count_temp_reads(expr, temp_to_reads),
-        Expr::StdoutLen => {},
-        Expr::Timer => {},
-        Expr::Add(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Sub(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Mul(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Div(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Mod(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Eq(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Lt(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Gt(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Not(expr) => expr_count_temp_reads(expr, temp_to_reads),
-        Expr::Or(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::And(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::InAnswer => {},
-        Expr::Join(args) => args_count_temp_reads(args, temp_to_reads),
-        Expr::Random(args) => args_count_temp_reads(args, temp_to_reads),
+
+        Expr::StackAddr(_)
+        | Expr::Value(_)
+        | Expr::StdoutLen
+        | Expr::KeyEventsKeyQueueLen
+        | Expr::KeyEventsTimeQueueLen
+        | Expr::Timer
+        | Expr::DaysSince2000
+        | Expr::InAnswer => {},
+
+        Expr::StdoutDeref(expr)
+        | Expr::KeyEventsKeyQueueDeref(expr)
+        | Expr::KeyEventsTimeQueueDeref(expr)
+        | Expr::Not(expr)
+        | Expr::Round(expr)
+        | Expr::Floor(expr)
+        | Expr::Ceil(expr)
+        | Expr::Abs(expr) => expr_count_temp_reads(expr, temp_to_reads),
+
+        Expr::Add(args)
+        | Expr::Sub(args)
+        | Expr::Mul(args)
+        | Expr::Div(args)
+        | Expr::Mod(args)
+        | Expr::Eq(args)
+        | Expr::Lt(args)
+        | Expr::Gt(args)
+        | Expr::Or(args)
+        | Expr::And(args)
+        | Expr::Join(args)
+        | Expr::Random(args) => args_count_temp_reads(args, temp_to_reads),
     }
 }
 
@@ -400,6 +461,7 @@ fn optimization_remove_zero_read_temps(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<
 
     let mut temp_to_reads = BTreeMap::new();
     sp_count_temp_reads(sp, &mut temp_to_reads);
+    let mut removed_temps = BTreeSet::new();
 
     let commands = sp
         .commands
@@ -409,6 +471,7 @@ fn optimization_remove_zero_read_temps(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<
                 && let Loc::Temp(temp) = loc.as_ref()
                 && temp_to_reads.get(temp).copied().unwrap_or_default() == 0
             {
+                removed_temps.insert(temp.clone());
                 optimized = true;
                 false
             } else {
@@ -418,9 +481,19 @@ fn optimization_remove_zero_read_temps(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<
         .cloned()
         .collect();
 
-    let sp = SubProc { uuid: sp.uuid, commands: Arc::new(commands), call: sp.call.clone() };
+    let optimized_sp =
+        SubProc { uuid: sp.uuid, commands: Arc::new(commands), call: sp.call.clone() };
 
-    MaybeOptimized { optimized, val: Arc::new(sp) }
+    // if optimized {
+    //     println!("Before:");
+    //     println!("{}", export::export_sub_proc(&mut export::NameManager::default(), sp));
+    //     println!("After:");
+    //     println!("{}", export::export_sub_proc(&mut export::NameManager::default(), &optimized_sp));
+    //     println!("Removed:");
+    //     println!("{:#?}", &removed_temps);
+    // }
+
+    MaybeOptimized { optimized, val: Arc::new(optimized_sp) }
 }
 
 fn optimization_inline_constant_trivial_derefs(sp: &Arc<SubProc>) -> MaybeOptimized<Arc<SubProc>> {
@@ -444,18 +517,37 @@ fn optimization_inline_constant_trivial_derefs(sp: &Arc<SubProc>) -> MaybeOptimi
             Arc::new(match command.as_ref() {
                 Command::In => Command::In,
                 Command::ClearStdout => Command::ClearStdout,
+                Command::ClearKeyEventsKeyQueue => Command::ClearKeyEventsKeyQueue,
+                Command::ClearKeyEventsTimeQueue => Command::ClearKeyEventsTimeQueue,
                 Command::Out(expr) => Command::Out(expr!(expr)),
                 Command::WriteStdout { index, val } => {
                     Command::WriteStdout { index: expr!(index), val: expr!(val) }
                 },
+                Command::DeleteKeyEventsKeyQueue { index } => {
+                    Command::DeleteKeyEventsKeyQueue { index: expr!(index) }
+                },
+                Command::DeleteKeyEventsTimeQueue { index } => {
+                    Command::DeleteKeyEventsTimeQueue { index: expr!(index) }
+                },
                 Command::SetLoc { loc, val } => {
                     let val = expr!(val);
 
-                    if let Loc::Deref(addr) = loc.as_ref()
-                        && is_trivial_expr(&val)
-                        && is_constant_expr(&val)
-                    {
-                        deref_addr_to_constant_trivial_expr.insert(addr.clone(), val.clone());
+                    // remove addrs which could be modified after this point due to deref assignment
+                    let addrs_used_as_values = expr_find_addr_expr_used_vars(&val);
+                    for addr in addrs_used_as_values {
+                        let addr = Expr::StackAddr(Arc::new(addr));
+                        deref_addr_to_constant_trivial_expr
+                            .retain(|key, _| expr_is_definitely_not_runtime_equal(key, &addr));
+                    }
+
+                    if let Loc::Deref(addr) = loc.as_ref() {
+                        if is_trivial_expr(&val) && is_constant_expr(&val) {
+                            // mark addr as constant trivial expr
+                            deref_addr_to_constant_trivial_expr.insert(addr.clone(), val.clone());
+                        } else {
+                            // remove addr if it was previously added but is no longer constant trivial
+                            deref_addr_to_constant_trivial_expr.remove(addr);
+                        }
                     }
 
                     Command::SetLoc { loc: loc.clone(), val }
@@ -477,10 +569,12 @@ fn optimization_inline_constant_trivial_derefs(sp: &Arc<SubProc>) -> MaybeOptimi
             arg_assignments: Arc::new(
                 arg_assignments
                     .iter()
-                    .map(|aa| ArgAssignment {
-                        arg_uuid: aa.arg_uuid,
-                        arg_offset: aa.arg_offset,
-                        expr: expr!(&aa.expr),
+                    .map(|aa| {
+                        Arc::new(ArgAssignment {
+                            arg_uuid: aa.arg_uuid,
+                            arg_offset: aa.arg_offset,
+                            expr: expr!(&aa.expr),
+                        })
                     })
                     .collect(),
             ),
@@ -530,7 +624,12 @@ fn expr_inline_constant_trivial_derefs(
         Expr::Value(value) => Arc::new(Expr::Value(value.clone())),
         Expr::StdoutDeref(expr) => Arc::new(Expr::StdoutDeref(expr!(expr))),
         Expr::StdoutLen => Arc::new(Expr::StdoutLen),
+        Expr::KeyEventsKeyQueueDeref(expr) => Arc::new(Expr::KeyEventsKeyQueueDeref(expr!(expr))),
+        Expr::KeyEventsKeyQueueLen => Arc::new(Expr::KeyEventsKeyQueueLen),
+        Expr::KeyEventsTimeQueueDeref(expr) => Arc::new(Expr::KeyEventsTimeQueueDeref(expr!(expr))),
+        Expr::KeyEventsTimeQueueLen => Arc::new(Expr::KeyEventsTimeQueueLen),
         Expr::Timer => Arc::new(Expr::Timer),
+        Expr::DaysSince2000 => Arc::new(Expr::DaysSince2000),
         Expr::Add(args) => Arc::new(Expr::Add(args!(args))),
         Expr::Sub(args) => Arc::new(Expr::Sub(args!(args))),
         Expr::Mul(args) => Arc::new(Expr::Mul(args!(args))),
@@ -545,6 +644,10 @@ fn expr_inline_constant_trivial_derefs(
         Expr::InAnswer => Arc::new(Expr::InAnswer),
         Expr::Join(args) => Arc::new(Expr::Join(args!(args))),
         Expr::Random(args) => Arc::new(Expr::Random(args!(args))),
+        Expr::Round(expr) => Arc::new(Expr::Round(expr!(expr))),
+        Expr::Floor(expr) => Arc::new(Expr::Floor(expr!(expr))),
+        Expr::Ceil(expr) => Arc::new(Expr::Ceil(expr!(expr))),
+        Expr::Abs(expr) => Arc::new(Expr::Abs(expr!(expr))),
     };
 
     MaybeOptimized { optimized, val: expr }

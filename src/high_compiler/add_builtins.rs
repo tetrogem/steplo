@@ -1,6 +1,10 @@
 use std::sync::{Arc, LazyLock};
 
 use crate::{
+    high_compiler::logic_ast::{
+        bool_type_hint, integer_type_hint, num_type_hint, str_type_hint, uinteger_type_hint,
+        unit_type_hint, val_type_hint,
+    },
     logic_ast as l,
     srced::{SrcRange, Srced},
 };
@@ -14,20 +18,24 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         Arc::new(Srced { val: t, range: *SRC_RANGE })
     }
 
-    fn decl(name: &str, ty: l::TypeHint) -> l::Ref<l::IdentDeclaration> {
-        rf(l::IdentDeclaration { name: rf(l::Name { str: name.into() }), ty: rf(ty) })
+    fn ident_def(name: &str, ty: l::TypeHint) -> l::Ref<l::IdentDef> {
+        rf(l::IdentDef {
+            ident: rf(l::Ident::User { name: rf(l::Name { str: name.into() }) }),
+            ty: rf(ty),
+        })
+    }
+
+    fn let_stmt(name: &str, ty: l::TypeHint, expr: l::Expr) -> l::Statement {
+        l::Statement::Let(rf(l::Let { ident_init: ident_init(name, ty, expr) }))
+    }
+
+    fn ident_init(name: &str, ty: l::TypeHint, expr: l::Expr) -> l::Ref<l::IdentInit> {
+        rf(l::IdentInit { def: ident_def(name, ty), expr: rf(expr) })
     }
 
     fn place(ident_name: &str) -> l::Ref<l::Place> {
         rf(l::Place {
-            head: rf(l::PlaceHead::Ident(rf(l::Ident { name: name(ident_name) }))),
-            index_chain: rf(Vec::new()),
-        })
-    }
-
-    fn deref(addr: l::Ref<l::Expr>) -> l::Ref<l::Place> {
-        rf(l::Place {
-            head: rf(l::PlaceHead::Deref(rf(l::Deref { addr }))),
+            head: rf(l::PlaceHead::Ident(rf(l::Ident::User { name: name(ident_name) }))),
             index_chain: rf(Vec::new()),
         })
     }
@@ -36,194 +44,328 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
         rf(l::Name { str: name.into() })
     }
 
-    fn stmt(statement: l::Statement) -> l::Ref<l::BodyItem> {
-        rf(l::BodyItem::Statement(rf(statement)))
+    fn stmt(statement: l::Statement) -> l::Ref<l::Expr> {
+        rf(l::Expr::Statement(rf(statement)))
     }
 
-    fn body(items: impl IntoIterator<Item = l::Ref<l::BodyItem>>) -> l::Ref<l::Body> {
-        rf(l::Body { items: rf(items.into_iter().collect()) })
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    enum BodyTrailing {
+        #[expect(unused)]
+        True,
+        False,
+    }
+
+    fn block(
+        items: impl IntoIterator<Item = l::Ref<l::Expr>>,
+        trailing: BodyTrailing,
+    ) -> l::Ref<l::Expr> {
+        let trailing = match trailing {
+            BodyTrailing::True => true,
+            BodyTrailing::False => false,
+        };
+
+        let block = rf(l::Block {
+            items: rf(l::Trail { items: rf(items.into_iter().collect()), trailing }),
+        });
+
+        rf(l::Expr::Block(block))
     }
 
     fn func(func: l::Func) -> l::Ref<l::TopItem> {
         rf(l::TopItem::Exe(rf(l::ExeItem::Func(rf(func)))))
     }
 
-    fn ref_ty(ty: l::TypeHint) -> l::TypeHint {
-        l::TypeHint::Ref(rf(ty))
-    }
-
     // add built-in native functions
     top_items.push(func(l::Func {
         name: name("out"),
-        params: rf(Vec::from([decl("val", l::TypeHint::Primitive(l::PrimitiveType::Val))])),
-        proc: rf(l::Proc {
-            idents: rf(Vec::from([])),
-            body: body([stmt(l::Statement::Native(rf(l::NativeOperation::Out {
+        params: rf(Vec::from([ident_def("val", val_type_hint(*SRC_RANGE))])),
+        return_ty: rf(unit_type_hint(*SRC_RANGE)),
+        body: block(
+            [stmt(l::Statement::Native(rf(l::NativeOperation::Out {
                 val: rf(l::Expr::Place(place("val"))),
-            })))]),
-        }),
+            })))],
+            BodyTrailing::False,
+        ),
     }));
 
     top_items.push(func(l::Func {
         name: name("in"),
-        params: rf(Vec::from([decl(
-            "return",
-            ref_ty(l::TypeHint::Primitive(l::PrimitiveType::Str)),
-        )])),
-        proc: rf(l::Proc {
-            idents: rf(Vec::from([decl("answer", l::TypeHint::Primitive(l::PrimitiveType::Str))])),
-            body: body([
+        params: rf(Vec::from([])),
+        return_ty: rf(str_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", str_type_hint(*SRC_RANGE), l::Expr::Undefined)),
                 stmt(l::Statement::Native(rf(l::NativeOperation::In {
-                    dest_place: place("answer"),
+                    dest_place: place("return"),
                 }))),
-                stmt(l::Statement::Assign(rf(l::Assign {
-                    place: deref(rf(l::Expr::Place(place("return")))),
-                    expr: rf(l::AssignExpr::Expr(rf(l::Expr::Place(place("answer"))))),
-                }))),
-            ]),
-        }),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
     }));
 
     top_items.push(func(l::Func {
-        name: name("random_num"),
+        name: name("num_random"),
         params: rf(Vec::from([
-            decl("return", ref_ty(l::TypeHint::Primitive(l::PrimitiveType::Num))),
-            decl("min", l::TypeHint::Primitive(l::PrimitiveType::Num)),
-            decl("max", l::TypeHint::Primitive(l::PrimitiveType::Num)),
+            ident_def("min", num_type_hint(*SRC_RANGE)),
+            ident_def("max", num_type_hint(*SRC_RANGE)),
         ])),
-        proc: rf(l::Proc {
-            idents: rf(Vec::from([decl(
-                "generated",
-                l::TypeHint::Primitive(l::PrimitiveType::Num),
-            )])),
-            body: body([
+        return_ty: rf(num_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", num_type_hint(*SRC_RANGE), l::Expr::Undefined)),
                 stmt(l::Statement::Native(rf(l::NativeOperation::Random {
-                    dest_place: place("generated"),
+                    dest_place: place("return"),
                     min: rf(l::Expr::Literal(rf(l::Literal::Num(0.)))),
                     max: rf(l::Expr::Literal(rf(l::Literal::Num(1.)))),
                 }))),
-                stmt(l::Statement::Assign(rf(l::Assign {
-                    place: deref(rf(l::Expr::Place(place("return")))),
-                    expr: rf(l::AssignExpr::Expr(rf(l::Expr::Paren(rf(l::ParenExpr::Binary(
-                        rf(l::BinaryParenExpr {
-                            left: rf(l::Expr::Place(place("min"))),
-                            op: rf(l::BinaryParenExprOp::Add),
-                            right: rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(
-                                l::BinaryParenExpr {
-                                    left: rf(l::Expr::Place(place("generated"))),
-                                    op: rf(l::BinaryParenExprOp::Mul),
-                                    right: rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(
-                                        l::BinaryParenExpr {
-                                            left: rf(l::Expr::Place(place("max"))),
-                                            op: rf(l::BinaryParenExprOp::Sub),
-                                            right: rf(l::Expr::Place(place("min"))),
-                                        },
-                                    ))))),
-                                },
-                            ))))),
-                        }),
-                    )))))),
-                }))),
-            ]),
-        }),
+                rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(l::BinaryParenExpr {
+                    left: rf(l::Expr::Place(place("min"))),
+                    op: rf(l::BinaryParenExprOp::Add),
+                    right: rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(l::BinaryParenExpr {
+                        left: rf(l::Expr::Place(place("return"))),
+                        op: rf(l::BinaryParenExprOp::Mul),
+                        right: rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(
+                            l::BinaryParenExpr {
+                                left: rf(l::Expr::Place(place("max"))),
+                                op: rf(l::BinaryParenExprOp::Sub),
+                                right: rf(l::Expr::Place(place("min"))),
+                            },
+                        ))))),
+                    }))))),
+                }))))),
+            ],
+            BodyTrailing::False,
+        ),
     }));
 
     top_items.push(func(l::Func {
-        name: name("random_int"),
+        name: name("int_random"),
         params: rf(Vec::from([
-            decl("return", ref_ty(l::TypeHint::Primitive(l::PrimitiveType::Int))),
-            decl("min", l::TypeHint::Primitive(l::PrimitiveType::Int)),
-            decl("max", l::TypeHint::Primitive(l::PrimitiveType::Int)),
+            ident_def("min", integer_type_hint(*SRC_RANGE)),
+            ident_def("max", integer_type_hint(*SRC_RANGE)),
         ])),
-        proc: rf(l::Proc {
-            idents: rf(Vec::from([decl(
-                "generated",
-                l::TypeHint::Primitive(l::PrimitiveType::Int),
-            )])),
-            body: body([
+        return_ty: rf(integer_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", integer_type_hint(*SRC_RANGE), l::Expr::Undefined)),
                 stmt(l::Statement::Native(rf(l::NativeOperation::Random {
-                    dest_place: place("generated"),
+                    dest_place: place("return"),
                     min: rf(l::Expr::Place(place("min"))),
                     max: rf(l::Expr::Place(place("max"))),
                 }))),
-                stmt(l::Statement::Assign(rf(l::Assign {
-                    place: deref(rf(l::Expr::Place(place("return")))),
-                    expr: rf(l::AssignExpr::Expr(rf(l::Expr::Place(place("generated"))))),
-                }))),
-            ]),
-        }),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
     }));
 
     top_items.push(func(l::Func {
-        name: name("random_uint"),
+        name: name("uint_random"),
         params: rf(Vec::from([
-            decl("return", ref_ty(l::TypeHint::Primitive(l::PrimitiveType::Uint))),
-            decl("min", l::TypeHint::Primitive(l::PrimitiveType::Uint)),
-            decl("max", l::TypeHint::Primitive(l::PrimitiveType::Uint)),
+            ident_def("min", uinteger_type_hint(*SRC_RANGE)),
+            ident_def("max", uinteger_type_hint(*SRC_RANGE)),
         ])),
-        proc: rf(l::Proc {
-            idents: rf(Vec::from([decl(
-                "generated",
-                l::TypeHint::Primitive(l::PrimitiveType::Uint),
-            )])),
-            body: body([
+        return_ty: rf(uinteger_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", uinteger_type_hint(*SRC_RANGE), l::Expr::Undefined)),
                 stmt(l::Statement::Native(rf(l::NativeOperation::Random {
-                    dest_place: place("generated"),
+                    dest_place: place("return"),
                     min: rf(l::Expr::Place(place("min"))),
                     max: rf(l::Expr::Place(place("max"))),
                 }))),
-                stmt(l::Statement::Assign(rf(l::Assign {
-                    place: deref(rf(l::Expr::Place(place("return")))),
-                    expr: rf(l::AssignExpr::Expr(rf(l::Expr::Place(place("generated"))))),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("uint_round"),
+        params: rf(Vec::from([ident_def("num", uinteger_type_hint(*SRC_RANGE))])),
+        return_ty: rf(uinteger_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", uinteger_type_hint(*SRC_RANGE), l::Expr::Undefined)),
+                stmt(l::Statement::Native(rf(l::NativeOperation::Round {
+                    dest_place: place("return"),
+                    num: rf(l::Expr::Place(place("num"))),
                 }))),
-            ]),
-        }),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("num_round"),
+        params: rf(Vec::from([ident_def("num", num_type_hint(*SRC_RANGE))])),
+        return_ty: rf(integer_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", integer_type_hint(*SRC_RANGE), l::Expr::Undefined)),
+                stmt(l::Statement::Native(rf(l::NativeOperation::Round {
+                    dest_place: place("return"),
+                    num: rf(l::Expr::Place(place("num"))),
+                }))),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("uint_floor"),
+        params: rf(Vec::from([ident_def("num", uinteger_type_hint(*SRC_RANGE))])),
+        return_ty: rf(uinteger_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", uinteger_type_hint(*SRC_RANGE), l::Expr::Undefined)),
+                stmt(l::Statement::Native(rf(l::NativeOperation::Floor {
+                    dest_place: place("return"),
+                    num: rf(l::Expr::Place(place("num"))),
+                }))),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("num_floor"),
+        params: rf(Vec::from([ident_def("num", num_type_hint(*SRC_RANGE))])),
+        return_ty: rf(integer_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", integer_type_hint(*SRC_RANGE), l::Expr::Undefined)),
+                stmt(l::Statement::Native(rf(l::NativeOperation::Floor {
+                    dest_place: place("return"),
+                    num: rf(l::Expr::Place(place("num"))),
+                }))),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("uint_ceil"),
+        params: rf(Vec::from([ident_def("num", uinteger_type_hint(*SRC_RANGE))])),
+        return_ty: rf(uinteger_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", uinteger_type_hint(*SRC_RANGE), l::Expr::Undefined)),
+                stmt(l::Statement::Native(rf(l::NativeOperation::Ceil {
+                    dest_place: place("return"),
+                    num: rf(l::Expr::Place(place("num"))),
+                }))),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("num_ceil"),
+        params: rf(Vec::from([ident_def("num", num_type_hint(*SRC_RANGE))])),
+        return_ty: rf(integer_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", integer_type_hint(*SRC_RANGE), l::Expr::Undefined)),
+                stmt(l::Statement::Native(rf(l::NativeOperation::Ceil {
+                    dest_place: place("return"),
+                    num: rf(l::Expr::Place(place("num"))),
+                }))),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("int_abs"),
+        params: rf(Vec::from([ident_def("num", integer_type_hint(*SRC_RANGE))])),
+        return_ty: rf(uinteger_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", uinteger_type_hint(*SRC_RANGE), l::Expr::Undefined)),
+                stmt(l::Statement::Native(rf(l::NativeOperation::Abs {
+                    dest_place: place("return"),
+                    num: rf(l::Expr::Place(place("num"))),
+                }))),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("num_abs"),
+        params: rf(Vec::from([ident_def("num", num_type_hint(*SRC_RANGE))])),
+        return_ty: rf(num_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", num_type_hint(*SRC_RANGE), l::Expr::Undefined)),
+                stmt(l::Statement::Native(rf(l::NativeOperation::Abs {
+                    dest_place: place("return"),
+                    num: rf(l::Expr::Place(place("num"))),
+                }))),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
     }));
 
     top_items.push(func(l::Func {
         name: name("stdout_clear"),
         params: rf(Vec::from([])),
-        proc: rf(l::Proc {
-            idents: rf(Vec::from([])),
-            body: body([stmt(l::Statement::Native(rf(l::NativeOperation::StdoutClear)))]),
-        }),
+        return_ty: rf(unit_type_hint(*SRC_RANGE)),
+        body: block(
+            [stmt(l::Statement::Native(rf(l::NativeOperation::StdoutClear)))],
+            BodyTrailing::False,
+        ),
     }));
 
     top_items.push(func(l::Func {
         name: name("stdout_read"),
-        params: rf(Vec::from([
-            decl("return", l::TypeHint::Ref(rf(l::TypeHint::Primitive(l::PrimitiveType::Str)))),
-            decl("index", l::TypeHint::Primitive(l::PrimitiveType::Uint)),
-        ])),
-        proc: rf(l::Proc {
-            idents: rf(Vec::from([])),
-            body: body([stmt(l::Statement::Native(rf(l::NativeOperation::StdoutRead {
-                dest_place: deref(rf(l::Expr::Place(place("return")))),
-                index: rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(l::BinaryParenExpr {
-                    left: rf(l::Expr::Place(place("index"))),
-                    op: rf(l::BinaryParenExprOp::Add),
-                    right: rf(l::Expr::Literal(rf(l::Literal::Int(1.)))),
-                }))))),
-            })))]),
-        }),
+        params: rf(Vec::from([ident_def("index", uinteger_type_hint(*SRC_RANGE))])),
+        return_ty: rf(str_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", str_type_hint(*SRC_RANGE), l::Expr::Undefined)),
+                stmt(l::Statement::Native(rf(l::NativeOperation::StdoutRead {
+                    dest_place: place("return"),
+                    index: rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(l::BinaryParenExpr {
+                        left: rf(l::Expr::Place(place("index"))),
+                        op: rf(l::BinaryParenExprOp::Add),
+                        right: rf(l::Expr::Literal(rf(l::Literal::Int(1.)))),
+                    }))))),
+                }))),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
     }));
 
     top_items.push(func(l::Func {
         name: name("stdout_write"),
         params: rf(Vec::from([
-            decl("val", l::TypeHint::Primitive(l::PrimitiveType::Val)),
-            decl("index", l::TypeHint::Primitive(l::PrimitiveType::Uint)),
+            ident_def("val", val_type_hint(*SRC_RANGE)),
+            ident_def("index", uinteger_type_hint(*SRC_RANGE)),
         ])),
-        proc: rf(l::Proc {
-            idents: rf(Vec::from([decl("len", l::TypeHint::Primitive(l::PrimitiveType::Uint))])),
-            body: body([
-                stmt(l::Statement::Call(rf(l::FunctionCall {
-                    func_name: name("stdout_len"),
-                    param_exprs: rf(Vec::from([rf(l::AssignExpr::Expr(rf(l::Expr::Ref(place(
-                        "len",
-                    )))))])),
-                }))),
-                rf(l::BodyItem::While(rf(l::WhileItem {
+        return_ty: rf(unit_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt(
+                    "len",
+                    uinteger_type_hint(*SRC_RANGE),
+                    l::Expr::Call(rf(l::FunctionCall {
+                        func_name: name("stdout_len"),
+                        param_exprs: rf(Vec::from([])),
+                    })),
+                )),
+                rf(l::Expr::While(rf(l::WhileItem {
                     condition: rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(
                         l::BinaryParenExpr {
                             left: rf(l::Expr::Place(place("len"))),
@@ -231,20 +373,24 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
                             right: rf(l::Expr::Place(place("index"))),
                         },
                     ))))),
-                    body: body([
-                        stmt(l::Statement::Call(rf(l::FunctionCall {
-                            func_name: name("out"),
-                            param_exprs: rf(Vec::from([rf(l::AssignExpr::Expr(rf(
-                                l::Expr::Literal(rf(l::Literal::Str("".into()))),
-                            )))])),
-                        }))),
-                        stmt(l::Statement::Call(rf(l::FunctionCall {
-                            func_name: name("stdout_len"),
-                            param_exprs: rf(Vec::from([rf(l::AssignExpr::Expr(rf(
-                                l::Expr::Ref(place("len")),
-                            )))])),
-                        }))),
-                    ]),
+                    body: block(
+                        [
+                            rf(l::Expr::Call(rf(l::FunctionCall {
+                                func_name: name("out"),
+                                param_exprs: rf(Vec::from([rf(l::Expr::Literal(rf(
+                                    l::Literal::Str("".into()),
+                                )))])),
+                            }))),
+                            stmt(l::Statement::Assign(rf(l::Assign {
+                                place: place("len"),
+                                expr: rf(l::Expr::Call(rf(l::FunctionCall {
+                                    func_name: name("stdout_len"),
+                                    param_exprs: rf(Vec::from([])),
+                                }))),
+                            }))),
+                        ],
+                        BodyTrailing::False,
+                    ),
                 }))),
                 stmt(l::Statement::Native(rf(l::NativeOperation::StdoutWrite {
                     val: rf(l::Expr::Place(place("val"))),
@@ -254,48 +400,342 @@ pub fn add_builtins(l: &l::Ref<l::Program>) -> l::Ref<l::Program> {
                         right: rf(l::Expr::Literal(rf(l::Literal::Int(1.)))),
                     }))))),
                 }))),
-            ]),
-        }),
+            ],
+            BodyTrailing::False,
+        ),
     }));
 
     top_items.push(func(l::Func {
         name: name("stdout_len"),
-        params: rf(Vec::from([decl(
-            "return",
-            l::TypeHint::Ref(rf(l::TypeHint::Primitive(l::PrimitiveType::Uint))),
-        )])),
-        proc: rf(l::Proc {
-            idents: rf(Vec::from([])),
-            body: body([stmt(l::Statement::Native(rf(l::NativeOperation::StdoutLen {
-                dest_place: deref(rf(l::Expr::Place(place("return")))),
-            })))]),
-        }),
+        params: rf(Vec::from([])),
+        return_ty: rf(uinteger_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", uinteger_type_hint(*SRC_RANGE), l::Expr::Undefined)),
+                stmt(l::Statement::Native(rf(l::NativeOperation::StdoutLen {
+                    dest_place: place("return"),
+                }))),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("key_events_key_queue_clear"),
+        params: rf(Vec::from([])),
+        return_ty: rf(unit_type_hint(*SRC_RANGE)),
+        body: block(
+            [stmt(l::Statement::Native(rf(l::NativeOperation::KeyEventsKeyQueueClear)))],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("key_events_key_queue_delete"),
+        params: rf(Vec::from([ident_def("index", uinteger_type_hint(*SRC_RANGE))])),
+        return_ty: rf(unit_type_hint(*SRC_RANGE)),
+        body: block(
+            [stmt(l::Statement::Native(rf(l::NativeOperation::KeyEventsKeyQueueDelete {
+                index: rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(l::BinaryParenExpr {
+                    left: rf(l::Expr::Place(place("index"))),
+                    op: rf(l::BinaryParenExprOp::Add),
+                    right: rf(l::Expr::Literal(rf(l::Literal::Int(1.)))),
+                }))))),
+            })))],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("key_events_key_queue_read"),
+        params: rf(Vec::from([ident_def("index", uinteger_type_hint(*SRC_RANGE))])),
+        return_ty: rf(l::TypeHint::Nominal(name("Key"))),
+        body: block(
+            [
+                stmt(let_stmt("return", l::TypeHint::Nominal(name("Key")), l::Expr::Undefined)),
+                stmt(l::Statement::Native(rf(l::NativeOperation::KeyEventsKeyQueueRead {
+                    dest_place: place("return"),
+                    index: rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(l::BinaryParenExpr {
+                        left: rf(l::Expr::Place(place("index"))),
+                        op: rf(l::BinaryParenExprOp::Add),
+                        right: rf(l::Expr::Literal(rf(l::Literal::Int(1.)))),
+                    }))))),
+                }))),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("key_events_key_queue_len"),
+        params: rf(Vec::from([])),
+        return_ty: rf(uinteger_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", uinteger_type_hint(*SRC_RANGE), l::Expr::Undefined)),
+                stmt(l::Statement::Native(rf(l::NativeOperation::KeyEventsKeyQueueLen {
+                    dest_place: place("return"),
+                }))),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("key_events_time_queue_clear"),
+        params: rf(Vec::from([])),
+        return_ty: rf(unit_type_hint(*SRC_RANGE)),
+        body: block(
+            [stmt(l::Statement::Native(rf(l::NativeOperation::KeyEventsTimeQueueClear)))],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("key_events_time_queue_delete"),
+        params: rf(Vec::from([ident_def("index", uinteger_type_hint(*SRC_RANGE))])),
+        return_ty: rf(unit_type_hint(*SRC_RANGE)),
+        body: block(
+            [stmt(l::Statement::Native(rf(l::NativeOperation::KeyEventsTimeQueueDelete {
+                index: rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(l::BinaryParenExpr {
+                    left: rf(l::Expr::Place(place("index"))),
+                    op: rf(l::BinaryParenExprOp::Add),
+                    right: rf(l::Expr::Literal(rf(l::Literal::Int(1.)))),
+                }))))),
+            })))],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("key_events_time_queue_read"),
+        params: rf(Vec::from([ident_def("index", uinteger_type_hint(*SRC_RANGE))])),
+        return_ty: rf(num_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", num_type_hint(*SRC_RANGE), l::Expr::Undefined)),
+                stmt(l::Statement::Native(rf(l::NativeOperation::KeyEventsTimeQueueRead {
+                    dest_place: place("return"),
+                    index: rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(l::BinaryParenExpr {
+                        left: rf(l::Expr::Place(place("index"))),
+                        op: rf(l::BinaryParenExprOp::Add),
+                        right: rf(l::Expr::Literal(rf(l::Literal::Int(1.)))),
+                    }))))),
+                }))),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("key_events_time_queue_len"),
+        params: rf(Vec::from([])),
+        return_ty: rf(uinteger_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", uinteger_type_hint(*SRC_RANGE), l::Expr::Undefined)),
+                stmt(l::Statement::Native(rf(l::NativeOperation::KeyEventsTimeQueueLen {
+                    dest_place: place("return"),
+                }))),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("key_events_len"),
+        params: rf(Vec::from([])),
+        return_ty: rf(uinteger_type_hint(*SRC_RANGE)),
+        body: block(
+            [rf(l::Expr::Call(rf(l::FunctionCall {
+                func_name: name("key_events_key_queue_len"),
+                param_exprs: rf(Vec::from([])),
+            })))],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("key_events_has_next"),
+        params: rf(Vec::from([])),
+        return_ty: rf(bool_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt(
+                    "len",
+                    uinteger_type_hint(*SRC_RANGE),
+                    l::Expr::Call(rf(l::FunctionCall {
+                        func_name: name("key_events_len"),
+                        param_exprs: rf(Vec::from([])),
+                    })),
+                )),
+                rf(l::Expr::Paren(rf(l::ParenExpr::Binary(rf(l::BinaryParenExpr {
+                    left: rf(l::Expr::Place(place("len"))),
+                    op: rf(l::BinaryParenExprOp::Gt),
+                    right: rf(l::Expr::Literal(rf(l::Literal::Uint(0.)))),
+                }))))),
+            ],
+            BodyTrailing::False,
+        ),
+    }));
+
+    top_items.push(func(l::Func {
+        name: name("key_events_next"),
+        params: rf(Vec::from([])),
+        return_ty: rf(l::TypeHint::Nominal(name("KeyEvent"))),
+        body: block(
+            [
+                stmt(let_stmt(
+                    "key",
+                    l::TypeHint::Nominal(name("Key")),
+                    l::Expr::Call(rf(l::FunctionCall {
+                        func_name: name("key_events_key_queue_read"),
+                        param_exprs: rf(Vec::from([rf(l::Expr::Literal(rf(l::Literal::Uint(
+                            0.,
+                        ))))])),
+                    })),
+                )),
+                stmt(let_stmt(
+                    "time",
+                    num_type_hint(*SRC_RANGE),
+                    l::Expr::Call(rf(l::FunctionCall {
+                        func_name: name("key_events_time_queue_read"),
+                        param_exprs: rf(Vec::from([rf(l::Expr::Literal(rf(l::Literal::Uint(
+                            0.,
+                        ))))])),
+                    })),
+                )),
+                rf(l::Expr::Call(rf(l::FunctionCall {
+                    func_name: name("key_events_key_queue_delete"),
+                    param_exprs: rf(Vec::from([rf(l::Expr::Literal(rf(l::Literal::Uint(0.))))])),
+                }))),
+                rf(l::Expr::Call(rf(l::FunctionCall {
+                    func_name: name("key_events_time_queue_delete"),
+                    param_exprs: rf(Vec::from([rf(l::Expr::Literal(rf(l::Literal::Uint(0.))))])),
+                }))),
+                rf(l::Expr::Struct(rf(Vec::from([
+                    rf(l::StructAssignField {
+                        name: name("key"),
+                        assign: rf(l::Expr::Place(place("key"))),
+                    }),
+                    rf(l::StructAssignField {
+                        name: name("time"),
+                        assign: rf(l::Expr::Place(place("time"))),
+                    }),
+                ])))),
+            ],
+            BodyTrailing::False,
+        ),
     }));
 
     top_items.push(func(l::Func {
         name: name("wait_s"),
-        params: rf(Vec::from([decl("duration_s", l::TypeHint::Primitive(l::PrimitiveType::Num))])),
-        proc: rf(l::Proc {
-            idents: rf(Vec::from([])),
-            body: body([stmt(l::Statement::Native(rf(l::NativeOperation::Wait {
+        params: rf(Vec::from([ident_def("duration_s", num_type_hint(*SRC_RANGE))])),
+        return_ty: rf(unit_type_hint(*SRC_RANGE)),
+        body: block(
+            [stmt(l::Statement::Native(rf(l::NativeOperation::Wait {
                 duration_s: rf(l::Expr::Place(place("duration_s"))),
-            })))]),
-        }),
+            })))],
+            BodyTrailing::False,
+        ),
     }));
 
     top_items.push(func(l::Func {
         name: name("timer_s"),
-        params: rf(Vec::from([decl(
-            "return",
-            l::TypeHint::Ref(rf(l::TypeHint::Primitive(l::PrimitiveType::Num))),
-        )])),
-        proc: rf(l::Proc {
-            idents: rf(Vec::from([])),
-            body: body([stmt(l::Statement::Native(rf(l::NativeOperation::TimerGet {
-                dest_place: deref(rf(l::Expr::Place(place("return")))),
-            })))]),
-        }),
+        params: rf(Vec::from([])),
+        return_ty: rf(num_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", num_type_hint(*SRC_RANGE), l::Expr::Undefined)),
+                stmt(l::Statement::Native(rf(l::NativeOperation::TimerGet {
+                    dest_place: place("return"),
+                }))),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
     }));
+
+    top_items.push(func(l::Func {
+        name: name("since_2000_days"),
+        params: rf(Vec::from([])),
+        return_ty: rf(num_type_hint(*SRC_RANGE)),
+        body: block(
+            [
+                stmt(let_stmt("return", num_type_hint(*SRC_RANGE), l::Expr::Undefined)),
+                stmt(l::Statement::Native(rf(l::NativeOperation::DaysSince2000Get {
+                    dest_place: place("return"),
+                }))),
+                rf(l::Expr::Place(place("return"))),
+            ],
+            BodyTrailing::False,
+        ),
+    }));
+
+    const KEY_ENUM_VARIANT_NAMES: [&str; 41] = [
+        "Space",
+        "UpArrow",
+        "DownArrow",
+        "RightArrow",
+        "LeftArrow",
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "I",
+        "J",
+        "K",
+        "L",
+        "M",
+        "N",
+        "O",
+        "P",
+        "Q",
+        "R",
+        "S",
+        "T",
+        "U",
+        "V",
+        "W",
+        "X",
+        "Y",
+        "Z",
+        "Num0",
+        "Num1",
+        "Num2",
+        "Num3",
+        "Num4",
+        "Num5",
+        "Num6",
+        "Num7",
+        "Num8",
+        "Num9",
+    ];
+
+    top_items.push(rf(l::TopItem::Type(rf(l::TypeItem::Enum(rf(l::EnumItem {
+        name: rf(l::Name { str: "Key".into() }),
+        variants: rf(KEY_ENUM_VARIANT_NAMES
+            .into_iter()
+            .map(|name| rf(l::Name { str: name.into() }))
+            .collect()),
+    }))))));
+
+    top_items.push(rf(l::TopItem::Type(rf(l::TypeItem::Alias(rf(l::TypeAlias {
+        name: name("KeyEvent"),
+        ty: rf(l::TypeHint::Struct(rf(Vec::from([
+            rf(l::FieldTypeHint { name: name("key"), ty: rf(l::TypeHint::Nominal(name("Key"))) }),
+            rf(l::FieldTypeHint { name: name("time"), ty: rf(num_type_hint(*SRC_RANGE)) }),
+        ])))),
+    }))))));
 
     rf(l::Program { items: rf(top_items) })
 }

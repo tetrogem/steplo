@@ -1,4 +1,0 @@
-main |foo| {
-    foo = (1 + 1);
-    out(foo);
-}

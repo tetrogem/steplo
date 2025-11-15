@@ -1,3 +1,6 @@
-main || {
+main {
     out("Hello world!");
 }
+
+// Expected stdout:
+// Hello world!

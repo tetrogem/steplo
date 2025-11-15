@@ -5,8 +5,8 @@ use serde_json::{Map as JsMap, Value as JsVal, json};
 use uuid::Uuid;
 
 use crate::ir::{
-    ArgumentOp, Block, Broadcast, ControlOp, DataOp, EventOp, Expr, List, Literal, Monitor, Op,
-    OperatorOp, ProcedureOp, Program, SensingOp, Stage, Variable,
+    ArgumentOp, Block, Broadcast, ControlOp, DataOp, EventOp, Expr, KeyOption, List, Literal,
+    MathOperator, Monitor, Op, OperatorOp, ProcedureOp, Program, SensingOp, Stage, Variable,
 };
 
 impl Program {
@@ -21,7 +21,7 @@ impl Program {
             "meta": {
                 "semver": "3.0.0",
                 "vm": "2.3.4",
-                "agent": "Steplo-v0.0.3" // TODO: Update version number each release
+                "agent": "Steplo-v0.0.4" // TODO: Update version number each release
             }
         })
     }
@@ -207,6 +207,12 @@ impl Op {
                     fields: JsMap::new(),
                     mutation: None,
                 },
+                EventOp::WhenKeyPressed { key_option } => ExprMetadata {
+                    opcode: "event_whenkeypressed",
+                    inputs: JsMap::new(),
+                    fields: obj([("KEY_OPTION", key_option_ref(*key_option))]),
+                    mutation: None,
+                },
             },
             Self::Data(op) => match op {
                 DataOp::AddToList { item, list } => ExprMetadata {
@@ -316,6 +322,12 @@ impl Op {
                     fields: JsMap::new(),
                     mutation: None,
                 },
+                SensingOp::DaysSince2000 => ExprMetadata {
+                    opcode: "sensing_dayssince2000",
+                    inputs: JsMap::new(),
+                    fields: JsMap::new(),
+                    mutation: None,
+                },
             },
             Self::Operator(op) => match op {
                 OperatorOp::Subtract { num_a, num_b } => ExprMetadata {
@@ -409,6 +421,18 @@ impl Op {
                         ("OPERAND2", compile(operand_b)),
                     ]),
                     fields: JsMap::new(),
+                    mutation: None,
+                },
+                OperatorOp::Round { num } => ExprMetadata {
+                    opcode: "operator_round",
+                    inputs: obj([("NUM", compile(num))]),
+                    fields: JsMap::new(),
+                    mutation: None,
+                },
+                OperatorOp::MathOp { operator, num } => ExprMetadata {
+                    opcode: "operator_mathop",
+                    inputs: obj([("NUM", compile(num))]),
+                    fields: obj([("OPERATOR", math_operator_ref(*operator))]),
                     mutation: None,
                 },
             },
@@ -549,4 +573,63 @@ fn list_ref(list: &List) -> JsVal {
 
 fn broadcast_ref(broadcast: &Broadcast) -> JsVal {
     json!([broadcast.name.to_string(), broadcast.uuid.to_string()])
+}
+
+fn key_option_ref(key_option: KeyOption) -> JsVal {
+    let name = match key_option {
+        KeyOption::Space => "space",
+        KeyOption::UpArrow => "up arrow",
+        KeyOption::DownArrow => "down arrow",
+        KeyOption::RightArrow => "right arrow",
+        KeyOption::LeftArrow => "left arrow",
+        KeyOption::Any => "any",
+        KeyOption::A => "a",
+        KeyOption::B => "b",
+        KeyOption::C => "c",
+        KeyOption::D => "d",
+        KeyOption::E => "e",
+        KeyOption::F => "f",
+        KeyOption::G => "g",
+        KeyOption::H => "h",
+        KeyOption::I => "i",
+        KeyOption::J => "j",
+        KeyOption::K => "k",
+        KeyOption::L => "l",
+        KeyOption::M => "m",
+        KeyOption::N => "n",
+        KeyOption::O => "o",
+        KeyOption::P => "p",
+        KeyOption::Q => "q",
+        KeyOption::R => "r",
+        KeyOption::S => "s",
+        KeyOption::T => "t",
+        KeyOption::U => "u",
+        KeyOption::V => "v",
+        KeyOption::W => "w",
+        KeyOption::X => "x",
+        KeyOption::Y => "y",
+        KeyOption::Z => "z",
+        KeyOption::Num0 => "0",
+        KeyOption::Num1 => "1",
+        KeyOption::Num2 => "2",
+        KeyOption::Num3 => "3",
+        KeyOption::Num4 => "4",
+        KeyOption::Num5 => "5",
+        KeyOption::Num6 => "6",
+        KeyOption::Num7 => "7",
+        KeyOption::Num8 => "8",
+        KeyOption::Num9 => "9",
+    };
+
+    json!([name, null])
+}
+
+fn math_operator_ref(math_operator: MathOperator) -> JsVal {
+    let name = match math_operator {
+        MathOperator::Abs => "abs",
+        MathOperator::Floor => "floor",
+        MathOperator::Ceiling => "ceiling",
+    };
+
+    json!([name, null])
 }

@@ -1,0 +1,36 @@
+static GLOBAL: int = 10;
+static SESSION: Session = { username: "Steplo", counter: 0 };
+
+type Session = {
+    username: str,
+    counter: uint,
+};
+
+main {
+    out(GLOBAL);
+    out(SESSION.counter);
+    Session_greet();
+    Session_change_username("Replaced");
+    Session_greet();
+    Session_inc_counter();
+    out(SESSION.counter);
+}
+
+fn Session_greet() {
+    out((("Hello " ~ SESSION.username) ~ "!"));
+}
+
+fn Session_change_username(username: str) {
+    SESSION.username = username;
+}
+
+fn Session_inc_counter() {
+    SESSION.counter = (SESSION.counter + 1);
+}
+
+// Expected stdout:
+// 10
+// 0
+// Hello Steplo!
+// Hello Replaced!
+// 1

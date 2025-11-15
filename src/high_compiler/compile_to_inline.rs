@@ -4,15 +4,25 @@ use itertools::Itertools;
 use itertools::chain;
 
 use crate::high_compiler::compile_to_inline::loc_manager::LocManager;
+use crate::high_compiler::compile_to_inline::loc_manager::TypedLetInfo;
 use crate::high_compiler::compile_to_inline::loc_manager::TypedVarInfo;
 use crate::high_compiler::link as l;
-use crate::high_compiler::type_resolved_ast as t;
+use crate::high_compiler::type_erased_ast as t;
 use crate::inline::ast as o;
 
-pub fn compile(procs: &[t::Ref<l::Proc>]) -> anyhow::Result<Vec<Arc<o::Proc>>> {
-    let loc_m = LocManager::new(procs);
+pub fn compile(program: &l::Program) -> anyhow::Result<o::Program> {
+    let loc_m = LocManager::new(program);
 
-    procs.iter().map(|proc| compile_proc(&proc.val, &loc_m).map(Arc::new)).collect::<Result<_, _>>()
+    let procs = program
+        .procs
+        .iter()
+        .map(|proc| compile_proc(&proc.val, &loc_m).map(Arc::new))
+        .collect::<Result<_, _>>()?;
+
+    Ok(o::Program {
+        procs: Arc::new(procs),
+        statics: Arc::new(loc_m.get_statics().into_iter().map(Arc::new).collect()),
+    })
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -24,27 +34,38 @@ pub enum ProcKind {
 mod loc_manager {
     use anyhow::bail;
     use itertools::chain;
-    use uuid::Uuid;
 
     use crate::high_compiler::compile_to_inline::ProcKind;
     use crate::high_compiler::link as l;
-    use crate::high_compiler::type_resolved_ast as t;
     use crate::inline::ast as o;
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
     pub struct LocManager {
         proc_kind_to_locs: BTreeMap<ProcKind, ProcLocs>,
+        static_name_to_info: BTreeMap<Arc<str>, o::VarInfo>,
+    }
+
+    pub enum TypedVarInfo {
+        Let(TypedLetInfo),
+        Static(o::VarInfo),
     }
 
     impl LocManager {
-        pub fn new(procs: &[t::Ref<l::Proc>]) -> Self {
-            let proc_kind_to_locs = procs
+        pub fn new(program: &l::Program) -> Self {
+            let proc_kind_to_locs = program
+                .procs
                 .iter()
                 .map(|proc| ((&proc.val.kind).into(), ProcLocs::new(&proc.val)))
                 .collect();
 
-            Self { proc_kind_to_locs }
+            let static_name_to_info = program
+                .statics
+                .iter()
+                .map(|x| (x.val.name.val.to_str(), o::VarInfo::new(x.val.size)))
+                .collect();
+
+            Self { proc_kind_to_locs, static_name_to_info }
         }
 
         pub fn get_locs(&self, proc_kind: &ProcKind) -> anyhow::Result<&ProcLocs> {
@@ -54,13 +75,43 @@ mod loc_manager {
 
             Ok(locs)
         }
+
+        pub fn get_loc(
+            &self,
+            proc_kind: &ProcKind,
+            loc_name: &Arc<str>,
+        ) -> anyhow::Result<TypedVarInfo> {
+            // locals can shadow statics (get name resolution priority over statics)
+            if let Ok(info) = self.get_locs(proc_kind)?.get_loc(loc_name) {
+                return Ok(TypedVarInfo::Let(info));
+            }
+
+            if let Some(info) = self.static_name_to_info.get(loc_name) {
+                return Ok(TypedVarInfo::Static(*info));
+            }
+
+            bail!("Loc name not found locally or statically: {}", loc_name);
+        }
+
+        #[expect(unused)]
+        pub fn get_static(&self, static_name: &Arc<str>) -> anyhow::Result<o::VarInfo> {
+            let Some(info) = self.static_name_to_info.get(static_name) else {
+                bail!("Static name not found statically: {}", static_name)
+            };
+
+            Ok(*info)
+        }
+
+        pub fn get_statics(&self) -> Vec<o::VarInfo> {
+            self.static_name_to_info.values().copied().collect()
+        }
     }
 
     impl From<&l::ProcKind> for ProcKind {
         fn from(value: &l::ProcKind) -> Self {
             match &value {
                 l::ProcKind::Main => ProcKind::Main,
-                l::ProcKind::Func { name, .. } => ProcKind::Func { name: name.val.str.clone() },
+                l::ProcKind::Func { name, .. } => ProcKind::Func { name: name.val.to_str() },
             }
         }
     }
@@ -72,7 +123,6 @@ mod loc_manager {
         ordered_user_arg_names: Vec<Arc<str>>,
         // \/ these two are both considered ArgVars, as they are inputs to functions
         return_label_arg_info: o::VarInfo, // where to jump when returning
-        return_value_arg_info: o::VarInfo, // reference to store return value of function in
     }
 
     impl ProcLocs {
@@ -80,11 +130,11 @@ mod loc_manager {
             let mut local_name_to_info = BTreeMap::new();
             let mut ordered_local_names = Vec::new();
 
-            for decl in &proc.idents.val {
+            for decl in proc.idents.iter() {
                 local_name_to_info
-                    .insert(decl.val.name.val.str.clone(), o::VarInfo::new(decl.val.size));
+                    .insert(decl.val.name.val.to_str(), o::VarInfo::new(decl.val.size));
 
-                ordered_local_names.push(decl.val.name.val.str.clone());
+                ordered_local_names.push(decl.val.name.val.to_str());
             }
 
             let (arg_name_to_info, ordered_arg_names) = match &proc.kind {
@@ -95,9 +145,9 @@ mod loc_manager {
 
                     for decl in &params.val {
                         arg_name_to_info
-                            .insert(decl.val.name.val.str.clone(), o::VarInfo::new(decl.val.size));
+                            .insert(decl.val.name.val.to_str(), o::VarInfo::new(decl.val.size));
 
-                        ordered_arg_names.push(decl.val.name.val.str.clone());
+                        ordered_arg_names.push(decl.val.name.val.to_str());
                     }
 
                     (arg_name_to_info, ordered_arg_names)
@@ -110,25 +160,24 @@ mod loc_manager {
                 ordered_local_names,
                 ordered_user_arg_names: ordered_arg_names,
                 return_label_arg_info: o::VarInfo::new(1),
-                return_value_arg_info: o::VarInfo::new(1),
             }
         }
 
-        pub fn get_loc(&self, loc_name: &Arc<str>) -> anyhow::Result<TypedVarInfo> {
+        fn get_loc(&self, loc_name: &Arc<str>) -> anyhow::Result<TypedLetInfo> {
             if let Some(info) = self.local_name_to_info.get(loc_name) {
-                return Ok(TypedVarInfo::Local(*info));
+                return Ok(TypedLetInfo::Local(*info));
             }
 
             if let Some(info) = self.user_arg_name_to_info.get(loc_name) {
-                return Ok(TypedVarInfo::Arg(*info));
+                return Ok(TypedLetInfo::Arg(*info));
             }
 
-            bail!("Loc name not found: {}", loc_name);
+            bail!("Loc name not found locally: {}", loc_name);
         }
 
         pub fn get_local(&self, local_name: &Arc<str>) -> anyhow::Result<o::VarInfo> {
             let Some(info) = self.local_name_to_info.get(local_name) else {
-                bail!("Local name not found: {}", local_name)
+                bail!("Local name not found locally: {}", local_name)
             };
 
             Ok(*info)
@@ -136,7 +185,7 @@ mod loc_manager {
 
         pub fn get_arg(&self, arg_name: &Arc<str>) -> anyhow::Result<o::VarInfo> {
             let Some(info) = self.user_arg_name_to_info.get(arg_name) else {
-                bail!("Arg name not found: {}", arg_name)
+                bail!("Arg name not found locally: {}", arg_name)
             };
 
             Ok(*info)
@@ -146,10 +195,7 @@ mod loc_manager {
             self.return_label_arg_info
         }
 
-        pub fn get_return_value_arg(&self) -> o::VarInfo {
-            self.return_value_arg_info
-        }
-
+        #[expect(unused)]
         pub fn ordered_local_names(&self) -> &Vec<Arc<str>> {
             &self.ordered_local_names
         }
@@ -169,15 +215,11 @@ mod loc_manager {
                 .map(|name| self.get_arg(name))
                 .collect::<Result<Vec<_>, _>>()?;
 
-            Ok(chain!(
-                [self.return_label_arg_info, self.return_value_arg_info],
-                ordered_user_arg_uuids
-            )
-            .collect())
+            Ok(chain!([self.return_label_arg_info], ordered_user_arg_uuids).collect())
         }
     }
 
-    pub enum TypedVarInfo {
+    pub enum TypedLetInfo {
         Local(o::VarInfo),
         Arg(o::VarInfo),
     }
@@ -190,7 +232,7 @@ fn compile_proc(proc: &l::Proc, loc_m: &LocManager) -> anyhow::Result<o::Proc> {
     Ok(o::Proc {
         kind: Arc::new(match &proc.kind {
             l::ProcKind::Main => o::ProcKind::Main,
-            l::ProcKind::Func { name, .. } => o::ProcKind::Func { name: name.val.str.clone() },
+            l::ProcKind::Func { name, .. } => o::ProcKind::Func { name: name.val.to_str() },
         }),
         ordered_local_infos: Arc::new(locs.ordered_local_infos()?),
         ordered_arg_infos: Arc::new(locs.ordered_arg_infos()?),
@@ -243,7 +285,7 @@ fn compile_statement(
                 Arc::new(compile_place_to_addr_expr(&x.val.place.val, proc_kind, loc_m)?);
 
             x.val
-                .expr
+                .exprs
                 .val
                 .iter()
                 .map(|ae| {
@@ -319,12 +361,106 @@ fn compile_statement(
                         val: Arc::new(val),
                     }])
                 },
+                l::NativeOperation::KeyEventsKeyQueueClear => {
+                    Vec::from([o::Command::ClearKeyEventsKeyQueue])
+                },
+                l::NativeOperation::KeyEventsKeyQueueLen { dest_place } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::KeyEventsKeyQueueLen),
+                    }])
+                },
+                l::NativeOperation::KeyEventsKeyQueueRead { dest_place, index } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+                    let index = compile_expr(&index.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::KeyEventsKeyQueueDeref(Arc::new(index))),
+                    }])
+                },
+                l::NativeOperation::KeyEventsKeyQueueDelete { index } => {
+                    let index = compile_expr(&index.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::DeleteKeyEventsKeyQueue { index: Arc::new(index) }])
+                },
+                l::NativeOperation::KeyEventsTimeQueueClear => {
+                    Vec::from([o::Command::ClearKeyEventsTimeQueue])
+                },
+                l::NativeOperation::KeyEventsTimeQueueLen { dest_place } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::KeyEventsTimeQueueLen),
+                    }])
+                },
+                l::NativeOperation::KeyEventsTimeQueueRead { dest_place, index } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+                    let index = compile_expr(&index.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::KeyEventsTimeQueueDeref(Arc::new(index))),
+                    }])
+                },
+                l::NativeOperation::KeyEventsTimeQueueDelete { index } => {
+                    let index = compile_expr(&index.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::DeleteKeyEventsTimeQueue { index: Arc::new(index) }])
+                },
                 l::NativeOperation::TimerGet { dest_place } => {
                     let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
 
                     Vec::from([o::Command::SetLoc {
                         loc: Arc::new(dest_loc),
                         val: Arc::new(o::Expr::Timer),
+                    }])
+                },
+                l::NativeOperation::DaysSince2000Get { dest_place } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::DaysSince2000),
+                    }])
+                },
+                l::NativeOperation::Round { dest_place, num } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+                    let num = compile_expr(&num.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::Round(Arc::new(num))),
+                    }])
+                },
+                l::NativeOperation::Floor { dest_place, num } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+                    let num = compile_expr(&num.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::Floor(Arc::new(num))),
+                    }])
+                },
+                l::NativeOperation::Ceil { dest_place, num } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+                    let num = compile_expr(&num.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::Ceil(Arc::new(num))),
+                    }])
+                },
+                l::NativeOperation::Abs { dest_place, num } => {
+                    let dest_loc = compile_place_to_loc(&dest_place.val, proc_kind, loc_m)?;
+                    let num = compile_expr(&num.val, proc_kind, loc_m)?;
+
+                    Vec::from([o::Command::SetLoc {
+                        loc: Arc::new(dest_loc),
+                        val: Arc::new(o::Expr::Abs(Arc::new(num))),
                     }])
                 },
             };
@@ -378,17 +514,15 @@ fn compile_call(
             }
         },
         l::Call::Func { name, param_exprs, return_sub_proc } => {
-            let func_kind = ProcKind::Func { name: name.val.str.clone() };
+            let func_kind = ProcKind::Func { name: name.val.to_str() };
             let func_locs = loc_m.get_locs(&func_kind)?;
 
             // set return label
-            let return_label_arg_assignments = [o::ArgAssignment {
+            let return_label_arg_assignments = [Arc::new(o::ArgAssignment {
                 arg_uuid: func_locs.get_return_label_arg().uuid,
                 arg_offset: 0,
                 expr: Arc::new(o::Expr::Value(Arc::new(o::Value::Label(*return_sub_proc)))),
-            }];
-
-            // return values currently aren't implemented -- skipping
+            })];
 
             // set user-defined args
             let mut user_arg_prereq_commands = Vec::new();
@@ -413,11 +547,11 @@ fn compile_call(
 
                     user_arg_prereq_commands.extend(prereq_commands);
 
-                    user_arg_assignments.push(o::ArgAssignment {
+                    user_arg_assignments.push(Arc::new(o::ArgAssignment {
                         arg_uuid: arg_info.uuid,
                         arg_offset: ae.val.offset,
                         expr: Arc::new(o::Expr::Loc(temp.clone())),
-                    })
+                    }))
                 }
             }
 
@@ -427,7 +561,7 @@ fn compile_call(
             CompiledCall {
                 prereq_commands: user_arg_prereq_commands,
                 call: o::Call::Func {
-                    to_func_name: name.val.str.clone(),
+                    to_func_name: name.val.to_str(),
                     arg_assignments: Arc::new(arg_assignments),
                 },
             }
@@ -464,9 +598,12 @@ fn compile_place_to_addr_expr(
 
     let place_head = match &item.head.val {
         t::PlaceHead::Ident(ident) => {
-            let addr = match loc_m.get_locs(proc_kind)?.get_loc(&ident.val.name.val.str)? {
-                TypedVarInfo::Local(info) => o::StackAddr::Local { uuid: info.uuid },
-                TypedVarInfo::Arg(info) => o::StackAddr::Arg { uuid: info.uuid },
+            let addr = match loc_m.get_loc(proc_kind, &ident.val.name.val.to_str())? {
+                TypedVarInfo::Let(info) => match info {
+                    TypedLetInfo::Local(info) => o::StackAddr::Local { uuid: info.uuid },
+                    TypedLetInfo::Arg(info) => o::StackAddr::Arg { uuid: info.uuid },
+                },
+                TypedVarInfo::Static(info) => o::StackAddr::Static { uuid: info.uuid },
             };
 
             o::Expr::StackAddr(Arc::new(addr))

@@ -1,8 +1,0 @@
-main |arr[4]| {
-    replace_second(ref arr, 2);
-    out(arr[1]);
-}
-
-func replace_second(arr_ref, val) || {
-    deref arr_ref[1] = val;
-}

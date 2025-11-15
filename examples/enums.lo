@@ -1,10 +1,11 @@
 enum State { None | Loading | Loaded }
 
-main |state: State, input: str| {
-    state = #None;
+main {
+    let state: State = #None;
     State_print(state);
     out("Press enter to load...");
-    in(&input);
+
+    let input: str = in();
 
     state = #Loading;
     State_print(state);
@@ -14,8 +15,10 @@ main |state: State, input: str| {
     State_print(state);
 }
 
-func State_print(state: State) || match state {
-    #None -> out("None");
-    #Loading -> out("Loading");
-    #Loaded -> out("Loaded");
+fn State_print(state: State) match state {
+    #None -> out("None")
+    #Loading -> out("Loading")
+    #Loaded -> out("Loaded")
 }
+
+// Interactive

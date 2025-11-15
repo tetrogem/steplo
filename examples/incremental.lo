@@ -1,0 +1,300 @@
+main {
+    let game: Game = {
+        username: "Player",
+        cookies: 0,
+        selected_menu_option: #Cookie,
+        building_to_count: BuildingToCount_default(),
+        last_update_days: -1,
+        error_msg: "",
+        error_time_days: -1,
+    };
+
+    // init stdout gui
+    let i: uint = 0;
+    while (i < 10) {
+        out("");
+        i = (i + 1);
+    }
+
+    while true {
+        while key_events_has_next() {
+            let event: KeyEvent = key_events_next();
+
+            game.selected_menu_option = if (event.key == Key#DownArrow) {
+                MenuOption_next(game.selected_menu_option)
+            } else if (event.key == Key#UpArrow) {
+                MenuOption_previous(game.selected_menu_option)
+            } else {
+                game.selected_menu_option
+            };
+
+            if (event.key == Key#Space) {
+                Game_perform_action(&game);
+            }
+        }
+
+        let now_days: num = since_2000_days();
+        if (game.last_update_days != -1) {
+            let delta_days: num = (now_days - game.last_update_days);
+            game.cookies = (game.cookies + (Game_calc_cps(&game) * days_to_s(delta_days)));
+        }
+
+        game.last_update_days = now_days;
+
+        if (now_days > (game.error_time_days + s_to_days(5))) {
+            game.error_msg = "";
+        }
+
+        Game_display_menu(&game);
+
+        // wait_s((1 / 60));
+    }
+}
+
+enum Building { Cursor | Grandma | Farm }
+
+static Building_ALL: [Building; 3] = [#Cursor, #Grandma, #Farm];
+static Building_ALL_LEN: uint = 3;
+
+type Game = {
+    username: str,
+    cookies: num,
+    selected_menu_option: MenuOption,
+    building_to_count: BuildingToCount,
+    last_update_days: num,
+    error_msg: str,
+    error_time_days: num,
+};
+
+fn Game_display_menu(self: &Game) {
+    let i: uint = 0;
+    while (i < MenuOption_ALL_LEN) {
+        let option: MenuOption = MenuOption_ALL[i];
+
+        let cursor: str = if (option == (*self).selected_menu_option) { "> " } else { "   " };
+
+        stdout_write((cursor ~ MenuOption_display(option, self)), i);
+
+        i = (i + 1);
+    }
+
+    let tooltip: str = MenuOption_tooltip((*self).selected_menu_option, self);
+
+    stdout_write(tooltip, 8);
+    stdout_write((*self).error_msg, 9);
+}
+
+fn Game_perform_action(self: &Game) {
+    match (*self).selected_menu_option {
+        #Bakery -> {
+            (*self).username = in();
+        }
+        #Cookie -> {
+            (*self).cookies = ((*self).cookies + 1);
+        }
+        #Cursor -> {
+            Game_try_purchase_building(self, #Cursor);
+        }
+        #Grandma -> {
+            Game_try_purchase_building(self, #Grandma);
+        }
+        #Farm -> {
+            Game_try_purchase_building(self, #Farm);
+        }
+    }
+}
+
+fn Game_try_purchase_building(self: &Game, building: Building) {
+    let building_info: BuildingInfo = BuildingToInfo_get(building);
+    let building_count: &uint = BuildingToCount_get_mut(&(*self).building_to_count, building);
+
+    let building_cost: num = BuildingInfo_calc_cost(building_info, *building_count);
+    if ((*self).cookies >= building_cost) {
+        *building_count = ((*building_count) + 1);
+        (*self).cookies = ((*self).cookies - building_cost);
+    } else {
+        (*self).error_msg = ("Not enough cookies to purchase " ~ building_info.name.sg)
+        (*self).error_time_days = since_2000_days();
+    }
+}
+
+fn Game_current_building_cost(self: &Game, building: Building) -> num {
+    let info: BuildingInfo = BuildingToInfo_get(building);
+    let count: uint = *BuildingToCount_get_mut(&(*self).building_to_count, building);
+    BuildingInfo_calc_cost(info, count)
+}
+
+fn Game_display_building_info(self: &Game, building: Building) -> str {
+    let info: BuildingInfo = BuildingToInfo_get(building);
+    let count: uint = *BuildingToCount_get_mut(&(*self).building_to_count, building);
+    let cost: num = BuildingInfo_calc_cost(info, count);
+    let can_purchase: bool = ((*self).cookies >= cost);
+
+    let purchase_dot: str = if can_purchase { "•" } else { " " };
+
+    let res: str = "";
+    res = (res ~ purchase_dot);
+    res = (res ~ " ");
+    res = (res ~ info.icon);
+    res = (res ~ " ");
+    res = (res ~ info.name.pl);
+    res = (res ~ ": ");
+    res = (res ~ count);
+    res = (res ~ " (🍪 ");
+    res = (res ~ cost);
+    res = (res ~ ")");
+    res
+}
+
+fn Game_building_tooltip(self: &Game, building: Building) -> str {
+    let info: BuildingInfo = BuildingToInfo_get(building);
+
+    let res: str = "";
+    res = (res ~ "Each ");
+    res = (res ~ info.name.sg);
+    res = (res ~ " produces ");
+    res = (res ~ info.cps);
+    res = (res ~ " cookies per second");
+
+    res
+}
+
+fn Game_calc_cps(self: &Game) -> num {
+    let cps: num = 0;
+
+    let i: uint = 0;
+    while (i < Building_ALL_LEN) {
+        let building: Building = Building_ALL[i];
+        let info: BuildingInfo = BuildingToInfo_get(building);
+        let count: uint = *BuildingToCount_get_mut(&(*self).building_to_count, building);
+
+        cps = (cps + (info.cps * count));
+
+        i = (i + 1);
+    }
+
+    cps
+}
+
+type BuildingToCount = {
+    cursor: uint,
+    grandma: uint,
+    farm: uint,
+};
+
+fn BuildingToCount_default() -> BuildingToCount {
+    cursor: 0,
+    grandma: 0,
+    farm: 0,
+}
+
+fn BuildingToCount_get_mut(self: &BuildingToCount, building: Building) -> &uint match building {
+    #Cursor -> &(*self).cursor
+    #Grandma -> &(*self).grandma
+    #Farm -> &(*self).farm
+}
+
+type BuildingToInfo = {
+    cursor: BuildingInfo,
+    grandma: BuildingInfo,
+    farm: BuildingInfo,
+};
+
+type BuildingInfo = {
+    name: Name,
+    initial_cost: num,
+    cost_mult: num,
+    cps: num,
+    icon: str,
+};
+
+type Name = {
+    sg: str,
+    pl: str,
+};
+
+static BUILDING_TO_INFO: BuildingToInfo = {
+    cursor: {
+        name: { sg: "Cursor", pl: "Cursors" },
+        initial_cost: 10,
+        cost_mult: 1.1,
+        cps: 0.1,
+        icon: "🖱️",
+    },
+    grandma: {
+        name: { sg: "Grandma", pl: "Grandmas" },
+        initial_cost: 140,
+        cost_mult: 1.15,
+        cps: 4,
+        icon: "👵",
+    },
+    farm: {
+        name: { sg: "Farm", pl: "Farms" },
+        initial_cost: 2500,
+        cost_mult: 1.16,
+        cps: 24,
+        icon: "🚜",
+    },
+};
+
+fn BuildingToInfo_get(building: Building) -> BuildingInfo match building {
+    #Cursor -> BUILDING_TO_INFO.cursor
+    #Grandma -> BUILDING_TO_INFO.grandma
+    #Farm -> BUILDING_TO_INFO.farm
+}
+
+fn BuildingInfo_calc_cost(self: BuildingInfo, count: uint) -> num {
+    let i: uint = 0;
+    let cost: num = self.initial_cost;
+    while (i < count) {
+        cost = (cost * self.cost_mult);
+        i = (i + 1);
+    }
+
+    num_round(cost)
+}
+
+enum MenuOption { Bakery | Cookie | Cursor | Grandma | Farm }
+
+static MenuOption_ALL: [MenuOption; 5] = [#Bakery, #Cookie, #Cursor, #Grandma, #Farm];
+static MenuOption_ALL_LEN: uint = 5;
+
+fn MenuOption_display(self: MenuOption, game: &Game) -> str {
+    match self {
+        #Bakery -> {
+            let fixed_cps: num = (num_round((Game_calc_cps(game) * 100)) / 100);
+            ((((*game).username ~ "'s Bakery (") ~ fixed_cps) ~ " cps)")
+        }
+        #Cookie -> ("🍪 Cookies: " ~ num_floor((*game).cookies))
+        #Cursor -> Game_display_building_info(game, #Cursor)
+        #Grandma -> Game_display_building_info(game, #Grandma)
+        #Farm -> Game_display_building_info(game, #Farm)
+    }
+}
+
+fn MenuOption_tooltip(self: MenuOption, game: &Game) -> str match self {
+    #Bakery -> "Interact to change your bakery's name!"
+    #Cookie -> "Interact to click the cookie!"
+    #Cursor -> Game_building_tooltip(game, #Cursor)
+    #Grandma -> Game_building_tooltip(game, #Grandma)
+    #Farm -> Game_building_tooltip(game, #Farm)
+}
+
+fn MenuOption_previous(self: MenuOption) -> MenuOption match self {
+    #Bakery -> #Bakery
+    #Cookie -> #Bakery
+    #Cursor -> #Cookie
+    #Grandma -> #Cursor
+    #Farm -> #Grandma
+}
+
+fn MenuOption_next(self: MenuOption) -> MenuOption match self {
+    #Bakery -> #Cookie
+    #Cookie -> #Cursor
+    #Cursor -> #Grandma
+    #Grandma -> #Farm
+    #Farm -> #Farm
+}
+
+fn s_to_days(s: num) -> num (((s / 60) / 60) / 24)
+fn days_to_s(days: num) -> num (((days * 24) * 60) * 60)

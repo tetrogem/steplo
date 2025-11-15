@@ -1,12 +1,16 @@
-main || {
+main {
     test();
 }
 
-func test() |sum: num, i: uint| {
-    i = 10;
+fn test() {
+    let sum: num = 0;
+    let i: uint = 10;
     while (i < 0) {
         // out("i < 0");
     }
 
     out("i >= 0");
 }
+
+// Expected output:
+// i >= 0

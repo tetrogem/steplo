@@ -1,17 +1,23 @@
-main |coords: [{ x: num, y: num }; 3], xy: { x: num, y: num }| {
-    coords = [{ x: 1, y: 2 }, { y: -5.6, x: 4.4 }, { x: 6, y: 1000 }];
+main {
+    let coords: [{ x: num, y: num }; 3] = [{ x: 1, y: 2 }, { y: -5.6, x: 4.4 }, { x: 6, y: 1000 }];
     print_xy(&(coords[0]));
     print_xy(&(coords[1]));
     print_xy(&(coords[2]));
-    xy = coords[1];
+    let xy: { x: num, y: num } = coords[1];
     print_xy(&xy);
 }
 
-func print_xy(xy: &{ x: num, y: num }) |str: val| {
-    str = "(";
+fn print_xy(xy: &{ x: num, y: num }) {
+    let str: str = "(";
     str = (str ~ (*xy).x);
     str = (str ~ ", ");
     str = (str ~ (*xy).y);
     str = (str ~ ")");
     out(str);
 }
+
+// Expected stdout:
+// (1, 2)
+// (4.4, -5.6)
+// (6, 1000)
+// (4.4, -5.6)

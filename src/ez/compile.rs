@@ -4,7 +4,7 @@ use itertools::Itertools;
 use uuid::Uuid;
 
 use crate::{
-    ez::{Argument, ArgumentOp, CustomBlock, ProcedureOp},
+    ez::{Argument, ArgumentOp, CustomBlock, KeyOption, MathOperator, ProcedureOp},
     ir,
 };
 
@@ -156,6 +156,9 @@ impl Op {
                     EventOp::Broadcast { input } => {
                         ir::EventOp::Broadcast { input: compile(input) }
                     },
+                    EventOp::WhenKeyPressed { key_option } => {
+                        ir::EventOp::WhenKeyPressed { key_option: key_option.compile() }
+                    },
                 };
 
                 ir::Op::Event(ir_op)
@@ -244,6 +247,10 @@ impl Op {
                         operand_a: compile(operand_a),
                         operand_b: compile(operand_b),
                     },
+                    OperatorOp::Round { num } => ir::OperatorOp::Round { num: compile(num) },
+                    OperatorOp::MathOp { operator, num } => {
+                        ir::OperatorOp::MathOp { operator: operator.compile(), num: compile(num) }
+                    },
                 };
 
                 ir::Op::Operator(ir_op)
@@ -285,6 +292,7 @@ impl Op {
                         ir::SensingOp::AskAndWait { question: compile(question) }
                     },
                     SensingOp::Timer => ir::SensingOp::Timer,
+                    SensingOp::DaysSince2000 => ir::SensingOp::DaysSince2000,
                 };
 
                 ir::Op::Sensing(ir_op)
@@ -394,4 +402,63 @@ fn compile_expr(expr: &Expr, parent: Uuid, deps: &mut Vec<Arc<ir::Block>>) -> Ar
 pub struct Dependent<Ir> {
     ir: Ir,
     deps: Vec<Arc<ir::Block>>,
+}
+
+impl KeyOption {
+    pub fn compile(&self) -> ir::KeyOption {
+        match self {
+            KeyOption::Space => ir::KeyOption::Space,
+            KeyOption::UpArrow => ir::KeyOption::UpArrow,
+            KeyOption::DownArrow => ir::KeyOption::DownArrow,
+            KeyOption::RightArrow => ir::KeyOption::RightArrow,
+            KeyOption::LeftArrow => ir::KeyOption::LeftArrow,
+            KeyOption::Any => ir::KeyOption::Any,
+            KeyOption::A => ir::KeyOption::A,
+            KeyOption::B => ir::KeyOption::B,
+            KeyOption::C => ir::KeyOption::C,
+            KeyOption::D => ir::KeyOption::D,
+            KeyOption::E => ir::KeyOption::E,
+            KeyOption::F => ir::KeyOption::F,
+            KeyOption::G => ir::KeyOption::G,
+            KeyOption::H => ir::KeyOption::H,
+            KeyOption::I => ir::KeyOption::I,
+            KeyOption::J => ir::KeyOption::J,
+            KeyOption::K => ir::KeyOption::K,
+            KeyOption::L => ir::KeyOption::L,
+            KeyOption::M => ir::KeyOption::M,
+            KeyOption::N => ir::KeyOption::N,
+            KeyOption::O => ir::KeyOption::O,
+            KeyOption::P => ir::KeyOption::P,
+            KeyOption::Q => ir::KeyOption::Q,
+            KeyOption::R => ir::KeyOption::R,
+            KeyOption::S => ir::KeyOption::S,
+            KeyOption::T => ir::KeyOption::T,
+            KeyOption::U => ir::KeyOption::U,
+            KeyOption::V => ir::KeyOption::V,
+            KeyOption::W => ir::KeyOption::W,
+            KeyOption::X => ir::KeyOption::X,
+            KeyOption::Y => ir::KeyOption::Y,
+            KeyOption::Z => ir::KeyOption::Z,
+            KeyOption::Num0 => ir::KeyOption::Num0,
+            KeyOption::Num1 => ir::KeyOption::Num1,
+            KeyOption::Num2 => ir::KeyOption::Num2,
+            KeyOption::Num3 => ir::KeyOption::Num3,
+            KeyOption::Num4 => ir::KeyOption::Num4,
+            KeyOption::Num5 => ir::KeyOption::Num5,
+            KeyOption::Num6 => ir::KeyOption::Num6,
+            KeyOption::Num7 => ir::KeyOption::Num7,
+            KeyOption::Num8 => ir::KeyOption::Num8,
+            KeyOption::Num9 => ir::KeyOption::Num9,
+        }
+    }
+}
+
+impl MathOperator {
+    pub fn compile(&self) -> ir::MathOperator {
+        match self {
+            MathOperator::Abs => ir::MathOperator::Abs,
+            MathOperator::Floor => ir::MathOperator::Floor,
+            MathOperator::Ceiling => ir::MathOperator::Ceiling,
+        }
+    }
 }

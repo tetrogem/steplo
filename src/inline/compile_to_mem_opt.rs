@@ -7,11 +7,12 @@ use crate::inline::compile_to_mem_opt::func_manager::FuncManager;
 use crate::inline::compile_to_mem_opt::stack_manager::{ProcKind, StackManager, VarInfo};
 use crate::mem_opt::ast as o;
 
-pub fn compile(procs: &[Arc<a::Proc>]) -> anyhow::Result<Vec<Arc<o::Proc<o::UMemLoc>>>> {
-    let stack_m = StackManager::new(procs);
-    let func_m = FuncManager::new(procs);
+pub fn compile(program: &a::Program) -> anyhow::Result<Vec<Arc<o::Proc<o::UMemLoc>>>> {
+    let stack_m = StackManager::new(program);
+    let func_m = FuncManager::new(&program.procs);
 
-    procs
+    program
+        .procs
         .iter()
         .map(|proc| compile_proc(proc, &stack_m, &func_m).map(Arc::new))
         .collect::<Result<_, _>>()
@@ -26,11 +27,34 @@ mod stack_manager {
 
     pub struct StackManager {
         proc_kind_to_stack: BTreeMap<ProcKind, Arc<Frame>>,
+        static_uuid_to_info: BTreeMap<Uuid, StaticInfo>,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    pub struct StaticInfo {
+        pub stack_addr: u32,
+        pub size: u32,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    pub enum VarInfo {
+        Static(StaticInfo),
+        Let(LetInfo),
+    }
+
+    impl VarInfo {
+        pub fn size(&self) -> u32 {
+            match self {
+                Self::Let(info) => info.size,
+                Self::Static(info) => info.size,
+            }
+        }
     }
 
     impl StackManager {
-        pub fn new(procs: &[Arc<a::Proc>]) -> Self {
-            let proc_kind_to_stack = procs
+        pub fn new(program: &a::Program) -> Self {
+            let proc_kind_to_stack = program
+                .procs
                 .iter()
                 .map(|proc| {
                     let proc_kind = match proc.kind.as_ref() {
@@ -44,13 +68,40 @@ mod stack_manager {
                 })
                 .collect();
 
-            Self { proc_kind_to_stack }
+            let mut next_static_addr = 1;
+            let static_uuid_to_info = program
+                .statics
+                .iter()
+                .map(|x| {
+                    let info = StaticInfo { stack_addr: next_static_addr, size: x.size };
+                    next_static_addr += x.size;
+                    (x.uuid, info)
+                })
+                .collect();
+
+            Self { proc_kind_to_stack, static_uuid_to_info }
         }
 
         pub fn get(&self, proc_kind: &ProcKind) -> anyhow::Result<&Arc<Frame>> {
             self.proc_kind_to_stack
                 .get(proc_kind)
                 .ok_or_else(|| anyhow::anyhow!("Proc kind {proc_kind:?} not found"))
+        }
+
+        pub fn resolve(&self, proc_kind: &ProcKind, var_uuid: Uuid) -> anyhow::Result<VarInfo> {
+            if let Ok(info) = self.get(proc_kind)?.resolve(var_uuid) {
+                return Ok(VarInfo::Let(info));
+            }
+
+            self.static_uuid_to_info
+                .get(&var_uuid)
+                .copied()
+                .map(VarInfo::Static)
+                .ok_or_else(|| anyhow::anyhow!("Var not found statically: {var_uuid:?}"))
+        }
+
+        pub fn statics_size(&self) -> u32 {
+            self.static_uuid_to_info.values().map(|info| info.size).sum()
         }
     }
 
@@ -61,12 +112,12 @@ mod stack_manager {
     }
 
     pub struct Frame {
-        var_uuid_to_info: BTreeMap<Uuid, VarInfo>,
+        let_uuid_to_info: BTreeMap<Uuid, LetInfo>,
         size: u32,
     }
 
     #[derive(Clone, Copy, Debug)]
-    pub struct VarInfo {
+    pub struct LetInfo {
         pub frame_offset: u32,
         pub size: u32,
     }
@@ -79,16 +130,16 @@ mod stack_manager {
             let mut frame_size = 0;
 
             for info in infos {
-                let var_info = VarInfo { frame_offset: frame_size, size: info.size };
+                let var_info = LetInfo { frame_offset: frame_size, size: info.size };
                 var_uuid_to_info.insert(info.uuid, var_info);
                 frame_size += info.size;
             }
 
-            Self { var_uuid_to_info, size: frame_size }
+            Self { let_uuid_to_info: var_uuid_to_info, size: frame_size }
         }
 
-        pub fn resolve(&self, var_uuid: Uuid) -> anyhow::Result<VarInfo> {
-            self.var_uuid_to_info
+        fn resolve(&self, var_uuid: Uuid) -> anyhow::Result<LetInfo> {
+            self.let_uuid_to_info
                 .get(&var_uuid)
                 .copied()
                 .ok_or_else(|| anyhow::anyhow!("Var not found in frame: {var_uuid:?}"))
@@ -173,7 +224,9 @@ fn compile_sub_proc(
         false => Vec::new().into_iter(),
         true => Vec::from([o::Command::SetMemLoc {
             mem_loc: Arc::new(o::UMemLoc::StackPointer),
-            val: Arc::new(o::Expr::Value(Arc::new(o::Value::Literal(0.to_string().into())))),
+            val: Arc::new(o::Expr::Value(Arc::new(o::Value::Literal(
+                stack_m.statics_size().to_string().into(),
+            )))),
         }])
         .into_iter(),
     };
@@ -243,6 +296,14 @@ fn compile_command(
             index: Arc::new(compile_expr(index, stack_m, proc_kind)?),
             val: Arc::new(compile_expr(val, stack_m, proc_kind)?),
         },
+        a::Command::ClearKeyEventsKeyQueue => o::Command::ClearKeyEventsKeyQueue,
+        a::Command::DeleteKeyEventsKeyQueue { index } => o::Command::DeleteKeyEventsKeyQueue {
+            index: Arc::new(compile_expr(index, stack_m, proc_kind)?),
+        },
+        a::Command::ClearKeyEventsTimeQueue => o::Command::ClearKeyEventsTimeQueue,
+        a::Command::DeleteKeyEventsTimeQueue { index } => o::Command::DeleteKeyEventsTimeQueue {
+            index: Arc::new(compile_expr(index, stack_m, proc_kind)?),
+        },
     })
 }
 
@@ -279,25 +340,20 @@ fn compile_call(
             // set args
             for aa in arg_assignments.iter() {
                 let to_func_proc_kind = ProcKind::Func { name: to_func_name.clone() };
-                let to_func_frame = stack_m.get(&to_func_proc_kind)?;
-                let arg_var_info = to_func_frame.resolve(aa.arg_uuid)?;
+                let arg_var_info = stack_m.resolve(&to_func_proc_kind, aa.arg_uuid)?;
 
-                let arg_indexed_frame_offset = compile_var_indexed_frame_offset(
-                    arg_var_info,
-                    aa.arg_offset,
-                    stack_m,
-                    proc_kind,
-                )?;
-
-                let arg_addr = o::Expr::Add(Arc::new(o::BinaryArgs {
-                    left: Arc::new(o::Expr::Add(Arc::new(o::BinaryArgs {
-                        left: Arc::new(o::Expr::MemLoc(Arc::new(o::UMemLoc::StackPointer))),
-                        right: Arc::new(o::Expr::Value(Arc::new(o::Value::Literal(
-                            1.to_string().into(),
-                        )))),
-                    }))),
-                    right: Arc::new(arg_indexed_frame_offset),
-                }));
+                let arg_addr = match compile_var_index_root(arg_var_info, aa.arg_offset) {
+                    IndexedRoot::Static(root) => root,
+                    IndexedRoot::Let(root) => o::Expr::Add(Arc::new(o::BinaryArgs {
+                        left: Arc::new(o::Expr::Add(Arc::new(o::BinaryArgs {
+                            left: Arc::new(o::Expr::MemLoc(Arc::new(o::UMemLoc::StackPointer))),
+                            right: Arc::new(o::Expr::Value(Arc::new(o::Value::Literal(
+                                1.to_string().into(),
+                            )))),
+                        }))),
+                        right: Arc::new(root),
+                    })),
+                };
 
                 prereq_commands.push(o::Command::SetStack {
                     addr: Arc::new(arg_addr),
@@ -377,28 +433,44 @@ fn compile_expr(
             let uuid = *match addr.as_ref() {
                 a::StackAddr::Arg { uuid } => uuid,
                 a::StackAddr::Local { uuid } => uuid,
+                a::StackAddr::Static { uuid } => uuid,
             };
 
             let frame = stack_m.get(proc_kind)?;
-            let var_info = frame.resolve(uuid)?;
+            let var_info = stack_m.resolve(proc_kind, uuid)?;
 
-            let indexed_frame_offset =
-                compile_var_indexed_frame_offset(var_info, 0, stack_m, proc_kind)?;
+            match compile_var_index_root(var_info, 0) {
+                IndexedRoot::Let(index) => {
+                    if var_info.size() == 0 {
+                        // empty types don't exist in memory
+                        // but that also means they can never be used for anything
+                        // so we can just give a garbage address (0 / null)
+                        o::Expr::Value(Arc::new(o::Value::Literal(0.to_string().into())))
+                    } else {
+                        let frame_start_addr = o::Expr::Sub(Arc::new(o::BinaryArgs {
+                            left: Arc::new(o::Expr::MemLoc(Arc::new(o::UMemLoc::StackPointer))),
+                            right: Arc::new(o::Expr::Value(Arc::new(o::Value::Literal(
+                                (frame.size() - 1).to_string().into(),
+                            )))),
+                        }));
 
-            let frame_start_addr = o::Expr::Sub(Arc::new(o::BinaryArgs {
-                left: Arc::new(o::Expr::MemLoc(Arc::new(o::UMemLoc::StackPointer))),
-                right: Arc::new(o::Expr::Value(Arc::new(o::Value::Literal(
-                    (frame.size() - 1).to_string().into(),
-                )))),
-            }));
-
-            o::Expr::Add(Arc::new(o::BinaryArgs {
-                left: Arc::new(frame_start_addr),
-                right: Arc::new(indexed_frame_offset),
-            }))
+                        o::Expr::Add(Arc::new(o::BinaryArgs {
+                            left: Arc::new(frame_start_addr),
+                            right: Arc::new(index),
+                        }))
+                    }
+                },
+                IndexedRoot::Static(index) => index,
+            }
         },
         a::Expr::StdoutDeref(index) => {
             o::Expr::StdoutDeref(Arc::new(compile_expr(index, stack_m, proc_kind)?))
+        },
+        a::Expr::KeyEventsKeyQueueDeref(index) => {
+            o::Expr::KeyEventsKeyQueueDeref(Arc::new(compile_expr(index, stack_m, proc_kind)?))
+        },
+        a::Expr::KeyEventsTimeQueueDeref(index) => {
+            o::Expr::KeyEventsTimeQueueDeref(Arc::new(compile_expr(index, stack_m, proc_kind)?))
         },
         a::Expr::Value(val) => {
             let val = match val.as_ref() {
@@ -422,8 +494,15 @@ fn compile_expr(
         a::Expr::Or(args) => o::Expr::Or(Arc::new(compile_args(args, stack_m, proc_kind)?)),
         a::Expr::Random(args) => o::Expr::Random(Arc::new(compile_args(args, stack_m, proc_kind)?)),
         a::Expr::StdoutLen => o::Expr::StdoutLen,
+        a::Expr::KeyEventsKeyQueueLen => o::Expr::KeyEventsKeyQueueLen,
+        a::Expr::KeyEventsTimeQueueLen => o::Expr::KeyEventsTimeQueueLen,
         a::Expr::Sub(args) => o::Expr::Sub(Arc::new(compile_args(args, stack_m, proc_kind)?)),
         a::Expr::Timer => o::Expr::Timer,
+        a::Expr::DaysSince2000 => o::Expr::DaysSince2000,
+        a::Expr::Round(expr) => o::Expr::Round(Arc::new(compile_expr(expr, stack_m, proc_kind)?)),
+        a::Expr::Floor(expr) => o::Expr::Floor(Arc::new(compile_expr(expr, stack_m, proc_kind)?)),
+        a::Expr::Ceil(expr) => o::Expr::Ceil(Arc::new(compile_expr(expr, stack_m, proc_kind)?)),
+        a::Expr::Abs(expr) => o::Expr::Abs(Arc::new(compile_expr(expr, stack_m, proc_kind)?)),
     })
 }
 
@@ -442,20 +521,27 @@ fn compile_args(
     })
 }
 
-fn compile_var_indexed_frame_offset(
-    var_info: VarInfo,
-    offset: u32,
-    stack_m: &StackManager,
-    proc_kind: &ProcKind,
-) -> anyhow::Result<o::Expr<o::UMemLoc>> {
+enum IndexedRoot {
+    Let(o::Expr<o::UMemLoc>),
+    Static(o::Expr<o::UMemLoc>),
+}
+
+fn compile_var_index_root(var_info: VarInfo, offset: u32) -> IndexedRoot {
     let index = o::Expr::Value(Arc::new(o::Value::Literal(offset.to_string().into())));
 
+    let (root, make_variant) = match var_info {
+        VarInfo::Let(x) => {
+            (x.frame_offset, IndexedRoot::Let as fn(o::Expr<o::UMemLoc>) -> IndexedRoot)
+        },
+        VarInfo::Static(x) => {
+            (x.stack_addr, IndexedRoot::Static as fn(o::Expr<o::UMemLoc>) -> IndexedRoot)
+        },
+    };
+
     let frame_offset_indexed = o::Expr::Add(Arc::new(o::BinaryArgs {
-        left: Arc::new(o::Expr::Value(Arc::new(o::Value::Literal(
-            var_info.frame_offset.to_string().into(),
-        )))),
+        left: Arc::new(o::Expr::Value(Arc::new(o::Value::Literal(root.to_string().into())))),
         right: Arc::new(index),
     }));
 
-    Ok(frame_offset_indexed)
+    make_variant(frame_offset_indexed)
 }

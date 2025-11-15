@@ -1,19 +1,21 @@
-main |null: str, line: str, len: uint| {
+main {
     out("1");
     out("2");
     out("3");
-    in(&null);
+
+    in();
 
     stdout_clear();
     out("4");
     out("5");
     out("6");
 
-    stdout_read(&line, 2);
+    let line: str = stdout_read(2);
     line = (line ~ "Hello!");
     stdout_write(line, 2);
     stdout_write(line, 10);
 
-    stdout_len(&len);
-    out(("stdout line count: " ~ len));
+    out(("stdout line count: " ~ stdout_len()));
 }
+
+// Interactive

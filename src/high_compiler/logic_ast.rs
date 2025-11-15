@@ -1,10 +1,74 @@
-use std::{ops::Not, sync::Arc};
+use std::{
+    ops::Not,
+    sync::{Arc, LazyLock},
+};
 
 use itertools::{EitherOrBoth, Itertools};
+use uuid::Uuid;
 
-use crate::srced::Srced;
+use crate::{high_compiler::srced::SrcRange, srced::Srced};
 
 pub type Ref<T> = Arc<Srced<T>>;
+
+pub fn nominal_type_hint(range: SrcRange, name: &str) -> TypeHint {
+    TypeHint::Nominal(Arc::new(Srced { range, val: Name { str: name.into() } }))
+}
+
+#[expect(unused)]
+pub static ANY_TYPE: LazyLock<Arc<Type>> = LazyLock::new(|| Arc::new(Type::Any));
+
+pub fn any_type_hint(range: SrcRange) -> TypeHint {
+    nominal_type_hint(range, Type::ANY_NAME)
+}
+
+pub static VAL_TYPE: LazyLock<Arc<Type>> =
+    LazyLock::new(|| Arc::new(Type::Primitive(PrimitiveType::Val)));
+
+pub fn val_type_hint(range: SrcRange) -> TypeHint {
+    nominal_type_hint(range, Type::VAL_NAME)
+}
+
+pub static STR_TYPE: LazyLock<Arc<Type>> =
+    LazyLock::new(|| Arc::new(Type::Primitive(PrimitiveType::Str)));
+
+pub fn str_type_hint(range: SrcRange) -> TypeHint {
+    nominal_type_hint(range, Type::STR_NAME)
+}
+
+pub static NUM_TYPE: LazyLock<Arc<Type>> =
+    LazyLock::new(|| Arc::new(Type::Primitive(PrimitiveType::Num)));
+
+pub fn num_type_hint(range: SrcRange) -> TypeHint {
+    nominal_type_hint(range, Type::NUM_NAME)
+}
+
+pub static INTEGER_TYPE: LazyLock<Arc<Type>> =
+    LazyLock::new(|| Arc::new(Type::Primitive(PrimitiveType::Int)));
+
+pub fn integer_type_hint(range: SrcRange) -> TypeHint {
+    nominal_type_hint(range, Type::INTEGER_NAME)
+}
+
+pub static UINTEGER_TYPE: LazyLock<Arc<Type>> =
+    LazyLock::new(|| Arc::new(Type::Primitive(PrimitiveType::Uint)));
+
+pub fn uinteger_type_hint(range: SrcRange) -> TypeHint {
+    nominal_type_hint(range, Type::UINTEGER_NAME)
+}
+
+pub static BOOL_TYPE: LazyLock<Arc<Type>> =
+    LazyLock::new(|| Arc::new(Type::Primitive(PrimitiveType::Bool)));
+
+pub fn bool_type_hint(range: SrcRange) -> TypeHint {
+    nominal_type_hint(range, Type::BOOL_NAME)
+}
+
+pub static UNIT_TYPE: LazyLock<Arc<Type>> =
+    LazyLock::new(|| Arc::new(Type::Struct(Arc::new(Vec::new()))));
+
+pub fn unit_type_hint(range: SrcRange) -> TypeHint {
+    TypeHint::from_type(&UNIT_TYPE, range)
+}
 
 #[derive(Debug)]
 pub enum TopItem {
@@ -16,6 +80,7 @@ pub enum TopItem {
 pub enum ExeItem {
     Main(Ref<Main>),
     Func(Ref<Func>),
+    Static(Ref<Static>),
 }
 
 #[derive(Debug)]
@@ -38,14 +103,20 @@ pub struct EnumItem {
 
 #[derive(Debug)]
 pub struct Main {
-    pub proc: Ref<Proc>,
+    pub body: Ref<Expr>,
 }
 
 #[derive(Debug)]
 pub struct Func {
     pub name: Ref<Name>,
-    pub params: Ref<Vec<Ref<IdentDeclaration>>>,
-    pub proc: Ref<Proc>,
+    pub params: Ref<Vec<Ref<IdentDef>>>,
+    pub return_ty: Ref<TypeHint>,
+    pub body: Ref<Expr>,
+}
+
+#[derive(Debug)]
+pub struct Static {
+    pub ident_init: Ref<IdentInit>,
 }
 
 #[derive(Debug)]
@@ -55,12 +126,51 @@ pub struct Name {
 
 #[derive(Debug)]
 pub enum TypeHint {
-    Any,
-    Primitive(PrimitiveType),
+    Nominal(Ref<Name>),
     Ref(Ref<TypeHint>),
     Array { ty: Ref<TypeHint>, len: u32 },
     Struct(Ref<Vec<Ref<FieldTypeHint>>>),
-    Nominal(Ref<Name>),
+}
+
+impl TypeHint {
+    pub fn from_type(ty: &Type, range: SrcRange) -> Self {
+        match ty {
+            Type::Any => any_type_hint(range),
+            Type::Primitive(p) => match p {
+                PrimitiveType::Val => val_type_hint(range),
+                PrimitiveType::Str => str_type_hint(range),
+                PrimitiveType::Num => num_type_hint(range),
+                PrimitiveType::Int => integer_type_hint(range),
+                PrimitiveType::Uint => uinteger_type_hint(range),
+                PrimitiveType::Bool => bool_type_hint(range),
+            },
+            Type::Enum { name } => nominal_type_hint(range, name),
+            Type::Ref(ty) => {
+                TypeHint::Ref(Arc::new(Srced { range, val: TypeHint::from_type(ty, range) }))
+            },
+            Type::Array { ty, len } => TypeHint::Array {
+                ty: Arc::new(Srced { range, val: TypeHint::from_type(ty, range) }),
+                len: *len,
+            },
+            Type::Struct(fields) => TypeHint::Struct(Arc::new(Srced {
+                range,
+                val: fields
+                    .iter()
+                    .map(|field| {
+                        let field = FieldTypeHint {
+                            name: Arc::new(Srced { range, val: Name { str: field.name.clone() } }),
+                            ty: Arc::new(Srced {
+                                range,
+                                val: TypeHint::from_type(&field.ty, range),
+                            }),
+                        };
+
+                        Arc::new(Srced { range, val: field })
+                    })
+                    .collect(),
+            })),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -74,6 +184,14 @@ pub enum Type {
 }
 
 impl Type {
+    pub const ANY_NAME: &'static str = "any";
+    pub const VAL_NAME: &'static str = "val";
+    pub const STR_NAME: &'static str = "str";
+    pub const NUM_NAME: &'static str = "num";
+    pub const INTEGER_NAME: &'static str = "int";
+    pub const UINTEGER_NAME: &'static str = "uint";
+    pub const BOOL_NAME: &'static str = "bool";
+
     pub fn size(&self) -> u32 {
         match self {
             Self::Any => 1,
@@ -184,6 +302,20 @@ impl Type {
     pub fn can_transmute_to(&self, other: &Self) -> bool {
         self.size() == other.size()
     }
+
+    pub fn closest_common_supertype<'a>(a: &'a Arc<Type>, b: &'a Arc<Type>) -> Option<Arc<Type>> {
+        if a.is_subtype_of(b) {
+            Some(b.clone())
+        } else if b.is_subtype_of(a) {
+            Some(a.clone())
+        } else if let Type::Primitive(pa) = a.as_ref()
+            && let Type::Primitive(pb) = b.as_ref()
+        {
+            Some(Arc::new(Type::Primitive(PrimitiveType::closest_common_supertype(*pa, *pb))))
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -230,6 +362,16 @@ impl PrimitiveType {
 
         self.supertype().is_some_and(|supertype| supertype.is_subtype_of(other))
     }
+
+    pub fn closest_common_supertype(a: PrimitiveType, b: PrimitiveType) -> PrimitiveType {
+        if a.is_subtype_of(b) {
+            b
+        } else if b.is_subtype_of(a) {
+            a
+        } else {
+            PrimitiveType::Val
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -245,9 +387,20 @@ pub struct FieldTypeHint {
 }
 
 #[derive(Debug)]
-pub struct IdentDeclaration {
-    pub name: Ref<Name>,
+pub struct IdentDef {
+    pub ident: Ref<Ident>,
     pub ty: Ref<TypeHint>,
+}
+
+#[derive(Debug)]
+pub struct IdentInit {
+    pub def: Ref<IdentDef>,
+    pub expr: Ref<Expr>,
+}
+
+#[derive(Debug)]
+pub struct Let {
+    pub ident_init: Ref<IdentInit>,
 }
 
 #[derive(Debug)]
@@ -269,8 +422,18 @@ pub enum PlaceHead {
 }
 
 #[derive(Debug)]
-pub struct Ident {
-    pub name: Ref<Name>,
+pub enum Ident {
+    User { name: Ref<Name> },
+    Internal { name: Ref<Name>, uuid: Uuid },
+}
+
+impl Ident {
+    pub fn name(&self) -> &Ref<Name> {
+        match self {
+            Self::User { name } => name,
+            Self::Internal { name, .. } => name,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -279,40 +442,32 @@ pub struct Deref {
 }
 
 #[derive(Debug)]
-pub struct Proc {
-    pub idents: Ref<Vec<Ref<IdentDeclaration>>>,
-    pub body: Ref<Body>,
+pub struct Trail<T> {
+    pub items: Ref<Vec<T>>,
+    pub trailing: bool,
 }
 
 #[derive(Debug)]
-pub struct Body {
-    pub items: Ref<Vec<Ref<BodyItem>>>,
-}
-
-#[derive(Debug)]
-pub enum BodyItem {
-    Statement(Ref<Statement>),
-    If(Ref<IfItem>),
-    While(Ref<WhileItem>),
-    Match(Ref<MatchItem>),
+pub struct Block {
+    pub items: Ref<Trail<Ref<Expr>>>,
 }
 
 #[derive(Debug)]
 pub struct IfItem {
     pub condition: Ref<Expr>,
-    pub then_body: Ref<Body>,
+    pub then_body: Ref<Expr>,
     pub else_item: Option<Ref<ElseItem>>,
 }
 
 #[derive(Debug)]
 pub struct ElseItem {
-    pub body: Ref<Body>,
+    pub body: Ref<Expr>,
 }
 
 #[derive(Debug)]
 pub struct WhileItem {
     pub condition: Ref<Expr>,
-    pub body: Ref<Body>,
+    pub body: Ref<Expr>,
 }
 
 #[derive(Debug)]
@@ -324,39 +479,32 @@ pub struct MatchItem {
 #[derive(Debug)]
 pub struct MatchCase {
     pub variant: Ref<VariantLiteral>,
-    pub body: Ref<Body>,
+    pub body: Ref<Expr>,
 }
 
 #[derive(Debug)]
 pub enum Statement {
+    Let(Ref<Let>),
     Assign(Ref<Assign>),
-    Call(Ref<FunctionCall>),
     Native(Ref<NativeOperation>), // not compiled to by source code, internal/built-ins only
 }
 
 #[derive(Debug)]
 pub struct FunctionCall {
     pub func_name: Ref<Name>,
-    pub param_exprs: Ref<Vec<Ref<AssignExpr>>>,
+    pub param_exprs: Ref<Vec<Ref<Expr>>>,
 }
 
 #[derive(Debug)]
 pub struct Assign {
     pub place: Ref<Place>,
-    pub expr: Ref<AssignExpr>,
-}
-
-#[derive(Debug)]
-pub enum AssignExpr {
-    Expr(Ref<Expr>),
-    Array { single_exprs: Ref<Vec<Ref<AssignExpr>>>, spread_expr: Option<Ref<AssignExpr>> },
-    Struct(Ref<Vec<Ref<StructAssignField>>>),
+    pub expr: Ref<Expr>,
 }
 
 #[derive(Debug)]
 pub struct StructAssignField {
     pub name: Ref<Name>,
-    pub assign: Ref<AssignExpr>,
+    pub assign: Ref<Expr>,
 }
 
 #[derive(Debug)]
@@ -367,6 +515,40 @@ pub enum Expr {
     Paren(Ref<ParenExpr>),
     Cast { ty: Ref<TypeHint>, expr: Ref<Expr> },
     Transmute { ty: Ref<TypeHint>, expr: Ref<Expr> },
+    Call(Ref<FunctionCall>),
+    Statement(Ref<Statement>),
+    If(Ref<IfItem>),
+    While(Ref<WhileItem>),
+    Match(Ref<MatchItem>),
+    Block(Ref<Block>),
+    Array { single_exprs: Ref<Vec<Ref<Expr>>>, spread_expr: Option<Ref<Expr>> },
+    Struct(Ref<Vec<Ref<StructAssignField>>>),
+    Undefined,
+}
+
+impl Expr {
+    pub fn is_const(&self) -> bool {
+        match self {
+            Self::Literal(_) => true,
+            Self::Array { single_exprs, spread_expr } => {
+                single_exprs.val.iter().all(|x| x.val.is_const())
+                    && spread_expr.as_ref().map(|x| x.val.is_const()).unwrap_or(true)
+            },
+            Self::Block(_) => false,
+            Self::Call(_) => false,
+            Self::Cast { ty: _, expr } => expr.val.is_const(),
+            Self::If(_) => false,
+            Self::Match(_) => false,
+            Self::Paren(_) => false,
+            Self::Place(_) => false,
+            Self::Ref(_) => false,
+            Self::Statement(_) => false,
+            Self::Struct(fields) => fields.val.iter().all(|field| field.val.assign.val.is_const()),
+            Self::Transmute { ty: _, expr } => expr.val.is_const(),
+            Self::Undefined => true,
+            Self::While(_) => false,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -443,6 +625,19 @@ pub enum NativeOperation {
     StdoutLen { dest_place: Ref<Place> },
     Wait { duration_s: Ref<Expr> },
     TimerGet { dest_place: Ref<Place> },
+    DaysSince2000Get { dest_place: Ref<Place> },
+    KeyEventsKeyQueueClear,
+    KeyEventsKeyQueueDelete { index: Ref<Expr> },
+    KeyEventsKeyQueueRead { dest_place: Ref<Place>, index: Ref<Expr> },
+    KeyEventsKeyQueueLen { dest_place: Ref<Place> },
+    KeyEventsTimeQueueClear,
+    KeyEventsTimeQueueDelete { index: Ref<Expr> },
+    KeyEventsTimeQueueRead { dest_place: Ref<Place>, index: Ref<Expr> },
+    KeyEventsTimeQueueLen { dest_place: Ref<Place> },
+    Round { dest_place: Ref<Place>, num: Ref<Expr> },
+    Floor { dest_place: Ref<Place>, num: Ref<Expr> },
+    Ceil { dest_place: Ref<Place>, num: Ref<Expr> },
+    Abs { dest_place: Ref<Place>, num: Ref<Expr> },
 }
 
 #[derive(Debug)]

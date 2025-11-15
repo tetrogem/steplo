@@ -18,17 +18,43 @@ pub struct Main {
 #[derive(Debug)]
 pub struct Func {
     pub name: Ref<Name>,
-    pub params: Ref<Vec<Ref<IdentDeclaration>>>,
+    pub params: Ref<Vec<Ref<IdentDef>>>,
     pub proc: Ref<Proc>,
 }
 
 #[derive(Debug)]
-pub struct Name {
+pub struct UserName {
     pub str: Arc<str>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InternalName {
+    Return,
+}
+
 #[derive(Debug)]
-pub struct IdentDeclaration {
+pub enum Name {
+    Internal(Ref<InternalName>),
+    User(Ref<UserName>),
+}
+
+impl Name {
+    pub fn to_str(&self) -> Arc<str> {
+        match self {
+            Self::User(user) => user.val.str.clone(),
+            Self::Internal(internal) => {
+                let str = match internal.val {
+                    InternalName::Return => "return",
+                };
+
+                format!("~{str}").into()
+            },
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct IdentDef {
     pub name: Ref<Name>,
     pub size: u32,
 }
@@ -63,20 +89,22 @@ pub struct Deref {
 
 #[derive(Debug)]
 pub struct Proc {
-    pub idents: Ref<Vec<Ref<IdentDeclaration>>>,
+    pub idents: Arc<Vec<Ref<IdentDef>>>,
     pub body: Ref<Body>,
 }
 
 #[derive(Debug)]
 pub struct Body {
-    pub items: Ref<Vec<Ref<BodyItem>>>,
+    pub items: Ref<Vec<Ref<Statement>>>,
 }
 
 #[derive(Debug)]
-pub enum BodyItem {
-    Statement(Ref<Statement>),
+pub enum Statement {
+    Assign(Ref<Assign>),
+    Call(Ref<FunctionCall>),
     If(Ref<IfItem>),
     While(Ref<WhileItem>),
+    Native(Ref<NativeOperation>), // not compiled to by source code, internal/built-ins only
 }
 
 #[derive(Debug)]
@@ -98,13 +126,6 @@ pub struct WhileItem {
 }
 
 #[derive(Debug)]
-pub enum Statement {
-    Assign(Ref<Assign>),
-    Call(Ref<FunctionCall>),
-    Native(Ref<NativeOperation>), // not compiled to by source code, internal/built-ins only
-}
-
-#[derive(Debug)]
 pub struct FunctionCall {
     pub func_name: Ref<Name>,
     pub param_exprs: Ref<Vec<Ref<Vec<Ref<AssignExpr>>>>>,
@@ -113,7 +134,7 @@ pub struct FunctionCall {
 #[derive(Debug)]
 pub struct Assign {
     pub place: Ref<Place>,
-    pub expr: Ref<Vec<Ref<AssignExpr>>>,
+    pub exprs: Ref<Vec<Ref<AssignExpr>>>,
 }
 
 #[derive(Debug)]
@@ -197,9 +218,23 @@ pub enum NativeOperation {
     StdoutLen { dest_place: Ref<Place> },
     Wait { duration_s: Ref<Expr> },
     TimerGet { dest_place: Ref<Place> },
+    DaysSince2000Get { dest_place: Ref<Place> },
+    KeyEventsKeyQueueClear,
+    KeyEventsKeyQueueDelete { index: Ref<Expr> },
+    KeyEventsKeyQueueRead { dest_place: Ref<Place>, index: Ref<Expr> },
+    KeyEventsKeyQueueLen { dest_place: Ref<Place> },
+    KeyEventsTimeQueueClear,
+    KeyEventsTimeQueueDelete { index: Ref<Expr> },
+    KeyEventsTimeQueueRead { dest_place: Ref<Place>, index: Ref<Expr> },
+    KeyEventsTimeQueueLen { dest_place: Ref<Place> },
+    Round { dest_place: Ref<Place>, num: Ref<Expr> },
+    Floor { dest_place: Ref<Place>, num: Ref<Expr> },
+    Ceil { dest_place: Ref<Place>, num: Ref<Expr> },
+    Abs { dest_place: Ref<Place>, num: Ref<Expr> },
 }
 
 #[derive(Debug)]
 pub struct Program {
-    pub items: Ref<Vec<Ref<ExeItem>>>,
+    pub items: Arc<Vec<Ref<ExeItem>>>,
+    pub statics: Arc<Vec<Ref<IdentDef>>>,
 }

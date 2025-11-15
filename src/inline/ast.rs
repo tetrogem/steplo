@@ -3,6 +3,12 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 #[derive(Debug)]
+pub struct Program {
+    pub procs: Arc<Vec<Arc<Proc>>>,
+    pub statics: Arc<Vec<Arc<VarInfo>>>,
+}
+
+#[derive(Debug)]
 pub struct Proc {
     pub kind: Arc<ProcKind>,
     pub sub_procs: Arc<Vec<Arc<SubProc>>>,
@@ -54,6 +60,10 @@ pub enum Expr {
     Value(Arc<Value>),
     StdoutDeref(Arc<Expr>),
     StdoutLen,
+    KeyEventsKeyQueueDeref(Arc<Expr>),
+    KeyEventsKeyQueueLen,
+    KeyEventsTimeQueueDeref(Arc<Expr>),
+    KeyEventsTimeQueueLen,
     Timer,
     Add(Arc<BinaryArgs>),
     Sub(Arc<BinaryArgs>),
@@ -69,6 +79,11 @@ pub enum Expr {
     InAnswer,
     Join(Arc<BinaryArgs>),
     Random(Arc<BinaryArgs>),
+    DaysSince2000,
+    Round(Arc<Expr>),
+    Floor(Arc<Expr>),
+    Ceil(Arc<Expr>),
+    Abs(Arc<Expr>),
 }
 
 #[derive(Debug)]
@@ -78,6 +93,10 @@ pub enum Command {
     Out(Arc<Expr>),
     ClearStdout,
     WriteStdout { index: Arc<Expr>, val: Arc<Expr> },
+    ClearKeyEventsKeyQueue,
+    DeleteKeyEventsKeyQueue { index: Arc<Expr> },
+    ClearKeyEventsTimeQueue,
+    DeleteKeyEventsTimeQueue { index: Arc<Expr> },
 }
 
 #[derive(Debug)]
@@ -85,7 +104,7 @@ pub enum Call {
     Jump { to: Arc<Expr> },
     Branch { cond: Arc<Expr>, then_to: Arc<Expr>, else_to: Arc<Expr> },
     Sleep { duration_s: Arc<Expr>, to: Arc<Expr> },
-    Func { to_func_name: Arc<str>, arg_assignments: Arc<Vec<ArgAssignment>> },
+    Func { to_func_name: Arc<str>, arg_assignments: Arc<Vec<Arc<ArgAssignment>>> },
     Return { to: Arc<Expr> },
     Exit,
 }
@@ -107,6 +126,7 @@ pub enum Loc {
 pub enum StackAddr {
     Arg { uuid: Uuid },
     Local { uuid: Uuid },
+    Static { uuid: Uuid },
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]

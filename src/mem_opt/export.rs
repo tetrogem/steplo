@@ -64,6 +64,14 @@ fn export_command(name_m: &mut NameManager, command: &Command<UMemLoc>) -> Strin
         Command::WriteStdout { index, val } => {
             format!("stdout[{}] = {}", export_expr(name_m, index), export_expr(name_m, val))
         },
+        Command::ClearKeyEventsKeyQueue => "key_events_key_queue::clear".into(),
+        Command::DeleteKeyEventsKeyQueue { index } => {
+            format!("delete key_events_key_queue[{}]", export_expr(name_m, index),)
+        },
+        Command::ClearKeyEventsTimeQueue => "key_events_time_queue::clear".into(),
+        Command::DeleteKeyEventsTimeQueue { index } => {
+            format!("delete key_events_time_queue[{}]", export_expr(name_m, index),)
+        },
     };
 
     format!("{command_name};")
@@ -108,7 +116,16 @@ fn export_expr(name_m: &mut NameManager, expr: &Expr<UMemLoc>) -> String {
         Expr::StackDeref(expr) => format!("stack[{}]", export_expr(name_m, expr)),
         Expr::StdoutDeref(expr) => format!("stdout[{}]", export_expr(name_m, expr)),
         Expr::StdoutLen => "stdout.len".into(),
+        Expr::KeyEventsKeyQueueDeref(expr) => {
+            format!("key_events_key_queue[{}]", export_expr(name_m, expr))
+        },
+        Expr::KeyEventsKeyQueueLen => "key_events_key_queue.len".into(),
+        Expr::KeyEventsTimeQueueDeref(expr) => {
+            format!("key_events_time_queue[{}]", export_expr(name_m, expr))
+        },
+        Expr::KeyEventsTimeQueueLen => "key_events_time_queue.len".into(),
         Expr::Timer => "timer".into(),
+        Expr::DaysSince2000 => "days_since_2000".into(),
         Expr::Add(args) => export_binary_op_expr(name_m, args, "+"),
         Expr::Sub(args) => export_binary_op_expr(name_m, args, "-"),
         Expr::Mul(args) => export_binary_op_expr(name_m, args, "*"),
@@ -123,6 +140,10 @@ fn export_expr(name_m: &mut NameManager, expr: &Expr<UMemLoc>) -> String {
         Expr::InAnswer => "answer".into(),
         Expr::Join(args) => export_binary_op_expr(name_m, args, "~"),
         Expr::Random(args) => export_binary_op_expr(name_m, args, "<random>"),
+        Expr::Round(expr) => format!("(<round> {})", export_expr(name_m, expr)),
+        Expr::Floor(expr) => format!("(<floor> {})", export_expr(name_m, expr)),
+        Expr::Ceil(expr) => format!("(<ceil> {})", export_expr(name_m, expr)),
+        Expr::Abs(expr) => format!("(<abs> {})", export_expr(name_m, expr)),
     }
 }
 

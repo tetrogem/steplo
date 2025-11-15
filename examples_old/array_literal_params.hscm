@@ -1,9 +1,0 @@
-main || {
-    print_second([5, 10]);
-    print_second([10, 20, 30, 40]);
-    print_second([100, 101], 102, 103);
-}
-
-func print_second(arr[2]) || {
-    out(arr[1]);
-}

@@ -17,9 +17,17 @@ pub fn optimize_command(command: &Arc<Command>) -> MaybeOptimized<Arc<Command>> 
     let command = match command.as_ref() {
         Command::In => Command::In,
         Command::ClearStdout => Command::ClearStdout,
+        Command::ClearKeyEventsKeyQueue => Command::ClearKeyEventsKeyQueue,
+        Command::ClearKeyEventsTimeQueue => Command::ClearKeyEventsTimeQueue,
         Command::Out(expr) => Command::Out(expr!(expr)),
         Command::WriteStdout { index, val } => {
             Command::WriteStdout { index: expr!(index), val: expr!(val) }
+        },
+        Command::DeleteKeyEventsKeyQueue { index } => {
+            Command::DeleteKeyEventsKeyQueue { index: expr!(index) }
+        },
+        Command::DeleteKeyEventsTimeQueue { index } => {
+            Command::DeleteKeyEventsTimeQueue { index: expr!(index) }
         },
         Command::SetLoc { loc, val } => {
             let loc = match loc.as_ref() {

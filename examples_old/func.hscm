@@ -1,8 +1,0 @@
-main |msg| {
-    world();
-    msg = "Hello";
-}
-
-func world() |msg| {
-    msg = "world!";
-}

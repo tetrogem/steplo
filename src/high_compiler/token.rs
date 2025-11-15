@@ -17,7 +17,7 @@ pub enum Token {
     Comma,
     String(String),
     Main,
-    Func,
+    Fn,
     If,
     Else,
     While,
@@ -44,6 +44,9 @@ pub enum Token {
     Type,
     Hashtag,
     Match,
+    Let,
+    Undefined,
+    Static,
 }
 
 fn consume_char(
@@ -110,7 +113,7 @@ fn consume_word(
 
     let token = match word.as_str() {
         "main" => Token::Main,
-        "func" => Token::Func,
+        "fn" => Token::Fn,
         "if" => Token::If,
         "else" => Token::Else,
         "while" => Token::While,
@@ -120,6 +123,9 @@ fn consume_word(
         "enum" => Token::Enum,
         "type" => Token::Type,
         "match" => Token::Match,
+        "let" => Token::Let,
+        "undefined" => Token::Undefined,
+        "static" => Token::Static,
         _ => {
             if word.is_empty() {
                 bail!("Word is empty");

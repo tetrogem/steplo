@@ -13,8 +13,8 @@ type Message = {
     },
 };
 
-main |msg: Message| {
-    msg = {
+main {
+    let msg: Message = {
         created_time: 123456789,
         sender_name: "Steplo",
         likes: 4,
@@ -32,12 +32,18 @@ main |msg: Message| {
     print_links(&msg.content.links);
 }
 
-func print_links(links: &[Link; 2]) |i: uint, link: &Link| {
-    i = 0;
+fn print_links(links: &[Link; 2]) {
+    let i: uint = 0;
     while (i < 2) {
-        link = &(*links)[i];
+        let link: &Link = &(*links)[i];
         out(((("Visit '" ~ (*link).name) ~ "': ") ~ (*link).redirect));
 
         i = (i + 1);
     }
 }
+
+// Expected stdout:
+// Steplo says: Hello world!
+// (4 likes)
+// Visit 'GitHub': https://github.com/tetrogem/steplo
+// Visit 'Book': https://steplo.tetro.dev/

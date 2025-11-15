@@ -1,18 +1,21 @@
-main |i: uint| {
-    i = 20;
+main {
+    let i: uint = 20;
     iterate(&i);
 }
 
-func iterate(i_r: &uint) |i: uint| {
-    i = *i_r;
+fn iterate(i_r: &uint) {
+    let i: uint = *i_r;
 
-    if (0 != i) {
+    if (i != 0) {
         *i_r = <<uint>>(i - 1);
         greet();
         iterate(i_r);
     }
 }
 
-func greet() || {
+fn greet() {
     out("Hello!");
 }
+
+// Expected stdout: (20 times)
+// Hello!

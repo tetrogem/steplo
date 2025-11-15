@@ -1,15 +1,17 @@
 enum Foo { A | B | C }
 
-main |foo: Foo, uint: uint, val: val, any: any, bool: bool| {
-    foo = Foo#A;
-    uint = <<uint>>foo;
-    val = <<val>>foo;
-    any = foo;
+main {
+    let foo: Foo = Foo#A;
+    let uint: uint = <<uint>>foo;
+    let val: val = <<val>>foo;
+    let any: any = foo;
 
-    bool = (foo == foo);
+    let bool: bool = (foo == foo);
     // bool = (foo == uint);
     bool = (foo > foo);
     // bool = (foo < uint);
     // bool = (foo == any);
     // bool = (foo == bool);
 }
+
+// No output

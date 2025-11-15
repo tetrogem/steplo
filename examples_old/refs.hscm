@@ -1,4 +1,0 @@
-main |a, a_ref| {
-    a_ref = ref a;
-    deref a_ref = "Hello world!";
-}

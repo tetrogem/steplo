@@ -1,8 +1,0 @@
-main |a| {
-    a = "Hello!";
-    use_ref(ref a);
-}
-
-func use_ref(a_ref) |msg| {
-    msg = a_ref | deref;
-}

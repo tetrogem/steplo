@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
 use crate::high_compiler::grammar_ast::{
-    AddOp, AndOp, ArrayAssign, ArrayAssignExpr, ArrayType, Assign, AssignExpr, BaseType,
-    BinaryParenExpr, BinaryParenExprOp, Body, BodyItem, BoolLiteral, CastExpr, CommaList,
-    CommaListLink, Comment, Decimal, Deref, Digits, DivOp, ElseBodyItem, ElseIfItem, ElseItem,
-    Empty, EnumItem, EqOp, Expr, FalseLiteral, Field, Func, FunctionCall, GtOp, GteOp, Ident,
-    IdentDeclaration, IfItem, JoinOp, List, ListLink, Literal, LtOp, LteOp, Main, MatchCase,
-    MatchItem, Maybe, ModOp, MulOp, MultiItemBody, Name, Negative, NeqOp, NotOp, NumLiteral,
-    Offset, OrOp, ParenExpr, ParensNest, ParensWrapped, PipeList, PipeListLink, Place, PlaceHead,
-    PlaceIndex, PlaceIndexLink, Proc, Program, RefExpr, RefType, SemiList, SemiListLink,
-    SpreadAssignExpr, Statement, StatementItem, StrLiteral, StructAssign, StructAssignField,
-    StructType, SubOp, TopItem, TransmuteExpr, TrueLiteral, Type, TypeAlias, UnaryParenExpr,
-    UnaryParenExprOp, VariantLiteral, WhileItem,
+    AddOp, AndOp, ArrayAssign, ArrayAssignExpr, ArrayType, Assign, BinaryParenExpr,
+    BinaryParenExprOp, Block, BoolLiteral, CastExpr, CommaList, CommaListLink, Comment,
+    ContainedExpr, Decimal, Deref, Digits, DivOp, ElseBodyItem, ElseIfItem, ElseItem, Empty,
+    EnumItem, EqOp, ExprOrSemi, FalseLiteral, Field, Func, FunctionCall, GtOp, GteOp, Ident,
+    IdentDef, IdentInit, IfItem, JoinOp, LetItem, List, ListLink, Literal, LtOp, LteOp, Main,
+    MatchCase, MatchItem, Maybe, ModOp, MulOp, Name, Negative, NeqOp, NominalType, NotOp,
+    NumLiteral, Offset, OrOp, ParenExpr, ParensNest, ParensWrapped, PipeList, PipeListLink, Place,
+    PlaceHead, PlaceIndex, PlaceIndexLink, Priority, Program, RefExpr, RefType, ReturnType, Semi,
+    SemiList, SemiListLink, SpreadAssignExpr, Static, StrLiteral, StructAssign, StructAssignField,
+    StructType, SubOp, TopItem, TrailingExpr, TransmuteExpr, TrueLiteral, Type, TypeAlias,
+    UnaryParenExpr, UnaryParenExprOp, Undefined, VariantLiteral, WhileItem,
 };
 
 use super::{
@@ -181,6 +181,7 @@ impl AstParse for TopItem {
                 Self::Func(Arc::new(x)),
                 Self::TypeAlias(Arc::new(x)),
                 Self::Enum(Arc::new(x)),
+                Self::Static(Arc::new(x)),
             } else {
                 "Expected top item"
             }
@@ -193,8 +194,8 @@ impl AstParse for Main {
         parse_struct! {
             parse tokens;
             [match _ = Token::Main => (); as [TokenKind::Main]];
-            [struct proc];
-            [return Self { proc: Arc::new(proc)} ];
+            [struct body];
+            [return Self { body: Arc::new(body)} ];
         }
     }
 }
@@ -203,13 +204,26 @@ impl AstParse for Func {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_struct! {
             parse tokens;
-            [match _ = Token::Func => (); as [TokenKind::Func]];
+            [match _ = Token::Fn => (); as [TokenKind::Fn]];
             [struct name];
             [match _ = Token::LeftParen => (); as [TokenKind::LeftParen]];
             [struct params];
             [match _ = Token::RightParen => (); as [TokenKind::RightParen]];
-            [struct proc];
-            [return Self { name: Arc::new(name), params: Arc::new(params), proc: Arc::new(proc) }];
+            [struct return_ty];
+            [struct body];
+            [return Self { name: Arc::new(name), params: Arc::new(params), return_ty: Arc::new(return_ty), body: Arc::new(body) }];
+        }
+    }
+}
+
+impl AstParse for ReturnType {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Dash => (); as [TokenKind::Dash, TokenKind::RightAngle]];
+            [match _ = Token::RightAngle => (); as [TokenKind::Dash, TokenKind::RightAngle]];
+            [struct ty];
+            [return Self { ty: Arc::new(ty) }]
         }
     }
 }
@@ -252,7 +266,7 @@ impl AstParse for Name {
     }
 }
 
-impl AstParse for IdentDeclaration {
+impl AstParse for IdentDef {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_struct! {
             parse tokens;
@@ -264,11 +278,46 @@ impl AstParse for IdentDeclaration {
     }
 }
 
+impl AstParse for IdentInit {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [struct def];
+            [match _ = Token::Eq => (); as [TokenKind::Eq]];
+            [struct expr];
+            [return Self { def: Arc::new(def), expr: Arc::new(expr) }];
+        }
+    }
+}
+
+impl AstParse for Static {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Static => (); as [TokenKind::Static]];
+            [struct ident_init];
+            [match _ = Token::Semi => (); as [TokenKind::Semi]];
+            [return Self { ident_init: Arc::new(ident_init) }];
+        }
+    }
+}
+
+impl AstParse for LetItem {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Let => (); as [TokenKind::Let]];
+            [struct ident_init];
+            [return Self { ident_init: Arc::new(ident_init) }];
+        }
+    }
+}
+
 impl AstParse for Type {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_enum! {
             parse tokens => x {
-                Self::Base(Arc::new(x)),
+                Self::Nominal(Arc::new(x)),
                 Self::Ref(Arc::new(x)),
                 Self::Array(Arc::new(x)),
                 Self::Struct(Arc::new(x)),
@@ -279,7 +328,7 @@ impl AstParse for Type {
     }
 }
 
-impl AstParse for BaseType {
+impl AstParse for NominalType {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_struct! {
             parse tokens;
@@ -439,33 +488,7 @@ impl AstParse for FalseLiteral {
     }
 }
 
-impl AstParse for Proc {
-    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
-        parse_struct! {
-            parse tokens;
-            [match _ = Token::Pipe => (); as [TokenKind::Pipe]];
-            [struct idents];
-            [match _ = Token::Pipe => (); as [TokenKind::Pipe]];
-            [struct body];
-            [return Self { idents: Arc::new(idents), body: Arc::new(body) }];
-        }
-    }
-}
-
-impl AstParse for Body {
-    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
-        parse_enum! {
-            parse tokens => x {
-                Self::Single(Arc::new(x)),
-                Self::Multi(Arc::new(x)),
-            } else {
-                "Expected body"
-            }
-        }
-    }
-}
-
-impl AstParse for MultiItemBody {
+impl AstParse for Block {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_struct! {
             parse tokens;
@@ -589,17 +612,42 @@ impl<T: AstParse> AstParse for PipeListLink<T> {
     }
 }
 
-impl AstParse for BodyItem {
+impl<First, Second> AstParse for Priority<First, Second>
+where
+    First: AstParse,
+    Second: AstParse,
+{
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_enum! {
             parse tokens => x {
-                Self::Statement(Arc::new(x)),
-                Self::If(Arc::new(x)),
-                Self::While(Arc::new(x)),
-                Self::Match(Arc::new(x)),
+                Self::First(Arc::new(x)),
+                Self::Second(Arc::new(x)),
             } else {
-                "Expected body item"
+                "Expected priority"
             }
+        }
+    }
+}
+
+impl AstParse for ExprOrSemi {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_enum! {
+            parse tokens => x {
+                Self::Expr(Arc::new(x)),
+                Self::Semi(Arc::new(x)),
+            } else {
+                "Expected expr or semi"
+            }
+        }
+    }
+}
+
+impl AstParse for Semi {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Semi => (); as [TokenKind::Semi]];
+            [return Self]
         }
     }
 }
@@ -695,23 +743,14 @@ impl AstParse for MatchCase {
     }
 }
 
-impl AstParse for StatementItem {
-    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
-        parse_struct! {
-            parse tokens;
-            [struct statement];
-            [match _ = Token::Semi => (); as [TokenKind::Semi]];
-            [return Self { statement: Arc::new(statement) }];
-        }
-    }
-}
-
-impl AstParse for Statement {
+impl AstParse for TrailingExpr {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_enum! {
             parse tokens => x {
+                Self::Let(Arc::new(x)),
                 Self::Assign(Arc::new(x)),
-                Self::Call(Arc::new(x)),
+                Self::If(Arc::new(x)),
+                Self::While(Arc::new(x)),
             } else {
                 "Expected statement"
             }
@@ -874,20 +913,6 @@ impl AstParse for Deref {
     }
 }
 
-impl AstParse for AssignExpr {
-    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
-        parse_enum! {
-            parse tokens => x {
-                Self::Struct(Arc::new(x)),
-                Self::Array(Arc::new(x)),
-                Self::Expr(Arc::new(x)),
-            } else {
-                "Expected assign expression"
-            }
-        }
-    }
-}
-
 impl AstParse for ArrayAssign {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_struct! {
@@ -950,7 +975,7 @@ impl AstParse for StructAssignField {
     }
 }
 
-impl AstParse for Expr {
+impl AstParse for ContainedExpr {
     fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
         parse_enum! {
             parse tokens => x {
@@ -959,10 +984,27 @@ impl AstParse for Expr {
                 Self::Paren(Arc::new(x)),
                 Self::Ref(Arc::new(x)),
                 Self::Literal(Arc::new(x)),
+                Self::Call(Arc::new(x)),
                 Self::Place(Arc::new(x)),
+                Self::Match(Arc::new(x)),
+                Self::Block(Arc::new(x)),
+                Self::Struct(Arc::new(x)),
+                Self::Array(Arc::new(x)),
+                Self::Undefined(Arc::new(x)),
+                // Self::Shaped(Arc::new(x)),
             } else {
                 "Expected expression"
             }
+        }
+    }
+}
+
+impl AstParse for Undefined {
+    fn parse(tokens: &mut TokenFeed) -> AstParseRes<Self> {
+        parse_struct! {
+            parse tokens;
+            [match _ = Token::Undefined => (); as [TokenKind::Undefined]];
+            [return Self];
         }
     }
 }

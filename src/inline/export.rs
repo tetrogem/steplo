@@ -7,16 +7,23 @@ use itertools::Itertools;
 use uuid::Uuid;
 
 use crate::inline::ast::{
-    BinaryArgs, Call, Command, Expr, Loc, Proc, ProcKind, StackAddr, SubProc, TempVar, Value,
+    BinaryArgs, Call, Command, Expr, Loc, Proc, ProcKind, Program, StackAddr, SubProc, TempVar,
+    Value, VarInfo,
 };
 
 fn indent(str: impl AsRef<str>) -> String {
     str.as_ref().lines().map(|l| format!("    {l}")).join("\n")
 }
 
-pub fn export<'a>(procs: impl Iterator<Item = &'a Proc>) -> String {
+pub fn export(program: &Program) -> String {
     let mut name_m = NameManager::default();
-    procs.map(|proc| export_proc(&mut name_m, proc)).join("\n\n")
+    let statics = program.statics.iter().map(|x| export_static(&mut name_m, **x)).join("\n");
+    let procs = program.procs.iter().map(|proc| export_proc(&mut name_m, proc)).join("\n\n");
+    format!("{statics}\n\n{procs}")
+}
+
+fn export_static(name_m: &mut NameManager, var_info: VarInfo) -> String {
+    format!("static:{} ({})", name_m.get_name(var_info.uuid), var_info.size)
 }
 
 fn export_proc(name_m: &mut NameManager, proc: &Proc) -> String {
@@ -51,7 +58,7 @@ fn export_proc(name_m: &mut NameManager, proc: &Proc) -> String {
     lines.join("\n")
 }
 
-fn export_sub_proc(name_m: &mut NameManager, sp: &SubProc) -> String {
+pub fn export_sub_proc(name_m: &mut NameManager, sp: &SubProc) -> String {
     let mut lines = Vec::new();
 
     lines.push(format!("proc {} {{", export_label(name_m, sp.uuid)));
@@ -74,6 +81,14 @@ fn export_command(name_m: &mut NameManager, command: &Command) -> String {
         Command::ClearStdout => "stdout::clear".into(),
         Command::WriteStdout { index, val } => {
             format!("stdout[{}] = {}", export_expr(name_m, index), export_expr(name_m, val))
+        },
+        Command::ClearKeyEventsKeyQueue => "key_events_key_queue::clear".into(),
+        Command::DeleteKeyEventsKeyQueue { index } => {
+            format!("delete key_events_key_queue[{}]", export_expr(name_m, index))
+        },
+        Command::ClearKeyEventsTimeQueue => "key_events_time_queue::clear".into(),
+        Command::DeleteKeyEventsTimeQueue { index } => {
+            format!("delete key_events_time_queue[{}]", export_expr(name_m, index))
         },
     };
 
@@ -136,6 +151,7 @@ fn export_stack_addr(name_m: &mut NameManager, stack_addr: &StackAddr) -> String
     let (kind, uuid) = match stack_addr {
         StackAddr::Local { uuid } => ("local", uuid),
         StackAddr::Arg { uuid } => ("arg", uuid),
+        StackAddr::Static { uuid } => ("static", uuid),
     };
 
     let name = name_m.get_name(*uuid);
@@ -153,7 +169,16 @@ fn export_expr(name_m: &mut NameManager, expr: &Expr) -> String {
         },
         Expr::StdoutDeref(expr) => format!("stdout[{}]", export_expr(name_m, expr)),
         Expr::StdoutLen => "stdout.len".into(),
+        Expr::KeyEventsKeyQueueDeref(expr) => {
+            format!("key_events_key_queue[{}]", export_expr(name_m, expr))
+        },
+        Expr::KeyEventsKeyQueueLen => "key_events_key_queue.len".into(),
+        Expr::KeyEventsTimeQueueDeref(expr) => {
+            format!("key_events_time_queue[{}]", export_expr(name_m, expr))
+        },
+        Expr::KeyEventsTimeQueueLen => "key_events_time_queue.len".into(),
         Expr::Timer => "timer".into(),
+        Expr::DaysSince2000 => "days_since_2000".into(),
         Expr::Add(args) => export_binary_op_expr(name_m, args, "+"),
         Expr::Sub(args) => export_binary_op_expr(name_m, args, "-"),
         Expr::Mul(args) => export_binary_op_expr(name_m, args, "*"),
@@ -168,6 +193,10 @@ fn export_expr(name_m: &mut NameManager, expr: &Expr) -> String {
         Expr::InAnswer => "answer".into(),
         Expr::Join(args) => export_binary_op_expr(name_m, args, "~"),
         Expr::Random(args) => export_binary_op_expr(name_m, args, "<random>"),
+        Expr::Round(expr) => format!("(<round> {})", export_expr(name_m, expr)),
+        Expr::Floor(expr) => format!("(<floor> {})", export_expr(name_m, expr)),
+        Expr::Ceil(expr) => format!("(<ceil> {})", export_expr(name_m, expr)),
+        Expr::Abs(expr) => format!("(<abs> {})", export_expr(name_m, expr)),
     }
 }
 
@@ -184,7 +213,7 @@ fn export_temp(name_m: &mut NameManager, temp: &TempVar) -> String {
 }
 
 #[derive(Default)]
-struct NameManager {
+pub struct NameManager {
     used_names: HashSet<Arc<str>>,
     uuid_to_name: HashMap<Uuid, Arc<str>>,
 }

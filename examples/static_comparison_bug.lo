@@ -1,0 +1,9 @@
+main {
+    let num: int = 2;
+    out((num ~ (" => " ~ check_num(num))));
+}
+
+fn check_num(num: num) -> uint if ((num % 2) == 0) 0 else 1
+
+// Expected stdout:
+// 2 => 0

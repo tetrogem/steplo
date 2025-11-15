@@ -1,7 +1,0 @@
-main || {
-    sum("3", "5");
-}
-
-func sum(c, d) |sum| {
-    out(c | add d);
-}

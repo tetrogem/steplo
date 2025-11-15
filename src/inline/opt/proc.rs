@@ -12,7 +12,10 @@ use crate::inline::{
         ArgAssignment, BinaryArgs, Call, Command, Expr, Loc, Proc, StackAddr, SubProc, TempVar,
         Value,
     },
-    opt::{MaybeOptimized, OptimizationFn, sub_proc::optimize_sub_proc, tracked_exhaust_optimize},
+    opt::{
+        MaybeOptimized, OptimizationFn, sub_proc::optimize_sub_proc, tracked_exhaust_optimize,
+        util::find_addr_expr_used_local_vars::proc_find_addr_expr_used_vars,
+    },
 };
 
 pub fn optimize_proc(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>> {
@@ -64,9 +67,17 @@ fn optimization_tempify_local_vars(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>
                     let command = match command.as_ref() {
                         Command::In => Command::In,
                         Command::ClearStdout => Command::ClearStdout,
+                        Command::ClearKeyEventsKeyQueue => Command::ClearKeyEventsKeyQueue,
+                        Command::ClearKeyEventsTimeQueue => Command::ClearKeyEventsTimeQueue,
                         Command::Out(expr) => Command::Out(expr!(expr)),
                         Command::WriteStdout { index, val } => {
                             Command::WriteStdout { index: expr!(index), val: expr!(val) }
+                        },
+                        Command::DeleteKeyEventsKeyQueue { index } => {
+                            Command::DeleteKeyEventsKeyQueue { index: expr!(index) }
+                        },
+                        Command::DeleteKeyEventsTimeQueue { index } => {
+                            Command::DeleteKeyEventsTimeQueue { index: expr!(index) }
                         },
                         Command::SetLoc { loc, val } => {
                             // compute val using existing temp
@@ -83,6 +94,11 @@ fn optimization_tempify_local_vars(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>
                                         StackAddr::Arg { uuid } => {
                                             Loc::Deref(Arc::new(Expr::StackAddr(Arc::new(
                                                 StackAddr::Arg { uuid: *uuid },
+                                            ))))
+                                        },
+                                        StackAddr::Static { uuid } => {
+                                            Loc::Deref(Arc::new(Expr::StackAddr(Arc::new(
+                                                StackAddr::Static { uuid: *uuid },
                                             ))))
                                         },
                                         StackAddr::Local { uuid } => {
@@ -130,10 +146,12 @@ fn optimization_tempify_local_vars(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>
                     arg_assignments: Arc::new(
                         arg_assignments
                             .iter()
-                            .map(|aa| ArgAssignment {
-                                arg_uuid: aa.arg_uuid,
-                                arg_offset: aa.arg_offset,
-                                expr: expr!(&aa.expr),
+                            .map(|aa| {
+                                Arc::new(ArgAssignment {
+                                    arg_uuid: aa.arg_uuid,
+                                    arg_offset: aa.arg_offset,
+                                    expr: expr!(&aa.expr),
+                                })
                             })
                             .collect(),
                     ),
@@ -156,7 +174,12 @@ fn optimization_tempify_local_vars(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>
 
 fn find_tempifiable_local_vars(proc: &Arc<Proc>) -> BTreeSet<Uuid> {
     let read_before_write_local_vars = find_read_before_write_local_vars(proc);
-    let addr_expr_used_local_vars = find_addr_expr_used_local_vars(proc);
+    let addr_expr_used_local_vars =
+        proc_find_addr_expr_used_vars(proc).into_iter().filter_map(|addr| match addr {
+            StackAddr::Arg { .. } => None,
+            StackAddr::Static { .. } => None,
+            StackAddr::Local { uuid } => Some(uuid),
+        });
 
     let uninlineable_local_vars =
         BTreeSet::from_iter(chain!(read_before_write_local_vars, addr_expr_used_local_vars));
@@ -179,12 +202,20 @@ fn find_read_before_write_local_vars(proc: &Arc<Proc>) -> BTreeSet<Uuid> {
             let (command_written_local_vars, command_read_local_vars) = match command.as_ref() {
                 Command::In => (Default::default(), Default::default()),
                 Command::ClearStdout => (Default::default(), Default::default()),
+                Command::ClearKeyEventsKeyQueue => (Default::default(), Default::default()),
+                Command::ClearKeyEventsTimeQueue => (Default::default(), Default::default()),
                 Command::Out(expr) => (Default::default(), expr_find_read_local_vars(expr)),
                 Command::WriteStdout { index, val } => (
                     Default::default(),
                     chain!(expr_find_read_local_vars(index), expr_find_read_local_vars(val))
                         .collect(),
                 ),
+                Command::DeleteKeyEventsKeyQueue { index } => {
+                    (Default::default(), expr_find_read_local_vars(index))
+                },
+                Command::DeleteKeyEventsTimeQueue { index } => {
+                    (Default::default(), expr_find_read_local_vars(index))
+                },
                 Command::SetLoc { loc, val } => {
                     let val_read_local_vars = expr_find_read_local_vars(val);
                     let loc_written_and_read_local_vars = loc_find_written_and_read_local_vars(loc);
@@ -251,69 +282,54 @@ fn expr_find_written_and_read_local_vars(expr: &Expr) -> WrittenAndReadLocalVars
             written: Default::default(),
             read: loc_find_read_local_vars(loc),
         },
+
         Expr::StackAddr(addr) => match addr.as_ref() {
             StackAddr::Arg { .. } => Default::default(),
+            StackAddr::Static { .. } => Default::default(),
             StackAddr::Local { uuid } => WrittenAndReadLocalVars {
                 written: BTreeSet::from([*uuid]),
                 read: Default::default(),
             },
         },
-        Expr::Value(_) => Default::default(),
-        Expr::StdoutDeref(expr) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: expr_find_read_local_vars(expr),
-        },
-        Expr::StdoutLen => Default::default(),
-        Expr::Timer => Default::default(),
+
         // add and sub can count towards writes for offsets e.g. (stack[local:ab + "2"]) is a write
         // but stack[stack[local:ab]] and stack[local:ab * 2] are not
         Expr::Add(args) => args_find_written_and_read_local_vars(args),
         Expr::Sub(args) => args_find_written_and_read_local_vars(args),
-        Expr::Mul(args) => WrittenAndReadLocalVars {
+
+        Expr::Mul(args)
+        | Expr::Div(args)
+        | Expr::Mod(args)
+        | Expr::Eq(args)
+        | Expr::Lt(args)
+        | Expr::Gt(args)
+        | Expr::Or(args)
+        | Expr::And(args)
+        | Expr::Join(args)
+        | Expr::Random(args) => WrittenAndReadLocalVars {
             written: Default::default(),
             read: args_find_read_local_vars(args),
         },
-        Expr::Div(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
-        Expr::Mod(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
-        Expr::Eq(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
-        Expr::Lt(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
-        Expr::Gt(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
-        Expr::Not(expr) => WrittenAndReadLocalVars {
+
+        Expr::StdoutDeref(expr)
+        | Expr::KeyEventsKeyQueueDeref(expr)
+        | Expr::KeyEventsTimeQueueDeref(expr)
+        | Expr::Round(expr)
+        | Expr::Floor(expr)
+        | Expr::Ceil(expr)
+        | Expr::Abs(expr)
+        | Expr::Not(expr) => WrittenAndReadLocalVars {
             written: Default::default(),
             read: expr_find_read_local_vars(expr),
         },
-        Expr::Or(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
-        Expr::And(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
-        Expr::InAnswer => Default::default(),
-        Expr::Join(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
-        Expr::Random(args) => WrittenAndReadLocalVars {
-            written: Default::default(),
-            read: args_find_read_local_vars(args),
-        },
+
+        Expr::Value(_)
+        | Expr::StdoutLen
+        | Expr::KeyEventsKeyQueueLen
+        | Expr::KeyEventsTimeQueueLen
+        | Expr::Timer
+        | Expr::DaysSince2000
+        | Expr::InAnswer => Default::default(),
     }
 }
 
@@ -330,25 +346,37 @@ fn args_find_written_and_read_local_vars(args: &BinaryArgs) -> WrittenAndReadLoc
 fn expr_find_read_local_vars(expr: &Expr) -> BTreeSet<Uuid> {
     match expr {
         Expr::Loc(loc) => loc_find_read_local_vars(loc),
-        Expr::StackAddr(_) => Default::default(),
-        Expr::Value(_) => Default::default(),
-        Expr::StdoutDeref(expr) => expr_find_read_local_vars(expr),
-        Expr::StdoutLen => Default::default(),
-        Expr::Timer => Default::default(),
-        Expr::Add(args) => args_find_read_local_vars(args),
-        Expr::Sub(args) => args_find_read_local_vars(args),
-        Expr::Mul(args) => args_find_read_local_vars(args),
-        Expr::Div(args) => args_find_read_local_vars(args),
-        Expr::Mod(args) => args_find_read_local_vars(args),
-        Expr::Eq(args) => args_find_read_local_vars(args),
-        Expr::Lt(args) => args_find_read_local_vars(args),
-        Expr::Gt(args) => args_find_read_local_vars(args),
-        Expr::Not(expr) => expr_find_read_local_vars(expr),
-        Expr::Or(args) => args_find_read_local_vars(args),
-        Expr::And(args) => args_find_read_local_vars(args),
-        Expr::InAnswer => Default::default(),
-        Expr::Join(args) => args_find_read_local_vars(args),
-        Expr::Random(args) => args_find_read_local_vars(args),
+
+        Expr::Value(_)
+        | Expr::StackAddr(_)
+        | Expr::StdoutLen
+        | Expr::KeyEventsKeyQueueLen
+        | Expr::KeyEventsTimeQueueLen
+        | Expr::Timer
+        | Expr::DaysSince2000
+        | Expr::InAnswer => Default::default(),
+
+        Expr::Add(args)
+        | Expr::Sub(args)
+        | Expr::Mul(args)
+        | Expr::Div(args)
+        | Expr::Mod(args)
+        | Expr::Eq(args)
+        | Expr::Lt(args)
+        | Expr::Gt(args)
+        | Expr::Or(args)
+        | Expr::And(args)
+        | Expr::Join(args)
+        | Expr::Random(args) => args_find_read_local_vars(args),
+
+        Expr::StdoutDeref(expr)
+        | Expr::KeyEventsKeyQueueDeref(expr)
+        | Expr::KeyEventsTimeQueueDeref(expr)
+        | Expr::Not(expr)
+        | Expr::Round(expr)
+        | Expr::Floor(expr)
+        | Expr::Ceil(expr)
+        | Expr::Abs(expr) => expr_find_read_local_vars(expr),
     }
 }
 
@@ -358,6 +386,7 @@ fn loc_find_read_local_vars(loc: &Loc) -> BTreeSet<Uuid> {
         Loc::Deref(addr) => match addr.as_ref() {
             Expr::StackAddr(addr) => match addr.as_ref() {
                 StackAddr::Arg { .. } => Default::default(),
+                StackAddr::Static { .. } => Default::default(),
                 StackAddr::Local { uuid } => BTreeSet::from([*uuid]),
             },
             addr => expr_find_read_local_vars(addr),
@@ -367,110 +396,6 @@ fn loc_find_read_local_vars(loc: &Loc) -> BTreeSet<Uuid> {
 
 fn args_find_read_local_vars(args: &BinaryArgs) -> BTreeSet<Uuid> {
     chain!(expr_find_read_local_vars(&args.left), expr_find_read_local_vars(&args.right)).collect()
-}
-
-// local vars who's addresses are used in expressions other than instantly dereffing
-fn find_addr_expr_used_local_vars(proc: &Arc<Proc>) -> BTreeSet<Uuid> {
-    let mut addr_expr_used_local_vars = BTreeSet::new();
-
-    for sp in proc.sub_procs.iter() {
-        for command in sp.commands.iter() {
-            addr_expr_used_local_vars.extend(command_find_addr_expr_used_local_vars(command));
-        }
-
-        match sp.call.as_ref() {
-            Call::Exit => {},
-            Call::Jump { to } => {
-                addr_expr_used_local_vars.extend(expr_find_addr_expr_used_local_vars(to))
-            },
-            Call::Branch { cond, then_to, else_to } => {
-                addr_expr_used_local_vars.extend(expr_find_addr_expr_used_local_vars(cond));
-                addr_expr_used_local_vars.extend(expr_find_addr_expr_used_local_vars(then_to));
-                addr_expr_used_local_vars.extend(expr_find_addr_expr_used_local_vars(else_to));
-            },
-            Call::Sleep { duration_s, to } => {
-                addr_expr_used_local_vars.extend(expr_find_addr_expr_used_local_vars(duration_s));
-                addr_expr_used_local_vars.extend(expr_find_addr_expr_used_local_vars(to));
-            },
-            Call::Return { to } => {
-                addr_expr_used_local_vars.extend(expr_find_addr_expr_used_local_vars(to));
-            },
-            Call::Func { to_func_name: _, arg_assignments } => {
-                for aa in arg_assignments.iter() {
-                    addr_expr_used_local_vars.extend(expr_find_addr_expr_used_local_vars(&aa.expr));
-                }
-            },
-        }
-    }
-
-    addr_expr_used_local_vars
-}
-
-fn command_find_addr_expr_used_local_vars(command: &Command) -> BTreeSet<Uuid> {
-    match command {
-        Command::In => Default::default(),
-        Command::ClearStdout => Default::default(),
-        Command::Out(expr) => expr_find_addr_expr_used_local_vars(expr),
-        Command::WriteStdout { index, val } => chain!(
-            expr_find_addr_expr_used_local_vars(index),
-            expr_find_addr_expr_used_local_vars(val)
-        )
-        .collect(),
-        Command::SetLoc { loc, val } => chain!(
-            loc_find_addr_expr_used_local_vars(loc),
-            expr_find_addr_expr_used_local_vars(val)
-        )
-        .collect(),
-    }
-}
-
-fn expr_find_addr_expr_used_local_vars(expr: &Expr) -> BTreeSet<Uuid> {
-    match expr {
-        Expr::Loc(loc) => loc_find_addr_expr_used_local_vars(loc),
-        Expr::StackAddr(addr) => match addr.as_ref() {
-            StackAddr::Arg { .. } => Default::default(),
-            StackAddr::Local { uuid } => BTreeSet::from([*uuid]),
-        },
-        Expr::Value(_) => Default::default(),
-        Expr::StdoutDeref(expr) => expr_find_addr_expr_used_local_vars(expr),
-        Expr::StdoutLen => Default::default(),
-        Expr::Timer => Default::default(),
-        Expr::Add(args) => args_find_addr_expr_used_local_vars(args),
-        Expr::Sub(args) => args_find_addr_expr_used_local_vars(args),
-        Expr::Mul(args) => args_find_addr_expr_used_local_vars(args),
-        Expr::Div(args) => args_find_addr_expr_used_local_vars(args),
-        Expr::Mod(args) => args_find_addr_expr_used_local_vars(args),
-        Expr::Eq(args) => args_find_addr_expr_used_local_vars(args),
-        Expr::Lt(args) => args_find_addr_expr_used_local_vars(args),
-        Expr::Gt(args) => args_find_addr_expr_used_local_vars(args),
-        Expr::Not(expr) => expr_find_addr_expr_used_local_vars(expr),
-        Expr::Or(args) => args_find_addr_expr_used_local_vars(args),
-        Expr::And(args) => args_find_addr_expr_used_local_vars(args),
-        Expr::InAnswer => Default::default(),
-        Expr::Join(args) => args_find_addr_expr_used_local_vars(args),
-        Expr::Random(args) => args_find_addr_expr_used_local_vars(args),
-    }
-}
-
-fn args_find_addr_expr_used_local_vars(args: &BinaryArgs) -> BTreeSet<Uuid> {
-    chain!(
-        expr_find_addr_expr_used_local_vars(&args.left),
-        expr_find_addr_expr_used_local_vars(&args.right)
-    )
-    .collect()
-}
-
-fn loc_find_addr_expr_used_local_vars(loc: &Loc) -> BTreeSet<Uuid> {
-    match loc {
-        Loc::Temp(_) => Default::default(),
-        Loc::Deref(addr) => {
-            match addr.as_ref() {
-                // don't count immediately dereffed stack addrs
-                Expr::StackAddr(_) => Default::default(),
-                addr => expr_find_addr_expr_used_local_vars(addr),
-            }
-        },
-    }
 }
 
 fn expr_replace_locals_with_temps(
@@ -496,7 +421,16 @@ fn expr_replace_locals_with_temps(
             local_var_uuid_to_temp,
         ))),
         Expr::StdoutLen => Expr::StdoutLen,
+        Expr::KeyEventsKeyQueueDeref(expr) => Expr::KeyEventsKeyQueueDeref(Arc::new(
+            expr_replace_locals_with_temps(expr, local_var_uuid_to_temp),
+        )),
+        Expr::KeyEventsKeyQueueLen => Expr::KeyEventsKeyQueueLen,
+        Expr::KeyEventsTimeQueueDeref(expr) => Expr::KeyEventsTimeQueueDeref(Arc::new(
+            expr_replace_locals_with_temps(expr, local_var_uuid_to_temp),
+        )),
+        Expr::KeyEventsTimeQueueLen => Expr::KeyEventsTimeQueueLen,
         Expr::Timer => Expr::Timer,
+        Expr::DaysSince2000 => Expr::DaysSince2000,
         Expr::Add(args) => {
             Expr::Add(Arc::new(args_replace_locals_with_temps(args, local_var_uuid_to_temp)))
         },
@@ -537,6 +471,18 @@ fn expr_replace_locals_with_temps(
         Expr::Random(args) => {
             Expr::Random(Arc::new(args_replace_locals_with_temps(args, local_var_uuid_to_temp)))
         },
+        Expr::Round(expr) => {
+            Expr::Round(Arc::new(expr_replace_locals_with_temps(expr, local_var_uuid_to_temp)))
+        },
+        Expr::Floor(expr) => {
+            Expr::Floor(Arc::new(expr_replace_locals_with_temps(expr, local_var_uuid_to_temp)))
+        },
+        Expr::Ceil(expr) => {
+            Expr::Ceil(Arc::new(expr_replace_locals_with_temps(expr, local_var_uuid_to_temp)))
+        },
+        Expr::Abs(expr) => {
+            Expr::Abs(Arc::new(expr_replace_locals_with_temps(expr, local_var_uuid_to_temp)))
+        },
     }
 }
 
@@ -560,6 +506,11 @@ fn loc_replace_locals_with_temps(
             Expr::StackAddr(addr) => match addr.as_ref() {
                 StackAddr::Arg { uuid } => {
                     Loc::Deref(Arc::new(Expr::StackAddr(Arc::new(StackAddr::Arg { uuid: *uuid }))))
+                },
+                StackAddr::Static { uuid } => {
+                    Loc::Deref(Arc::new(Expr::StackAddr(Arc::new(StackAddr::Static {
+                        uuid: *uuid,
+                    }))))
                 },
                 StackAddr::Local { uuid } => match local_var_uuid_to_temp.get(uuid) {
                     Some(temp) => Loc::Temp(temp.clone()),
@@ -595,10 +546,13 @@ fn optimization_inline_sp_jumps(proc: &Arc<Proc>) -> MaybeOptimized<Arc<Proc>> {
                 // dbg!(to_sp.uuid, &to_sp.call, sp.uuid, &sp.call);
                 optimized = true;
 
-                let commands =
-                    chain!(sp.commands.iter().cloned(), to_sp.commands.iter().cloned()).collect();
+                let (uniquified_to_commands, uniquified_to_call) =
+                    inline_uniquify_temps(to_sp.commands.as_ref(), &to_sp.call);
 
-                (Arc::new(commands), to_sp.call.clone())
+                let commands =
+                    chain!(sp.commands.iter().cloned(), uniquified_to_commands).collect();
+
+                (Arc::new(commands), Arc::new(uniquified_to_call))
             } else {
                 (sp.commands.clone(), sp.call.clone())
             };
@@ -636,4 +590,157 @@ fn sp_can_jump_to_itself(sp: &SubProc) -> bool {
     }
 
     false
+}
+
+type OldToNewTemp = BTreeMap<Arc<TempVar>, Arc<TempVar>>;
+
+fn inline_uniquify_temps(commands: &[Arc<Command>], call: &Call) -> (Vec<Arc<Command>>, Call) {
+    // only uniquify temps that are created in these commands
+    // not just existing ones that are use as values (which could be from outside of these commands)
+    let temps = commands_find_created_temps(commands);
+    let old_to_new_temp: OldToNewTemp =
+        temps.into_iter().map(|old| (old, Arc::new(TempVar::new()))).collect::<BTreeMap<_, _>>();
+
+    let uniquified_commands = commands
+        .iter()
+        .map(|command| Arc::new(command_uniquify_temps(command, &old_to_new_temp)))
+        .collect();
+
+    let uniquified_call = call_uniquify_temps(call, &old_to_new_temp);
+
+    (uniquified_commands, uniquified_call)
+}
+
+fn command_uniquify_temps(command: &Command, old_to_new_temp: &OldToNewTemp) -> Command {
+    match command {
+        Command::SetLoc { loc, val } => Command::SetLoc {
+            loc: Arc::new(loc_uniquify_temps(loc, old_to_new_temp)),
+            val: Arc::new(expr_uniquify_temps(val, old_to_new_temp)),
+        },
+        Command::In => Command::In,
+        Command::Out(expr) => Command::Out(Arc::new(expr_uniquify_temps(expr, old_to_new_temp))),
+        Command::ClearStdout => Command::ClearStdout,
+        Command::WriteStdout { index, val } => Command::WriteStdout {
+            index: Arc::new(expr_uniquify_temps(index, old_to_new_temp)),
+            val: Arc::new(expr_uniquify_temps(val, old_to_new_temp)),
+        },
+        Command::ClearKeyEventsKeyQueue => Command::ClearKeyEventsKeyQueue,
+        Command::DeleteKeyEventsKeyQueue { index } => Command::DeleteKeyEventsKeyQueue {
+            index: Arc::new(expr_uniquify_temps(index, old_to_new_temp)),
+        },
+        Command::ClearKeyEventsTimeQueue => Command::ClearKeyEventsTimeQueue,
+        Command::DeleteKeyEventsTimeQueue { index } => Command::DeleteKeyEventsTimeQueue {
+            index: Arc::new(expr_uniquify_temps(index, old_to_new_temp)),
+        },
+    }
+}
+
+fn expr_uniquify_temps(expr: &Expr, old_to_new_temp: &OldToNewTemp) -> Expr {
+    match expr {
+        Expr::Loc(loc) => Expr::Loc(Arc::new(loc_uniquify_temps(loc, old_to_new_temp))),
+        Expr::StackAddr(stack_addr) => Expr::StackAddr(stack_addr.clone()),
+        Expr::Value(value) => Expr::Value(value.clone()),
+        Expr::StdoutDeref(expr) => {
+            Expr::StdoutDeref(Arc::new(expr_uniquify_temps(expr, old_to_new_temp)))
+        },
+        Expr::StdoutLen => Expr::StdoutLen,
+        Expr::KeyEventsKeyQueueDeref(expr) => {
+            Expr::KeyEventsKeyQueueDeref(Arc::new(expr_uniquify_temps(expr, old_to_new_temp)))
+        },
+        Expr::KeyEventsKeyQueueLen => Expr::KeyEventsKeyQueueLen,
+        Expr::KeyEventsTimeQueueDeref(expr) => {
+            Expr::KeyEventsTimeQueueDeref(Arc::new(expr_uniquify_temps(expr, old_to_new_temp)))
+        },
+        Expr::KeyEventsTimeQueueLen => Expr::KeyEventsTimeQueueLen,
+        Expr::Timer => Expr::Timer,
+        Expr::DaysSince2000 => Expr::DaysSince2000,
+        Expr::Add(args) => Expr::Add(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Sub(args) => Expr::Sub(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Mul(args) => Expr::Mul(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Div(args) => Expr::Div(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Mod(args) => Expr::Mod(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Eq(args) => Expr::Eq(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Lt(args) => Expr::Lt(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Gt(args) => Expr::Gt(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Not(expr) => Expr::Not(Arc::new(expr_uniquify_temps(expr, old_to_new_temp))),
+        Expr::Or(args) => Expr::Or(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::And(args) => Expr::And(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::InAnswer => Expr::InAnswer,
+        Expr::Join(args) => Expr::Join(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Random(args) => Expr::Random(Arc::new(args_uniquify_temps(args, old_to_new_temp))),
+        Expr::Round(expr) => Expr::Round(Arc::new(expr_uniquify_temps(expr, old_to_new_temp))),
+        Expr::Floor(expr) => Expr::Floor(Arc::new(expr_uniquify_temps(expr, old_to_new_temp))),
+        Expr::Ceil(expr) => Expr::Ceil(Arc::new(expr_uniquify_temps(expr, old_to_new_temp))),
+        Expr::Abs(expr) => Expr::Abs(Arc::new(expr_uniquify_temps(expr, old_to_new_temp))),
+    }
+}
+
+fn loc_uniquify_temps(loc: &Loc, old_to_new_temp: &OldToNewTemp) -> Loc {
+    match loc {
+        Loc::Deref(expr) => Loc::Deref(Arc::new(expr_uniquify_temps(expr, old_to_new_temp))),
+        Loc::Temp(old_temp) => {
+            let temp = match old_to_new_temp.get(old_temp) {
+                Some(new_temp) => new_temp,
+                None => old_temp,
+            };
+
+            Loc::Temp(temp.clone())
+        },
+    }
+}
+
+fn args_uniquify_temps(args: &BinaryArgs, old_to_new_temp: &OldToNewTemp) -> BinaryArgs {
+    BinaryArgs {
+        left: Arc::new(expr_uniquify_temps(&args.left, old_to_new_temp)),
+        right: Arc::new(expr_uniquify_temps(&args.right, old_to_new_temp)),
+    }
+}
+
+fn call_uniquify_temps(call: &Call, old_to_new_temp: &OldToNewTemp) -> Call {
+    match call {
+        Call::Jump { to } => Call::Jump { to: Arc::new(expr_uniquify_temps(to, old_to_new_temp)) },
+        Call::Branch { cond, then_to, else_to } => Call::Branch {
+            cond: Arc::new(expr_uniquify_temps(cond, old_to_new_temp)),
+            then_to: Arc::new(expr_uniquify_temps(then_to, old_to_new_temp)),
+            else_to: Arc::new(expr_uniquify_temps(else_to, old_to_new_temp)),
+        },
+        Call::Sleep { duration_s, to } => Call::Sleep {
+            duration_s: Arc::new(expr_uniquify_temps(duration_s, old_to_new_temp)),
+            to: Arc::new(expr_uniquify_temps(to, old_to_new_temp)),
+        },
+        Call::Func { to_func_name, arg_assignments } => Call::Func {
+            to_func_name: to_func_name.clone(),
+            arg_assignments: Arc::new(
+                arg_assignments
+                    .iter()
+                    .map(|aa| {
+                        Arc::new(ArgAssignment {
+                            arg_uuid: aa.arg_uuid,
+                            arg_offset: aa.arg_offset,
+                            expr: Arc::new(expr_uniquify_temps(&aa.expr, old_to_new_temp)),
+                        })
+                    })
+                    .collect(),
+            ),
+        },
+        Call::Return { to } => {
+            Call::Return { to: Arc::new(expr_uniquify_temps(to, old_to_new_temp)) }
+        },
+        Call::Exit => Call::Exit,
+    }
+}
+
+fn commands_find_created_temps(commands: &[Arc<Command>]) -> BTreeSet<Arc<TempVar>> {
+    commands
+        .iter()
+        .filter_map(|command| {
+            if let Command::SetLoc { loc, val: _ } = command.as_ref()
+                && let Loc::Temp(temp) = loc.as_ref()
+            {
+                return Some(temp.clone());
+            }
+
+            None
+        })
+        .collect()
 }

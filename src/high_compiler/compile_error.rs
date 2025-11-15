@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashSet, fmt::Display, path::Path, sync::Arc};
+use std::{cmp::Ordering, collections::HashSet, ops::Not, path::Path, sync::Arc};
 
 use colored::Colorize;
 use itertools::Itertools;
@@ -18,7 +18,7 @@ pub struct CompileErrorSet {
 #[derive(Debug)]
 pub(crate) enum CompileError {
     Grammar(GrammarError),
-    Convert(LogicError),
+    Logic(LogicError),
     Type(TypeError),
 }
 
@@ -34,12 +34,13 @@ pub(crate) enum LogicError {
     InvalidArrayTypeLen,
     InvalidNumLiteral,
     ElementAfterSpread,
+    FoundInternalIdent,
 }
 
 #[derive(Debug)]
 pub(crate) enum TypeError {
     Mismatch {
-        expected: Arc<VagueType>,
+        expected_any_of: Arc<Vec<Arc<VagueType>>>,
         found: Arc<VagueType>,
     },
     InvalidCast {
@@ -89,9 +90,6 @@ pub(crate) enum TypeError {
         struct_type: Arc<VagueType>,
         field_name: Arc<str>,
     },
-    AssignCellExprToCompoundPlace {
-        place_size: u32,
-    },
     StructLiteralMissingField {
         field_type: Arc<VagueType>,
         field_name: Arc<str>,
@@ -105,6 +103,7 @@ pub(crate) enum TypeError {
         left: Arc<VagueType>,
         right: Arc<VagueType>,
     },
+    ExpectedConstExpr,
 }
 
 #[derive(Debug)]
@@ -171,7 +170,7 @@ impl VagueTypeDisplay {
 }
 
 impl VagueType {
-    pub fn to_display(&self) -> VagueTypeDisplay {
+    fn to_display(&self) -> VagueTypeDisplay {
         match self {
             Self::Any => VagueTypeDisplay::Ticked("any".into()),
             Self::Unknown => VagueTypeDisplay::Ticked("_".into()),
@@ -201,7 +200,13 @@ impl VagueType {
                         .join(", "),
                 };
 
-                VagueTypeDisplay::Ticked(format!("{{ {fields} }}").into())
+                VagueTypeDisplay::Ticked(
+                    format!(
+                        "{{{padding}{fields}{padding}}}",
+                        padding = if fields.is_empty().not() { " " } else { "" }
+                    )
+                    .into(),
+                )
             },
             Self::Enum { name } => match name {
                 Some(name) => VagueTypeDisplay::Ticked(name.clone()),
@@ -247,11 +252,12 @@ enum CollapsedLogicError {
     InvalidArrayTypeLen,
     InvalidNumLiteral,
     ElementAfterSpread,
+    FoundInternalIdent,
 }
 
 enum CollapsedTypeError {
     Mismatch {
-        expected: Arc<VagueType>,
+        expected_any_of: Arc<Vec<Arc<VagueType>>>,
         found: Arc<VagueType>,
     },
     InvalidCast {
@@ -301,9 +307,6 @@ enum CollapsedTypeError {
         struct_type: Arc<VagueType>,
         field_name: Arc<str>,
     },
-    AssignCellExprToCompoundPlace {
-        place_size: u32,
-    },
     StructLiteralMissingField {
         field_name: Arc<str>,
         field_type: Arc<VagueType>,
@@ -317,6 +320,7 @@ enum CollapsedTypeError {
         left: Arc<VagueType>,
         right: Arc<VagueType>,
     },
+    ExpectedConstExpr,
 }
 
 impl CollapsedGrammarError {
@@ -377,8 +381,8 @@ impl CollapsedCompileError {
             (CollapsedCompileError::Grammar(ast), CompileError::Grammar(other_ast)) => {
                 ast.try_collapse(other_ast).map_err(CompileError::Grammar)
             },
-            (CollapsedCompileError::Logic(convert), CompileError::Convert(other_convert)) => {
-                convert.try_collapse(other_convert).map_err(CompileError::Convert)
+            (CollapsedCompileError::Logic(convert), CompileError::Logic(other_convert)) => {
+                convert.try_collapse(other_convert).map_err(CompileError::Logic)
             },
             (CollapsedCompileError::Type(ty), CompileError::Type(other_ty)) => {
                 ty.try_collapse(other_ty).map_err(CompileError::Type)
@@ -406,7 +410,7 @@ impl CollapsedCompileError {
                     TokenKind::Dash => TokenString::Punctuation("-"),
                     TokenKind::Else => TokenString::Keyword("else"),
                     TokenKind::Eq => TokenString::Punctuation("="),
-                    TokenKind::Func => TokenString::Keyword("func"),
+                    TokenKind::Fn => TokenString::Keyword("fn"),
                     TokenKind::If => TokenString::Keyword("if"),
                     TokenKind::LeftAngle => TokenString::Punctuation("<"),
                     TokenKind::LeftBrace => TokenString::Punctuation("{"),
@@ -435,6 +439,9 @@ impl CollapsedCompileError {
                     TokenKind::Type => TokenString::Keyword("type"),
                     TokenKind::Hashtag => TokenString::Punctuation("#"),
                     TokenKind::Match => TokenString::Keyword("match"),
+                    TokenKind::Let => TokenString::Keyword("let"),
+                    TokenKind::Undefined => TokenString::Keyword("undefined"),
+                    TokenKind::Static => TokenString::Keyword("static"),
                 }
             }
 
@@ -520,12 +527,18 @@ impl CollapsedCompileError {
                 CollapsedLogicError::ElementAfterSpread => {
                     "Additional array elements cannot come after spread element".into()
                 },
+                CollapsedLogicError::FoundInternalIdent => {
+                    "Internal idents should not be defineable in user code".into()
+                },
             },
             Self::Type(ty) => match ty {
-                CollapsedTypeError::Mismatch { expected, found } => {
+                CollapsedTypeError::Mismatch { expected_any_of, found } => {
                     format!(
                         "Expected {}; Found {}",
-                        expected.to_display().display(),
+                        expected_any_of
+                            .iter()
+                            .map(|expected| expected.to_display().display())
+                            .join(", "),
                         found.to_display().display()
                     )
                 },
@@ -602,9 +615,6 @@ impl CollapsedCompileError {
                         struct_type.to_display().display()
                     )
                 },
-                CollapsedTypeError::AssignCellExprToCompoundPlace { place_size } => {
-                    format!("Cannot assign cell expression to place with size {place_size}")
-                },
                 CollapsedTypeError::StructLiteralMissingField { field_name, field_type } => {
                     format!(
                         "Struct literal is missing field `{field_name}` with type {}",
@@ -625,6 +635,9 @@ impl CollapsedCompileError {
                         left.to_display().display(),
                         right.to_display().display()
                     )
+                },
+                CollapsedTypeError::ExpectedConstExpr => {
+                    "Expected const expr in this context".to_string()
                 },
             },
         }
@@ -655,14 +668,15 @@ impl From<CompileError> for CollapsedCompileError {
                     }
                 },
             }),
-            CompileError::Convert(convert) => Self::Logic(match convert {
+            CompileError::Logic(convert) => Self::Logic(match convert {
                 LogicError::InvalidArrayTypeLen => CollapsedLogicError::InvalidArrayTypeLen,
                 LogicError::InvalidNumLiteral => CollapsedLogicError::InvalidNumLiteral,
                 LogicError::ElementAfterSpread => CollapsedLogicError::ElementAfterSpread,
+                LogicError::FoundInternalIdent => CollapsedLogicError::FoundInternalIdent,
             }),
             CompileError::Type(ty) => Self::Type(match ty {
-                TypeError::Mismatch { expected, found } => {
-                    CollapsedTypeError::Mismatch { expected, found }
+                TypeError::Mismatch { expected_any_of, found } => {
+                    CollapsedTypeError::Mismatch { expected_any_of, found }
                 },
                 TypeError::InvalidCast { from, to } => CollapsedTypeError::InvalidCast { from, to },
                 TypeError::InvalidTransmute { from, to } => {
@@ -687,9 +701,6 @@ impl From<CompileError> for CollapsedCompileError {
                 TypeError::IndexInvalidField { struct_type, field_name } => {
                     CollapsedTypeError::IndexInvalidField { struct_type, field_name }
                 },
-                TypeError::AssignCellExprToCompoundPlace { place_size } => {
-                    CollapsedTypeError::AssignCellExprToCompoundPlace { place_size }
-                },
                 TypeError::StructLiteralMissingField { field_name, field_type } => {
                     CollapsedTypeError::StructLiteralMissingField { field_name, field_type }
                 },
@@ -705,6 +716,7 @@ impl From<CompileError> for CollapsedCompileError {
                 TypeError::Uncomparable { left, right } => {
                     CollapsedTypeError::Uncomparable { left, right }
                 },
+                TypeError::ExpectedConstExpr => CollapsedTypeError::ExpectedConstExpr,
             }),
         }
     }

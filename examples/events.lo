@@ -1,0 +1,15 @@
+main {
+    while true {
+        while key_events_has_next() {
+            let event: KeyEvent = key_events_next();
+
+            out(((("Key press read: " ~ <uint>event.key) ~ " @ ") ~ event.time));
+
+            if (event.key == Key#Space) {
+                out("Pressed Space!");
+            }
+        }
+    }
+}
+
+// TODO result

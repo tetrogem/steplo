@@ -25,7 +25,7 @@ use utils::{time, time_total, write_json};
 use crate::{
     compile_error::{CompileErrorSet, report_compile_errors},
     grammar_to_logic::grammar_to_ast,
-    high_compiler::{add_builtins, logic_ast, type_resolved_ast, typecheck},
+    high_compiler::{add_builtins, logic_ast, type_erased_ast, typecheck},
     srced::Srced,
 };
 
@@ -109,7 +109,7 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
 
     if args.opt_artifacts {
         time("Writing intermediate inline 0 file...", || {
-            let asm_export = inline::export::export(inline_opt_ast.iter().map(AsRef::as_ref));
+            let asm_export = inline::export::export(&inline_opt_ast);
             let name = src_path
                 .file_stem()
                 .and_then(|stem| stem.to_str())
@@ -128,7 +128,7 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
 
         if args.opt_artifacts {
             time("Writing intermediate inline 1 file...", || {
-                let asm_export = inline::export::export(inline_opt_ast.iter().map(AsRef::as_ref));
+                let asm_export = inline::export::export(&inline_opt_ast);
                 let name = src_path
                     .file_stem()
                     .and_then(|stem| stem.to_str())
@@ -210,7 +210,7 @@ fn compile_all(args: Args) -> anyhow::Result<()> {
 
 fn compile_set_fallables(
     tokens: Vec<Srced<token::Token>>,
-) -> Result<logic_ast::Ref<type_resolved_ast::Program>, CompileErrorSet> {
+) -> Result<logic_ast::Ref<type_erased_ast::Program>, CompileErrorSet> {
     let ast = time("Parsing grammar...", || parse(tokens.into()))?;
     let ast = time("Converting grammar...", || grammar_to_ast(&Arc::new(ast)))?;
     let ast = time("Adding built-in functions...", || add_builtins::add_builtins(&ast));

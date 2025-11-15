@@ -1,0 +1,7 @@
+main {
+    let line: str = stdout_read(10);
+    out((line ~ "x"));
+}
+
+// Expected stdout:
+// x

@@ -2,15 +2,19 @@
 // transmutations explicitly show possibly unsafe conversions.
 // safe conversions to supertypes will be done automatically, without the need for extra syntax.
 // safe conversions involving underlying type representations can be done with typecasts.
-main |foo: any| {
+main {
+    let foo: any = "hello";
     mutate_ref(&foo);
     needs_val(<<val>>foo);
 }
 
-func mutate_ref(ref: &any) || {
+fn mutate_ref(ref: &any) {
     *ref = 1;
 }
 
-func needs_val(val: val) || {
+fn needs_val(val: val) {
     out(val);
 }
+
+// Expected stdout:
+// 1

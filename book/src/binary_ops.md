@@ -2,8 +2,8 @@
 
 Binary operators can create expressions that take two other expressions as input. An example of a binary operator is the add `+` operator:
 
-```
-main || {
+```rs
+main {
     out((1 + 2)); // prints 3
 }
 ```

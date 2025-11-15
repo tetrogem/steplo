@@ -1,6 +1,7 @@
-main |i: int| {
+main {
     out("Enter how many iterations to do:");
-    in(<<&str>>&i);
+
+    let i: int = <<int>>in();
 
     out("Start!");
 
@@ -11,3 +12,5 @@ main |i: int| {
 
     out("End!");
 }
+
+// Interactive

@@ -1,0 +1,7 @@
+main {
+    let foo: uint = if false { 10 } else { 20 };
+    out(foo);
+}
+
+// Expected output:
+// 20

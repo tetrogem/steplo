@@ -64,9 +64,66 @@ pub enum Op {
 #[derive(Debug)]
 pub enum EventOp {
     WhenFlagClicked,
-    WhenBroadcastReceived { broadcast: Arc<Broadcast> },
-    BroadcastAndWait { input: Arc<Expr> },
-    Broadcast { input: Arc<Expr> },
+    WhenBroadcastReceived {
+        broadcast: Arc<Broadcast>,
+    },
+    BroadcastAndWait {
+        input: Arc<Expr>,
+    },
+    #[expect(unused)]
+    Broadcast {
+        input: Arc<Expr>,
+    },
+    WhenKeyPressed {
+        key_option: KeyOption,
+    },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum KeyOption {
+    Space,
+    UpArrow,
+    DownArrow,
+    RightArrow,
+    LeftArrow,
+    #[expect(unused)]
+    Any,
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    J,
+    K,
+    L,
+    M,
+    N,
+    O,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    U,
+    V,
+    W,
+    X,
+    Y,
+    Z,
+    Num0,
+    Num1,
+    Num2,
+    Num3,
+    Num4,
+    Num5,
+    Num6,
+    Num7,
+    Num8,
+    Num9,
 }
 
 #[derive(Debug)]
@@ -91,6 +148,7 @@ pub enum ControlOp {
         then_substack: Option<Arc<Expr>>,
         else_substack: Option<Arc<Expr>>,
     },
+    #[expect(unused)]
     Wait {
         duration_s: Arc<Expr>,
     },
@@ -109,6 +167,7 @@ pub enum SensingOp {
     AskAndWait { question: Arc<Expr> },
     Answer,
     Timer,
+    DaysSince2000,
 }
 
 #[derive(Debug)]
@@ -126,6 +185,15 @@ pub enum OperatorOp {
     LessThan { operand_a: Arc<Expr>, operand_b: Arc<Expr> },
     And { operand_a: Arc<Expr>, operand_b: Arc<Expr> },
     Or { operand_a: Arc<Expr>, operand_b: Arc<Expr> },
+    Round { num: Arc<Expr> },
+    MathOp { operator: MathOperator, num: Arc<Expr> },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MathOperator {
+    Abs,
+    Floor,
+    Ceiling,
 }
 
 #[derive(Debug)]
@@ -160,11 +228,18 @@ pub enum Expr {
 #[derive(Debug)]
 pub enum Literal {
     Num(f64),
+    #[expect(unused)]
     PosNum(f64),
     PosInt(u32),
     Int(i32),
+    #[expect(unused)]
     Angle(f64),
-    Color { r: u8, g: u8, b: u8 },
+    #[expect(unused)]
+    Color {
+        r: u8,
+        g: u8,
+        b: u8,
+    },
     String(Arc<str>),
 }
 

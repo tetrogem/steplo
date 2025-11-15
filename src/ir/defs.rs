@@ -69,6 +69,53 @@ pub enum EventOp {
     WhenBroadcastReceived { broadcast: Arc<Broadcast> },
     BroadcastAndWait { input: Arc<Expr> },
     Broadcast { input: Arc<Expr> },
+    WhenKeyPressed { key_option: KeyOption },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum KeyOption {
+    Space,
+    UpArrow,
+    DownArrow,
+    RightArrow,
+    LeftArrow,
+    Any,
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    J,
+    K,
+    L,
+    M,
+    N,
+    O,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    U,
+    V,
+    W,
+    X,
+    Y,
+    Z,
+    Num0,
+    Num1,
+    Num2,
+    Num3,
+    Num4,
+    Num5,
+    Num6,
+    Num7,
+    Num8,
+    Num9,
 }
 
 #[derive(Debug)]
@@ -111,6 +158,7 @@ pub enum SensingOp {
     AskAndWait { question: Arc<Expr> },
     Answer,
     Timer,
+    DaysSince2000,
 }
 
 #[derive(Debug)]
@@ -128,6 +176,15 @@ pub enum OperatorOp {
     LessThan { operand_a: Arc<Expr>, operand_b: Arc<Expr> },
     And { operand_a: Arc<Expr>, operand_b: Arc<Expr> },
     Or { operand_a: Arc<Expr>, operand_b: Arc<Expr> },
+    Round { num: Arc<Expr> },
+    MathOp { operator: MathOperator, num: Arc<Expr> },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MathOperator {
+    Abs,
+    Floor,
+    Ceiling,
 }
 
 #[derive(Debug)]
