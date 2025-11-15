@@ -2,8 +2,8 @@
 
 Unary operators can create expressions that take one other expression as input. An example of a binary operator is the not `!` operator:
 
-```
-main || {
+```rs
+main {
     out(!true); // prints false
 }
 ```

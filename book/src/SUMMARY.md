@@ -3,7 +3,7 @@
 - [Installation & Getting Started](./start.md)
 - [Hello World!](./hello_world.md)
 - [Compilations Targets](./targets.md)
-- [Stack Variables](./stack_variables.md)
+- [Variables](./variables.md)
 - [Types](./types.md)
 - [Supertypes, Subtypes, & Type Coercion](./coercion.md)
 - [Unary Operaters](./unary_ops.md)
@@ -12,3 +12,5 @@
 - [Built-In Functions](./builtins.md)
 - [Control Flow](./control_flow.md)
 - [Type Casting & Transmutation](./casts.md)
+- [Undefined Initialization](./undefined_initialization.md)
+

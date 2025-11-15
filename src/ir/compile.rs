@@ -21,7 +21,7 @@ impl Program {
             "meta": {
                 "semver": "3.0.0",
                 "vm": "2.3.4",
-                "agent": "Steplo-v0.0.3" // TODO: Update version number each release
+                "agent": "Steplo-v0.0.4" // TODO: Update version number each release
             }
         })
     }

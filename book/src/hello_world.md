@@ -6,8 +6,8 @@ Start by creating a new file named `helloworld.lo` anywhere on your computer.
 
 In Steplo, all programs need to have a single `main` procedure, located anywhere within the source code. A main procedure can be declared as follows:
 
-```
-main || {
+```rs
+main {
 
 }
 ```
@@ -15,8 +15,8 @@ main || {
 All of the code to be executed when the program starts goes in the body of the main procedure, which is surrounded by braces.
 Let's try calling the built-in `out` function to print to stdout:
 
-```
-main || {
+```rs
+main {
     out("Hello world!");
 }
 ```

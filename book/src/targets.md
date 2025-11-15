@@ -12,7 +12,7 @@ cargo run helloworld.lo out --target scratch
 cargo run helloworld.lo out --target turbowarp
 ```
 
-How a Steplo project is compiled to a .sb3 file will change based on which platform is being targetted. These changes will be to optimize the program to run most optimially on the targetted platform.
+How a Steplo project is compiled to a `.sb3` file will change based on which platform is being targetted. These changes will be to optimize the program to run most optimially on the targetted platform.
 
 A project compiled targetting Scratch will be outputted with a `.s.sb3` extension, and compilations targetting TurboWarp will have the `.t.sb3` extension.
 
