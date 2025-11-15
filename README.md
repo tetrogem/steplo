@@ -14,17 +14,17 @@
 <p align="center">
   Join the <strong><code>tetro.dev</code></strong> Discord server (and use the <code>#steplo</code> channel) to chat or get updates about Steplo:
   <br>
-  👉 <a href="https://discord.tetro.dev/">https://discord.tetro.dev/</a>
+  <a href="https://discord.tetro.dev/">https://discord.tetro.dev/</a>
   <br><br>
   <i>A dedicated Discord server for Steplo will be created if enough interest is found!</i>
 </p>
 
 ---
-## 🚀 Quickstart
+## Quickstart
 
-Want to jump straight into using Steplo? Check out the Steplo book for a guide to installing the compiler and the language's syntax and features 👉 [https://steplo.tetro.dev/](https://steplo.tetro.dev/)
+Want to jump straight into using Steplo? Check out the Steplo book for a guide to installing the compiler and the language's syntax and features: [https://steplo.tetro.dev/](https://steplo.tetro.dev/)
 
-## 💡 What is Steplo?
+## What is Steplo?
 
 Steplo is a text-based esolang designed specifically for **Scratch**, bringing advanced programming features like memory management and type systems to the Scratch environment.
 
@@ -38,7 +38,7 @@ Its goals include:
 
 ---
 
-## 🚫 What Steplo is *not*:
+## What Steplo is *not*:
 
 * A 1:1 syntax of Scratch blocks as text
 * An emulator for existing CPU architectures
@@ -46,25 +46,28 @@ Its goals include:
 
 ---
 
-## ✨ Features
+## Features
 *✅ = Implemented | ⚠️ = Experimental | 🚧 = Planned*
 
 | Status | Feature |
 | :---: | --- |
 | ✅ | Printing / stdout Manipulation |
-| ✅ | Stack Memory |
+| ✅ | Stack Memory & Variables |
+| ✅ | Static Memory & Variables |
 | ✅ | Memory Pointers / References |
 | ✅ | In-Memory Arrays |
-| ✅ | Functions |
+| ✅ | Functions & Return Values |
 | ✅ | Branching / Control Flow |
+| ✅ | Control Flow as Expressions |
 | ✅ | Recursion |
 | ✅ | Structs |
-| ✅ | Enums |
+| ✅ | Enums & Exhaustive Matches |
 | ✅ | Optimizer |
 | ✅ | Static Typing |
 | ✅ | Typecasting & Transmutations |
 | ✅ | Typechecker |
 | ✅ | Native Scratch Functionality (e.g. RNG, user input, waiting, timer) |
+| ✅ | Key Press Detection & Event Handling |
 | ✅ | Helpful Compiler Errors |
 | ✅ | TurboWarp-specific optimizations  |
 | ⚠️ | Function Inlining |
@@ -72,7 +75,7 @@ Its goals include:
 | 🚧 | Discriminated/Tagged Unions |
 | 🚧 | Module System |
 | 🚧 | External Linking / Libraries |
-| 🚧 | More Scratch Native Features (e.g., sprites, key events, sounds, pen) |
+| 🚧 | More Scratch Native Features (e.g., sprites, sounds, pen) |
 | 🚧 | Language Server |
 | 🚧 | Standard Formatter |
 | 🚧 | VS Code (and possibly other IDEs) Extension |
@@ -90,13 +93,13 @@ The upside to this is that core functionality is still up for design changes. Yo
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
-### 🛠 Requirements
+### Requirements
 
 * [Rust](https://www.rust-lang.org/tools/install)
 
-### 📦 Installation
+### Installation
 
 ```bash
 # Clone the repo
@@ -117,7 +120,7 @@ You can now open the `.sb3` in the Scratch editor and run your Steplo-compiled p
 
 ---
 
-### 🧪 Help & Commands
+### Help & Commands
 
 Run the following to see all CLI options:
 
@@ -125,4 +128,4 @@ Run the following to see all CLI options:
 cargo run -- -h
 ```
 
-See additional documentation on all of Steplo's language features in the Steplo book 👉 [https://steplo.tetro.dev/](https://steplo.tetro.dev/)
+See additional documentation on all of Steplo's language features in the Steplo book: [https://steplo.tetro.dev/](https://steplo.tetro.dev/)
